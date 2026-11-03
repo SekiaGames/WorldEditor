@@ -1,0 +1,16 @@
+.DS_Store
+
+/WorldEditor.exe
+/WorldEditor.app/
+/extract.pck
+
+/test/*
+!/test/.gitkeep
+*.tmp
+
+/Extract
+/Editor
+/Wiki
+/Launcher
+
+/.workbuddy/memory
