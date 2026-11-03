@@ -3,3 +3,36 @@
 backups
 logs
 /.workbuddy
+
+# ---- 构建产物 ----
+/build/
+/build_*/
+/out/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.res
+*.tlog
+
+# ---- IDE ----
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.VC.opendb
+
+# ---- 日志 ----
+*.log
+
+# ---- 构建后复制到构建目录的运行时（万一就地部署）----
+Qt5*.dll
+qscintilla2_qt5.dll
+qt5advanceddocking.dll
+casc.dll
+CascLib.dll

@@ -41,7 +41,20 @@ namespace casc {
 	}
 
 	void CASC::open(const fs::path& path) {
-		const bool opened = CascOpenStorage(path.c_str(), CASC_LOCALE_ALL, &handle);
+		bool opened = CascOpenStorage(path.c_str(), CASC_LOCALE_ALL, &handle);
+
+		// 重制版的 .build.info 在 Data\ 里面，而 1.31 及更早的经典客户端把它放在安装根目录，
+		// Data\ 下只有 data/config/indices。这种情况下退到上一级目录再试一次。
+		if (!opened) {
+			const fs::path parent = path.parent_path();
+			if (!parent.empty() && fs::exists(parent / ".build.info")) {
+				opened = CascOpenStorage(parent.c_str(), CASC_LOCALE_ALL, &handle);
+				if (opened) {
+					std::cout << "  .build.info found in " << parent << ", using it as CASC root\n";
+				}
+			}
+		}
+
 		if (!opened) {
 			std::wcout << "Error opening " << path << " with error:" << GetLastError() << std::endl;
 		}

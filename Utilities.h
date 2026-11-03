@@ -63,6 +63,8 @@ struct ItemSet {
 	std::vector<std::pair<std::string, int>> items;
 };
 
+// Qt 5.15 起 qhashfunctions.h 已经为 QString 定义了 std::hash 特化，这里再加一份会撞 C2766
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
 namespace std {
 	template<> struct hash<QString> {
 		std::size_t operator()(const QString& s) const {
@@ -70,3 +72,4 @@ namespace std {
 		}
 	};
 }
+#endif

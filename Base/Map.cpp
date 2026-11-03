@@ -237,7 +237,7 @@ void Map::render(int width, int height) {
 		glm::vec3 window = { input_handler.mouse.x, height - input_handler.mouse.y, 1.f };
 		glm::vec3 pos = glm::unProject(window, camera->view, camera->projection, glm::vec4(0, 0, width, height));
 		glm::vec3 origin = camera->position - camera->direction * camera->distance;
-		glm::vec3 direction = glm::normalize(pos - cpos);
+		glm::vec3 direction = glm::normalize(pos - origin);
 		glm::vec3 toto = origin + direction * 200.f;
 
 		btVector3 from(origin.x, origin.y, origin.z);
@@ -274,8 +274,12 @@ void Map::render(int width, int height) {
 		i->render();
 	}
 
-	physics.dynamicsWorld->debugDrawWorld();
-	physics.draw->render();
+	// Bullet 碰撞体的线框调试图，颜色写死在 physics_debug.fs 里（纯绿）。
+	// 默认不画，跟 F3 的 Debug 开关联动，免得糊在画面上。
+	if (render_debug) {
+		physics.dynamicsWorld->debugDrawWorld();
+		physics.draw->render();
+	}
 
 	meshes.clear();
 }
