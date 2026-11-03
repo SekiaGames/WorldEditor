@@ -1,6 +1,7 @@
 #include "Map.h"
 
 #include <iostream>
+#include <fstream>
 
 #include <QMessageBox>
 #include <QOpenGLFunctions_4_5_Core>
@@ -189,30 +190,54 @@ void Map::load(const fs::path& path) {
 }
 
 bool Map::save(const fs::path& path) {
-	if (!fs::equivalent(path, filesystem_path)) {
-		try {
+	// 保存涉及的每一步都可能抛异常（fs::equivalent 在地图目录被移走时会抛，
+	// 各 *::save() 里的写入也可能失败）。之前没有任何兜底，异常直接 terminate，
+	// 表现就是保存时闪退。这里统一接住，并把失败在第几步记进日志。
+	const fs::path log_path = fs::temp_directory_path() / "hivewe_save.log";
+	auto log = [&log_path](const std::string& text, bool truncate = false) {
+		std::ofstream out(log_path, truncate ? std::ios::trunc : std::ios::app);
+		if (out) {
+			out << text << "\n";
+		}
+		std::cout << text << "\n";
+	};
+
+	std::string step = "start";
+	try {
+		log("=== save to " + path.string(), true);
+
+		step = "fs::equivalent";
+		if (!fs::equivalent(path, filesystem_path)) {
+			step = "fs::copy";
+			log("[save] copying directory");
 			fs::copy(filesystem_path, fs::absolute(path), fs::copy_options::recursive);
-		} catch (fs::filesystem_error & e) {
-			QMessageBox msgbox;
-			msgbox.setText(e.what());
-			msgbox.exec();
-			return false;
+
+			filesystem_path = fs::absolute(path) / "";
+			name = (*--(--filesystem_path.end())).string();
 		}
 
-		filesystem_path = fs::absolute(path) / "";
-		name = (*--(--filesystem_path.end())).string();
-	}
+		step = "pathing_map";	log("[save] pathing_map");	pathing_map.save();
+		step = "terrain";		log("[save] terrain");		terrain.save();
+		step = "doodads";		log("[save] doodads");		doodads.save();
+		step = "units";			log("[save] units");		units.save();
+		step = "info";			log("[save] info");			info.save();
+		step = "trigger_strings"; log("[save] trigger_strings"); trigger_strings.save();
+		step = "triggers";		log("[save] triggers");		triggers.save();
+		step = "save_jass";		log("[save] save_jass");	triggers.save_jass();
+		// 触发器没改过就保留原始脚本，改过才重新生成（详见 Triggers::save_map_script）
+		step = "save_map_script"; log("[save] save_map_script"); triggers.save_map_script();
 
-	pathing_map.save();
-	terrain.save();
-	doodads.save();
-	units.save();
-	info.save();
-	trigger_strings.save();
-	triggers.save();
-	triggers.save_jass();
-	// 触发器没改过就保留原始脚本，改过才重新生成（详见 Triggers::save_map_script）
-	triggers.save_map_script();
+		log("[save] done");
+	} catch (const std::exception& e) {
+		const std::string message = "保存失败，出错步骤: " + step + "\n" + e.what();
+		log("[save] FAILED at " + step + ": " + e.what());
+		QMessageBox::critical(nullptr, "Save failed", QString::fromStdString(message));
+		return false;
+	} catch (...) {
+		log("[save] FAILED at " + step + ": unknown exception");
+		QMessageBox::critical(nullptr, "Save failed", QString::fromStdString("保存失败，出错步骤: " + step));
+		return false;
+	}
 
 	return true;
 }
