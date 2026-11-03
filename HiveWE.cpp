@@ -338,30 +338,74 @@ void HiveWE::export_mpq() {
 		directory,
 		"Warcraft III Scenario (*.w3x)");
 
-	if (file_name == "") {
+	if (file_name.isEmpty()) {
 		return;
 	}
 
+	// 先把内存里的改动写回当前地图目录。
+	// 不能把目标路径交给 save()：它会把整个地图目录复制到那个路径，
+	// 于是 "D:/Test/1.w3x" 变成一个目录，后面 SFileCreateArchive 必然失败。
 	emit saving_initiated();
-	map->save(file_name.toStdString());
+	if (!map->save(map->filesystem_path)) {
+		return;
+	}
 
-	unsigned long file_count = std::distance(fs::directory_iterator{ map->filesystem_path }, {});
+	const fs::path archive_path(file_name.toStdWString());
 
-	HANDLE handle;
+	// 目标若是目录（之前失败留下的），先清掉才能建文件
+	std::error_code ec;
+	if (fs::is_directory(archive_path, ec)) {
+		fs::remove_all(archive_path, ec);
+	} else if (fs::exists(archive_path, ec)) {
+		fs::remove(archive_path, ec);
+	}
 
-	#ifdef _MSC_VER
-		SFileCreateArchive(file_name.toStdWString().c_str(), MPQ_CREATE_LISTFILE | MPQ_CREATE_ATTRIBUTES, file_count, &handle);
-	#else
-		SFileCreateArchive(file_name.toStdString().c_str(), MPQ_CREATE_LISTFILE | MPQ_CREATE_ATTRIBUTES, file_count, &handle);
-	#endif
-
+	// 数量必须递归统计，且与下面添加的规则一致（原来只数了顶层，和实际写入数量对不上）
+	DWORD file_count = 0;
 	for (const auto& entry : fs::recursive_directory_iterator(map->filesystem_path)) {
 		if (entry.is_regular_file()) {
-			SFileAddFileEx(handle, entry.path().c_str(), entry.path().lexically_relative(map->filesystem_path).string().c_str(), MPQ_FILE_COMPRESS, MPQ_COMPRESSION_ZLIB, MPQ_COMPRESSION_NEXT_SAME);
+			++file_count;
 		}
 	}
-	SFileCompactArchive(handle, nullptr, false);
+	if (file_count == 0) {
+		QMessageBox::warning(this, "Export failed", "当前地图目录里没有任何文件。");
+		return;
+	}
+
+	HANDLE handle = nullptr;
+	if (!SFileCreateArchive(archive_path.c_str(), MPQ_CREATE_LISTFILE | MPQ_CREATE_ATTRIBUTES, file_count, &handle)) {
+		QMessageBox::critical(this, "Export failed",
+			QString("无法创建 MPQ 文件，错误码 %1。\n目标文件可能被游戏或其他程序占用。").arg(GetLastError()));
+		return;
+	}
+
+	bool ok = true;
+	DWORD last_error = 0;
+	for (const auto& entry : fs::recursive_directory_iterator(map->filesystem_path)) {
+		if (!entry.is_regular_file()) {
+			continue;
+		}
+		// MPQ 内部一律用 '/' 分隔
+		const std::string archived_name = entry.path().lexically_relative(map->filesystem_path).generic_string();
+		if (!SFileAddFileEx(handle, entry.path().c_str(), archived_name.c_str(),
+			MPQ_FILE_COMPRESS, MPQ_COMPRESSION_ZLIB, MPQ_COMPRESSION_NEXT_SAME)) {
+			ok = false;
+			last_error = GetLastError();
+			break;
+		}
+	}
+
+	if (ok) {
+		ok = SFileCompactArchive(handle, nullptr, false);
+		last_error = ok ? 0 : GetLastError();
+	}
 	SFileCloseArchive(handle);
+
+	if (!ok) {
+		// 删掉半成品，避免留下打不开的档案
+		fs::remove(archive_path, ec);
+		QMessageBox::critical(this, "Export failed", QString("写入 MPQ 时出错，错误码 %1。").arg(last_error));
+	}
 }
 
 void HiveWE::play_test() {

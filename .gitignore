@@ -2,7 +2,6 @@
 *.j
 backups
 logs
-/.workbuddy
 
 # ---- 构建产物 ----
 /build/
