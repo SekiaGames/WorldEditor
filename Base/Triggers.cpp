@@ -72,6 +72,11 @@ void Triggers::parse_eca_structure(BinaryReader& reader, ECA& eca, bool is_child
 };
 
 void Triggers::load(BinaryReader& reader) {
+	// 每张地图重新开始，避免上一张地图的原件残留下来被写进新地图
+	original_map_script.clear();
+	original_trigger_data.clear();
+	trigger_data_snapshot.clear();
+
 	trigger_strings.load("UI/TriggerStrings.txt");
 	trigger_data.load("UI/TriggerData.txt");
 	trigger_data.substitute(world_edit_strings, "WorldEditStrings");
@@ -101,20 +106,33 @@ void Triggers::load(BinaryReader& reader) {
 	Trigger::next_id = 0;
 
 	std::string magic_number = reader.read_string(4);
-	if (magic_number != "WTG!") {
+	if (magic_number == "WTG!") {
+		const uint32_t version = reader.read<uint32_t>();
+		if (version == 0x80000004) {
+			load_version_31(reader, version);
+		} else if (version == 4 || version == 7) {
+			load_version_pre31(reader, version);
+		} else {
+			std::cout << "Unknown WTG format! Trying 1.31 loader\n";
+			load_version_31(reader, version);
+		}
+	} else {
 		std::cout << "Unknown magic number for war3map.wtg " << magic_number << "\n";
-		return;
 	}
 
-	uint32_t version = reader.read<uint32_t>();
-	if (version == 0x80000004)
-		load_version_31(reader, version);
-	else if (version == 4 || version == 7)
-		load_version_pre31(reader, version);
-	else {
-		std::cout << "Unknown WTG format! Trying 1.31 loader\n";
-		load_version_31(reader, version);
+	// 记下原始 war3map.j 与 war3map.wtg，并给当前触发器数据拍一份序列化快照。
+	// 保存时拿快照比对，决定是原样写回还是重新生成脚本。
+	if (hierarchy.map_file_exists("war3map.j")) {
+		const BinaryReader script = hierarchy.map_file_read("war3map.j");
+		original_map_script.assign(script.buffer.begin(), script.buffer.end());
 	}
+	if (hierarchy.map_file_exists("war3map.wtg")) {
+		original_trigger_data = hierarchy.map_file_read("war3map.wtg").buffer;
+	}
+
+	BinaryWriter snapshot;
+	build_trigger_data(snapshot);
+	trigger_data_snapshot = snapshot.buffer;
 }
 
 void Triggers::load_version_pre31(BinaryReader& reader, uint32_t version) {
@@ -390,8 +408,7 @@ void Triggers::print_eca_structure(BinaryWriter& writer, const ECA& eca, bool is
 	}
 }
 
-void Triggers::save() const {
-	BinaryWriter writer;
+void Triggers::build_trigger_data(BinaryWriter& writer) const {
 	writer.write_string("WTG!");
 	writer.write<uint32_t>(write_version);
 	writer.write<uint32_t>(write_sub_version);
@@ -493,6 +510,18 @@ void Triggers::save() const {
 		writer.write<uint32_t>(i.parent_id);
 	}
 
+	hierarchy.map_file_write("war3map.wtg", writer.buffer);
+}
+
+void Triggers::save() const {
+	// 触发器没改动过就直接写回原件，避免把无关数据重新序列化
+	if (!original_trigger_data.empty() && !script_changed()) {
+		hierarchy.map_file_write("war3map.wtg", original_trigger_data);
+		return;
+	}
+
+	BinaryWriter writer;
+	build_trigger_data(writer);
 	hierarchy.map_file_write("war3map.wtg", writer.buffer);
 }
 
@@ -1332,6 +1361,32 @@ void Triggers::generate_map_configuration(BinaryWriter& writer) {
 	writer.write_string("\tcall InitAllyPriorities()\n");
 
 	writer.write_string("endfunction\n");
+}
+
+bool Triggers::script_changed() const {
+	// 快照为空说明这张地图没有可用的触发器数据，交给调用方决定
+	if (trigger_data_snapshot.empty()) {
+		return true;
+	}
+
+	BinaryWriter writer;
+	build_trigger_data(writer);
+	return writer.buffer != trigger_data_snapshot;
+}
+
+void Triggers::save_map_script() {
+	// 地图原本带脚本、且触发器一个字节都没动过 —— 原样写回。
+	// HiveWE 的重新生成链路会重写整个 war3map.j，实测会丢可破坏物、
+	// 读错 .doo 字段并写错队伍数，导致导出的地图一进游戏就判负，
+	// 所以只有真的改过触发器才走重新生成。
+	if (!original_map_script.empty() && !script_changed()) {
+		std::cout << "Keeping the original war3map.j\n";
+		hierarchy.map_file_write("war3map.j", std::vector<uint8_t>(original_map_script.begin(), original_map_script.end()));
+		return;
+	}
+
+	std::cout << "Regenerating war3map.j\n";
+	generate_map_script();
 }
 
 void Triggers::generate_map_script() {

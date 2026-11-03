@@ -211,7 +211,8 @@ bool Map::save(const fs::path& path) {
 	trigger_strings.save();
 	triggers.save();
 	triggers.save_jass();
-	triggers.generate_map_script();
+	// 触发器没改过就保留原始脚本，改过才重新生成（详见 Triggers::save_map_script）
+	triggers.save_map_script();
 
 	return true;
 }

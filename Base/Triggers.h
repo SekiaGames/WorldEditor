@@ -151,6 +151,14 @@ class Triggers {
 	void generate_ally_priorities(BinaryWriter& writer);
 	void generate_main(BinaryWriter& writer);
 	void generate_map_configuration(BinaryWriter& writer);
+
+	// 把整个触发器数据序列化出来（供 save() 与「是否被改过」的比对共用）
+	void build_trigger_data(BinaryWriter& writer) const;
+
+	// 载入时的原始内容，保存时若触发器没动过就原样写回
+	std::string original_map_script;
+	std::vector<uint8_t> original_trigger_data;
+	std::vector<uint8_t> trigger_data_snapshot;
 public:
 	ini::INI trigger_strings;
 	ini::INI trigger_data;
@@ -168,6 +176,12 @@ public:
 	void load_jass(BinaryReader& reader);
 	void save() const;
 	void save_jass() const;
+
+	// 触发器数据相对载入时是否发生了改动
+	bool script_changed() const;
+
+	// 保存 war3map.j：没改过触发器就原样写回，改过才重新生成
+	void save_map_script();
 
 	void generate_map_script();
 };
