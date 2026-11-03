@@ -266,13 +266,18 @@ void Terrain::create() {
 	cliff_shader = resource_manager.load<Shader>({ "Data/Shaders/cliff.vs", "Data/Shaders/cliff.fs" });
 	water_shader = resource_manager.load<Shader>({ "Data/Shaders/water.vs", "Data/Shaders/water.fs" });
 
-	collision_shape = new btHeightfieldTerrainShape(width, height, ground_heights.data(), 0, -16.f, 16.f, 2 /*z*/, PHY_FLOAT, false);
+	// 碰撞体必须和**渲染出来的表面**一致，否则射线会打在另一个高度上：
+	// 斜视角下高度差会被放大成横向偏移（表现为笔刷/光标对不上）。
+	// 渲染用的是 ground_corner_heights = final_ground_height()，即
+	// corners.height + layer_height - 2（外加斜坡修正），所以这里也用它，
+	// 并把刚体原点的 z 归零（原来取 4，与上面的表达式不成对应关系）。
+	collision_shape = new btHeightfieldTerrainShape(width, height, ground_corner_heights.data(), 0, -16.f, 16.f, 2 /*z*/, PHY_FLOAT, false);
 	if (collision_shape == nullptr) {
 		std::cout << "error\n";
 	}
 
 	btRigidBody* body = new btRigidBody(0, new btDefaultMotionState(), collision_shape);
-	body->getWorldTransform().setOrigin(btVector3(width / 2.f - 0.5f, height / 2.f - 0.5f, 4.f)); // Bullet centers the collision mesh automatically, we need to decenter it and place it under the player
+	body->getWorldTransform().setOrigin(btVector3(width / 2.f - 0.5f, height / 2.f - 0.5f, 0.f)); // Bullet centers the collision mesh automatically, we need to decenter it and place it under the player
 	body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_STATIC_OBJECT);
 	physics.dynamicsWorld->addRigidBody(body);
 
