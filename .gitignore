@@ -2,3 +2,4 @@
 *.j
 backups
 logs
+/.workbuddy
