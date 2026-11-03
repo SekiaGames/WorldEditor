@@ -13,9 +13,11 @@ build.bat all      先依赖后本体
 build.bat clean    删除构建目录
 ```
 
-脚本开头的「路径配置」段集中了 Qt 路径、依赖前缀、ADS 路径，换机器只改那里。产物在 `build\Release\HiveWE.exe`，Qt 运行时由脚本自动部署。
+脚本开头的「路径配置」段集中了 Qt 路径、依赖前缀、ADS 路径，换机器只改那里。生成器固定为 **Ninja**（单配置），产物直接落在 `build\HiveWE.exe`，Qt 运行时由脚本自动部署。
 
-两个前提：`build.bat` 靠 `vcvars64.bat` 初始化 MSVC 环境，所以必须在**普通命令行窗口**里运行（被安全策略拦掉 `reg.exe` 的环境会让 vcvars 失效，报 `No CMAKE_CXX_COMPILER could be found`）；`deps` 模式还需要 `git` 来克隆依赖源码。
+因为 Ninja 是单配置生成器，配置里没有 `--config`，构建类型由 `CMAKE_BUILD_TYPE=Release` 决定。切回 VS 那种双配置布局不会发生——脚本检测到 `build\CMakeCache.txt` 里的生成器不是 Ninja 时会自动清掉旧目录重来。
+
+脚本**不调用 `vcvars64.bat`**：它用 vswhere 拿到 VS 安装路径，再从 `VC\Tools\MSVC\` 和 `Windows Kits\10\Include\` 下挑版本号最高的那个，自己拼出 `PATH` / `INCLUDE` / `LIB`。好处是不依赖 `reg.exe`（vcvars 内部要读注册表），在被安全策略限制的环境里也能跑。`deps` 模式额外需要 `git` 来克隆依赖源码。
 
 > 脚本正文刻意只用 ASCII 英文提示。批处理文件里写中文会牵扯编码问题（GBK 存的文件在 UTF-8 编辑器里是乱码，UTF-8 存的文件在 cmd 里会被拆错命令行），换成 ASCII 后两边的坑都没了。中文说明留在本文档里。
 
@@ -245,7 +247,11 @@ dir C:\deps\qads\bin\qt5advanceddocking.dll
 
 ```cmd
 cd D:\WorldEditor
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DQt5_DIR=C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5 -DQSCINTILLA_ROOT=C:/Qt/5.15.2/msvc2019_64 -Dqt5advanceddocking_DIR=C:/deps/qads/lib/cmake/qt5advanceddocking -DHIVE_DEPS_PREFIX=C:/deps/prefix
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+  -DQt5_DIR=C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5 ^
+  -DQSCINTILLA_ROOT=C:/Qt/5.15.2/msvc2019_64 ^
+  -Dqt5advanceddocking_DIR=C:/deps/qads/lib/cmake/qt5advanceddocking ^
+  -DHIVE_DEPS_PREFIX=C:/deps/prefix
 ```
 
 `HIVE_DEPS_PREFIX` 就是第 3 步的安装前缀，CMakeLists 会优先按 `find_package(CONFIG)` 找依赖，找不到就退回到这个前缀下的 `include/` + `lib/`。
@@ -260,16 +266,16 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DQt5_DIR=C:/Qt/5.15.2/msv
 然后编译：
 
 ```cmd
-cmake --build build --config RelWithDebInfo --parallel
+cmake --build build
 ```
 
-**不要用 `--config Debug`**：QScintilla 和所有第三方库编的都是 Release，Debug 配置下 MSVC 的 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配，会报一堆 `LNK2038` / `LNK2019`。要调试就用 RelWithDebInfo（有 `/Zi` 调试信息，能设断点）。真要 Debug，得把 QScintilla 和第三方库全部重编一份 debug 版。
+**不要改成 `CMAKE_BUILD_TYPE=Debug`**：QScintilla 和所有第三方库编的都是 Release，Debug 配置下 MSVC 的 `_ITERATOR_DEBUG_LEVEL` 和运行库不匹配，会报一堆 `LNK2038` / `LNK2019`。真要 Debug，得把 QScintilla 和第三方库全部重编一份 debug 版。
 
 产物：
 
 ```
-D:\WorldEditor\build\RelWithDebInfo\HiveWE.exe
-D:\WorldEditor\build\RelWithDebInfo\Data\      (CMake 构建后自动复制)
+D:\WorldEditor\build\HiveWE.exe
+D:\WorldEditor\build\Data\      (CMake 构建后自动复制)
 ```
 
 ## 7. 打包运行环境
@@ -279,7 +285,7 @@ D:\WorldEditor\build\RelWithDebInfo\Data\      (CMake 构建后自动复制)
 **注意把它作用到三个二进制上**，不能只给 exe：
 
 ```cmd
-cd D:\WorldEditor\build\RelWithDebInfo
+cd D:\WorldEditor\build
 C:\Qt\5.15.2\msvc2019_64\bin\windeployqt.exe --release --no-translations HiveWE.exe qscintilla2_qt5.dll qt5advanceddocking.dll
 ```
 

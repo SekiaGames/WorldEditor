@@ -9,6 +9,10 @@ rem    deps   build all third-party dependencies into DEPS_PREFIX
 rem    all    run deps, then app
 rem    clean  remove the build directory
 rem
+rem  Generator: Ninja (single config). The MSVC environment is derived from the
+rem  Visual Studio install path reported by vswhere, so this script does NOT call
+rem  vcvars64.bat and does not need reg.exe.
+rem
 rem  Requirements:
 rem    - Visual Studio 2022 with "Desktop development with C++"
 rem    - Qt 5.15.2 msvc2019_64
@@ -22,7 +26,6 @@ set "ADS_DIR=C:/deps/qads"
 set "DEPS_SRC=C:/deps/src"
 set "DEPS_BUILD=C:/deps/build"
 set "CONFIG=Release"
-set "GEN=Visual Studio 17 2022"
 rem -------------------------------------------------------------------------
 
 set "ROOT=%~dp0"
@@ -43,15 +46,49 @@ if not exist "%VSWHERE%" (
 	exit /b 1
 )
 set "VSPATH="
-for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+rem Note: paths below are expanded with !VAR! (delayed) on purpose. The literal
+rem "(x86)" in %ProgramFiles(x86)% would otherwise close the FOR statement early.
+for /f "usebackq tokens=*" %%i in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
 if not defined VSPATH (
 	echo [ERROR] No Visual Studio 2022 with the C++ toolset found.
 	exit /b 1
 )
 
-rem Prefer cmake from PATH, fall back to the one shipped with VS
+rem Highest installed MSVC toolset
+set "MSVCVER="
+for /f "delims=" %%i in ('dir /b /ad /o-n "!VSPATH!\VC\Tools\MSVC" 2^>nul') do if not defined MSVCVER set "MSVCVER=%%i"
+if not defined MSVCVER (
+	echo [ERROR] No MSVC toolset found under !VSPATH!\VC\Tools\MSVC
+	exit /b 1
+)
+set "VCTOOLS=%VSPATH%\VC\Tools\MSVC\%MSVCVER%"
+
+rem Highest installed Windows SDK
+set "SDKROOT=%ProgramFiles(x86)%\Windows Kits\10"
+set "SDKVER="
+for /f "delims=" %%i in ('dir /b /ad /o-n "!SDKROOT!\Include\10.0.*" 2^>nul') do if not defined SDKVER set "SDKVER=%%i"
+if not defined SDKVER (
+	echo [ERROR] No Windows SDK found under !SDKROOT!\Include
+	exit /b 1
+)
+
+rem CMake and Ninja: prefer PATH, fall back to the copies shipped with VS
 set "CMAKE=cmake"
 where cmake >nul 2>&1 || set "CMAKE=%VSPATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+set "NINJA=ninja"
+where ninja >nul 2>&1 || set "NINJA=%VSPATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+if not exist "%NINJA%" (
+	echo [ERROR] ninja.exe not found. Install it or use the copy bundled with Visual Studio.
+	exit /b 1
+)
+
+echo [env] MSVC %MSVCVER%
+echo [env] SDK  %SDKVER%
+
+rem cl.exe / link.exe / nmake.exe plus the headers and import libraries
+set "PATH=%VCTOOLS%\bin\Hostx64\x64;%SDKROOT%\bin\%SDKVER%\x64;%QT_DIR%\bin;%PATH%"
+set "INCLUDE=%VCTOOLS%\include;%SDKROOT%\Include\%SDKVER%\ucrt;%SDKROOT%\Include\%SDKVER%\um;%SDKROOT%\Include\%SDKVER%\shared;%SDKROOT%\Include\%SDKVER%\winrt"
+set "LIB=%VCTOOLS%\lib\x64;%SDKROOT%\Lib\%SDKVER%\ucrt\x64;%SDKROOT%\Lib\%SDKVER%\um\x64"
 
 if /i "%ACTION%"=="clean" (
 	if exist "%BUILD_DIR%" (
@@ -59,13 +96,6 @@ if /i "%ACTION%"=="clean" (
 		rmdir /s /q "%BUILD_DIR%"
 	)
 	exit /b 0
-)
-
-rem vcvars provides cl.exe / rc.exe / nmake.exe
-call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul
-if errorlevel 1 (
-	echo [ERROR] Failed to initialise the MSVC environment.
-	exit /b 1
 )
 
 if /i "%ACTION%"=="deps" goto :deps
@@ -106,15 +136,15 @@ rem Bullet: only the three core libraries. BUILD_EXTRAS contains a translation
 rem unit that hangs the compiler, so it is disabled and targets are explicit.
 echo.
 echo ----- bullet3 -----
-"%CMAKE%" -S "%DEPS_SRC%/bullet3" -B "%DEPS_BUILD%/bullet3" -G "%GEN%" -A x64 ^
+"%CMAKE%" -S "%DEPS_SRC%/bullet3" -B "%DEPS_BUILD%/bullet3" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
  -DBUILD_SHARED_LIBS=OFF -DUSE_MSVC_RUNTIME_LIBRARY_DLL=ON ^
  -DBUILD_BULLET2_DEMOS=OFF -DBUILD_BULLET3=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_UNIT_TESTS=OFF ^
  -DBUILD_EXTRAS=OFF -DBUILD_OPENGL3_DEMOS=OFF -DUSE_GRAPHICAL_BENCHMARK=OFF -DINSTALL_LIBS=ON ^
  -DCMAKE_INSTALL_PREFIX=%DEPS_PREFIX%
 if errorlevel 1 goto :deps_fail
-"%CMAKE%" --build "%DEPS_BUILD%/bullet3" --config %CONFIG% --target BulletCollision BulletDynamics LinearMath
+"%CMAKE%" --build "%DEPS_BUILD%/bullet3" --target BulletCollision BulletDynamics LinearMath
 if errorlevel 1 goto :deps_fail
-"%CMAKE%" --install "%DEPS_BUILD%/bullet3" --config %CONFIG%
+"%CMAKE%" --install "%DEPS_BUILD%/bullet3"
 if errorlevel 1 goto :deps_fail
 
 rem ----- QScintilla: must be a shared build; DLL goes to Qt\lib and needs a copy in bin -----
@@ -137,11 +167,13 @@ copy /y "%QT_DIR%\lib\qscintilla2_qt5.dll" "%QT_DIR%\bin\" >nul 2>&1
 rem ----- Qt Advanced Docking System: upstream installs under the name qt5advanceddocking -----
 echo.
 echo ----- Qt Advanced Docking System -----
-"%CMAKE%" -S "%DEPS_SRC%/qads" -B "%DEPS_BUILD%/qads" -G "%GEN%" -A x64 ^
+"%CMAKE%" -S "%DEPS_SRC%/qads" -B "%DEPS_BUILD%/qads" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
  -DCMAKE_PREFIX_PATH=%QT_DIR% -DADS_VERSION=4.3.1 -DBUILD_EXAMPLES=OFF -DBUILD_STATIC=OFF ^
  -DCMAKE_INSTALL_PREFIX=%ADS_DIR%
 if errorlevel 1 goto :deps_fail
-"%CMAKE%" --build "%DEPS_BUILD%/qads" --config %CONFIG% --target install
+"%CMAKE%" --build "%DEPS_BUILD%/qads"
+if errorlevel 1 goto :deps_fail
+"%CMAKE%" --install "%DEPS_BUILD%/qads"
 if errorlevel 1 goto :deps_fail
 
 echo.
@@ -156,7 +188,16 @@ rem ===========================================================================
 :app
 echo.
 echo ===== Configuring HiveWE =====
-"%CMAKE%" -S "%ROOT%" -B "%BUILD_DIR%" -G "%GEN%" -A x64 ^
+
+rem Ninja is single config: wipe a build directory produced by another generator
+if exist "%BUILD_DIR%\CMakeCache.txt" (
+	findstr /c:"CMAKE_GENERATOR:INTERNAL=Ninja" "%BUILD_DIR%\CMakeCache.txt" >nul 2>&1 || (
+		echo [CLEAN] generator changed, removing stale build directory
+		rmdir /s /q "%BUILD_DIR%"
+	)
+)
+
+"%CMAKE%" -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
  -DQt5_DIR=%QT_DIR%/lib/cmake/Qt5 ^
  -DQSCINTILLA_ROOT=%QT_DIR% ^
  -Dqt5advanceddocking_DIR=%ADS_DIR%/lib/cmake/qt5advanceddocking ^
@@ -165,7 +206,7 @@ if errorlevel 1 goto :app_fail
 
 echo.
 echo ===== Building HiveWE (%CONFIG%) =====
-"%CMAKE%" --build "%BUILD_DIR%" --config %CONFIG% --parallel
+"%CMAKE%" --build "%BUILD_DIR%"
 if errorlevel 1 goto :app_fail
 
 echo.
@@ -175,15 +216,15 @@ if not exist "%QT_DIR%\bin\qt5advanceddocking.dll" (
 	copy /y "%ADS_DIR%\bin\qt5advanceddocking.dll" "%QT_DIR%\bin\" >nul 2>&1
 )
 "%QT_DIR%/bin/windeployqt.exe" --release --no-translations --no-opengl-sw ^
- "%BUILD_DIR%/%CONFIG%/HiveWE.exe" ^
- "%BUILD_DIR%/%CONFIG%/qscintilla2_qt5.dll" ^
- "%BUILD_DIR%/%CONFIG%/qt5advanceddocking.dll"
+ "%BUILD_DIR%/HiveWE.exe" ^
+ "%BUILD_DIR%/qscintilla2_qt5.dll" ^
+ "%BUILD_DIR%/qt5advanceddocking.dll"
 if errorlevel 1 (
 	echo [WARN] windeployqt failed; Qt runtime DLLs may be missing.
 )
 
 echo.
-echo [DONE] %BUILD_DIR%\%CONFIG%\HiveWE.exe
+echo [DONE] %BUILD_DIR%\HiveWE.exe
 echo Set the Warcraft III install path in the settings on first run.
 echo An OpenGL 4.5 Core capable GPU is required.
 exit /b 0
@@ -217,17 +258,17 @@ exit /b 0
 :build
 echo.
 echo ----- %~1 -----
-"%CMAKE%" -S "%DEPS_SRC%/%~1" -B "%DEPS_BUILD%/%~1" -G "%GEN%" -A x64 %~2
+"%CMAKE%" -S "%DEPS_SRC%/%~1" -B "%DEPS_BUILD%/%~1" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% %~2
 if errorlevel 1 exit /b 1
-"%CMAKE%" --build "%DEPS_BUILD%/%~1" --config %CONFIG%
+"%CMAKE%" --build "%DEPS_BUILD%/%~1"
 if errorlevel 1 exit /b 1
-"%CMAKE%" --install "%DEPS_BUILD%/%~1" --config %CONFIG%
+"%CMAKE%" --install "%DEPS_BUILD%/%~1"
 if errorlevel 1 exit /b 1
 exit /b 0
 
 :help
 echo.
-echo  HiveWE 0.6 build script
+echo  HiveWE 0.6 build script (Ninja)
 echo.
 echo    build.bat          build HiveWE (default)
 echo    build.bat app      same as above
@@ -236,5 +277,6 @@ echo    build.bat all      dependencies, then HiveWE
 echo    build.bat clean    remove the build directory
 echo.
 echo  Qt path, dependency prefix and ADS path are configured at the top of this file.
+echo  Output: build\HiveWE.exe
 echo.
 exit /b 0
