@@ -14,7 +14,9 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Gui Widgets)
 # --------------------------------------------------------- 依赖查找前缀
 # 每个依赖都优先用 find_package 的 CONFIG 模式（vcpkg 的安装方式），
 # 找不到再退回手动编译安装的目录布局（include/ + lib/）。
-set(HIVE_DEPS_PREFIX "C:/deps/prefix" CACHE PATH "手动编译的依赖安装前缀（非 vcpkg）")
+# 默认指向仓库本地的 toolchain\deps\prefix（build.bat 会显式传同一个路径），
+# 避免把依赖装到 C 盘。
+set(HIVE_DEPS_PREFIX "${CMAKE_SOURCE_DIR}/toolchain/deps/prefix" CACHE PATH "手动编译的依赖安装前缀（非 vcpkg）")
 list(APPEND CMAKE_PREFIX_PATH "${HIVE_DEPS_PREFIX}")
 
 # 手写一个 imported target，让链接和头文件路径一次搞定
@@ -123,7 +125,7 @@ find_library(QSCINTILLA_LIBRARY NAMES qscintilla2_qt5 qscintilla2
 	HINTS ${QSCINTILLA_ROOT} ENV QSCINTILLA_ROOT
 	PATH_SUFFIXES lib)
 if(NOT QSCINTILLA_INCLUDE_DIR OR NOT QSCINTILLA_LIBRARY)
-	message(FATAL_ERROR "找不到 QScintilla。请用 -DQSCINTILLA_ROOT=C:/Qt/5.15.2/msvc2019_64 指定安装前缀")
+	message(FATAL_ERROR "找不到 QScintilla。请用 -DQSCINTILLA_ROOT=<repo>/toolchain/qt/5.15.2/msvc2019_64 指定安装前缀")
 endif()
 
 # ------------------------------------- Qt Advanced Docking System

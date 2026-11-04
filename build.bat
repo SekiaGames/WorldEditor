@@ -9,27 +9,32 @@ rem    deps   build all third-party dependencies into DEPS_PREFIX
 rem    all    run deps, then app
 rem    clean  remove the build directory
 rem
-rem  Generator: Ninja (single config). The MSVC environment is derived from the
-rem  Visual Studio install path reported by vswhere, so this script does NOT call
-rem  vcvars64.bat and does not need reg.exe.
+rem  Toolchain resolution (in order):
+rem    1) <repo>\toolchain\  -- self-contained: Qt 5.15.2, prebuilt deps,
+rem       MSVC 14.44.35207 toolset, Windows SDK 10.0.26100.0, CMake, Ninja.
+rem       Copied out of C: on 2026-11-04, so the repo can still be built after
+rem       a clean Windows install WITHOUT Visual Studio installed.
+rem    2) installed Visual Studio 2022 (located via vswhere, no vcvars call).
 rem
-rem  Requirements:
-rem    - Visual Studio 2022 with "Desktop development with C++"
-rem    - Qt 5.15.2 msvc2019_64
-rem    - git (used by deps mode to clone sources)
+rem  Requirements
+rem    local mode : nothing outside this folder (git only for `deps`)
+rem    VS mode    : Visual Studio 2022 with "Desktop development with C++"
 rem ===========================================================================
-
-rem ---------------------- Paths: edit only this block -----------------------
-set "QT_DIR=C:/Qt/5.15.2/msvc2019_64"
-set "DEPS_PREFIX=C:/deps/prefix"
-set "ADS_DIR=C:/deps/qads"
-set "DEPS_SRC=C:/deps/src"
-set "DEPS_BUILD=C:/deps/build"
-set "CONFIG=Release"
-rem -------------------------------------------------------------------------
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
+
+rem ---------------------- Paths: edit only this block -----------------------
+rem  Everything lives inside the repo; toolchain\ is in .gitignore.
+set "LOCAL_TT=%ROOT%\toolchain"
+set "QT_DIR=%LOCAL_TT%\qt\5.15.2\msvc2019_64"
+set "DEPS_PREFIX=%LOCAL_TT%\deps\prefix"
+set "ADS_DIR=%LOCAL_TT%\deps\qads"
+set "DEPS_SRC=%LOCAL_TT%\deps\src"
+set "DEPS_BUILD=%LOCAL_TT%\deps\build"
+set "CONFIG=Release"
+rem -------------------------------------------------------------------------
+
 set "BUILD_DIR=%ROOT%/build"
 
 set "ACTION=%~1"
@@ -39,10 +44,36 @@ if /i "%ACTION%"=="help"    goto :help
 if /i "%ACTION%"=="-h"      goto :help
 if /i "%ACTION%"=="--help"  goto :help
 
-rem ----------------------------- Locate VS 2022 -----------------------------
+rem ======================= Locate toolchain (local first) ===================
+set "TOOLCHAIN="
+set "MSVCVER="
+set "VCTOOLS="
+set "SDKROOT="
+set "SDKVER="
+set "CMAKE="
+set "NINJA="
+
+rem --- 1) repo-local toolchain ---------------------------------------------
+for /f "delims=" %%i in ('dir /b /ad /o-n "%LOCAL_TT%\msvc" 2^>nul') do if not defined MSVCVER set "MSVCVER=%%i"
+if not defined MSVCVER goto :find_vs
+if not exist "%LOCAL_TT%\msvc\%MSVCVER%\bin\Hostx64\x64\cl.exe" goto :find_vs
+
+set "TOOLCHAIN=local"
+set "VCTOOLS=%LOCAL_TT%\msvc\%MSVCVER%"
+set "SDKROOT=%LOCAL_TT%\winsdk\10"
+for /f "delims=" %%i in ('dir /b /ad /o-n "%SDKROOT%\Include\10.0.*" 2^>nul') do if not defined SDKVER set "SDKVER=%%i"
+set "CMAKE=%LOCAL_TT%\cmake\bin\cmake.exe"
+set "NINJA=%LOCAL_TT%\bin\ninja.exe"
+goto :toolchain_ready
+
+rem --- 2) installed Visual Studio 2022 -------------------------------------
+:find_vs
+set "MSVCVER="
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
-	echo [ERROR] vswhere.exe not found. Visual Studio 2022 is probably not installed.
+	echo [ERROR] No local toolchain at %LOCAL_TT% and vswhere.exe not found.
+	echo         Either copy toolchain\ into the repo, or install Visual Studio 2022
+	echo         with "Desktop development with C++".
 	exit /b 1
 )
 set "VSPATH="
@@ -55,7 +86,6 @@ if not defined VSPATH (
 )
 
 rem Highest installed MSVC toolset
-set "MSVCVER="
 for /f "delims=" %%i in ('dir /b /ad /o-n "!VSPATH!\VC\Tools\MSVC" 2^>nul') do if not defined MSVCVER set "MSVCVER=%%i"
 if not defined MSVCVER (
 	echo [ERROR] No MSVC toolset found under !VSPATH!\VC\Tools\MSVC
@@ -65,7 +95,6 @@ set "VCTOOLS=%VSPATH%\VC\Tools\MSVC\%MSVCVER%"
 
 rem Highest installed Windows SDK
 set "SDKROOT=%ProgramFiles(x86)%\Windows Kits\10"
-set "SDKVER="
 for /f "delims=" %%i in ('dir /b /ad /o-n "!SDKROOT!\Include\10.0.*" 2^>nul') do if not defined SDKVER set "SDKVER=%%i"
 if not defined SDKVER (
 	echo [ERROR] No Windows SDK found under !SDKROOT!\Include
@@ -77,13 +106,27 @@ set "CMAKE=cmake"
 where cmake >nul 2>&1 || set "CMAKE=%VSPATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
 set "NINJA=ninja"
 where ninja >nul 2>&1 || set "NINJA=%VSPATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+set "TOOLCHAIN=visual-studio"
+
+:toolchain_ready
+if not defined SDKVER (
+	echo [ERROR] No Windows SDK found under %SDKROOT%\Include
+	exit /b 1
+)
+if not exist "%CMAKE%" (
+	echo [ERROR] cmake not found: %CMAKE%
+	exit /b 1
+)
 if not exist "%NINJA%" (
-	echo [ERROR] ninja.exe not found. Install it or use the copy bundled with Visual Studio.
+	echo [ERROR] ninja.exe not found: %NINJA%
+	echo         Install it or use the copy bundled with Visual Studio.
 	exit /b 1
 )
 
+echo [env] toolchain %TOOLCHAIN%
 echo [env] MSVC %MSVCVER%
 echo [env] SDK  %SDKVER%
+echo [env] Qt   %QT_DIR%
 
 rem cl.exe / link.exe / nmake.exe plus the headers and import libraries
 set "PATH=%VCTOOLS%\bin\Hostx64\x64;%SDKROOT%\bin\%SDKVER%\x64;%QT_DIR%\bin;%PATH%"
@@ -114,6 +157,7 @@ echo.
 echo ===== Building dependencies into %DEPS_PREFIX% =====
 
 if not exist "%DEPS_SRC%" mkdir "%DEPS_SRC%"
+if not exist "%DEPS_BUILD%" mkdir "%DEPS_BUILD%"
 
 call :clone https://github.com/madler/zlib                 zlib
 call :clone https://github.com/g-truc/glm                  glm
@@ -198,6 +242,7 @@ if exist "%BUILD_DIR%\CMakeCache.txt" (
 )
 
 "%CMAKE%" -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
+ -DCMAKE_INSTALL_PREFIX=%ROOT%/out ^
  -DQt5_DIR=%QT_DIR%/lib/cmake/Qt5 ^
  -DQSCINTILLA_ROOT=%QT_DIR% ^
  -Dqt5advanceddocking_DIR=%ADS_DIR%/lib/cmake/qt5advanceddocking ^
@@ -215,6 +260,14 @@ rem windeployqt only looks inside Qt\bin for dependencies, so seed the ADS DLL t
 if not exist "%QT_DIR%\bin\qt5advanceddocking.dll" (
 	copy /y "%ADS_DIR%\bin\qt5advanceddocking.dll" "%QT_DIR%\bin\" >nul 2>&1
 )
+
+rem VC runtime: windeployqt does not ship these. Without them the exe fails to
+rem start on a machine that has no VC++ redistributable (e.g. right after a clean
+rem Windows install). Best effort: take them from the running system.
+for %%d in (vcruntime140.dll vcruntime140_1.dll msvcp140.dll) do (
+	if not exist "%BUILD_DIR%\%%d" if exist "%SystemRoot%\System32\%%d" copy /y "%SystemRoot%\System32\%%d" "%BUILD_DIR%\" >nul
+)
+
 "%QT_DIR%/bin/windeployqt.exe" --release --no-translations --no-opengl-sw ^
  "%BUILD_DIR%/HiveWE.exe" ^
  "%BUILD_DIR%/qscintilla2_qt5.dll" ^
@@ -276,6 +329,7 @@ echo    build.bat deps     build all third-party dependencies
 echo    build.bat all      dependencies, then HiveWE
 echo    build.bat clean    remove the build directory
 echo.
+echo  Uses toolchain\ inside the repo when present, else an installed VS 2022.
 echo  Qt path, dependency prefix and ADS path are configured at the top of this file.
 echo  Output: build\HiveWE.exe
 echo.

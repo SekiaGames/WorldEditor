@@ -9,7 +9,9 @@
 
 ## 已确认的环境事实
 
-- `build.bat` 走 Ninja，产物在 `build\HiveWE.exe`；不调用 `vcvars64.bat`（受限环境里 reg.exe 被拦）。
+- `build.bat` 走 Ninja，产物在 `build\HiveWE.exe`；现在**优先用仓库本地 `toolchain\`**（Qt/deps/MSVC 14.44/SDK 26100/CMake/Ninja，共 3.1GB，已在 .gitignore），
+  找不到才回落 vswhere+VS2022。重置系统后不装 VS 也能编译。
+- 后台跑 `build.bat` **必须** `> build.log 2>&1`：`/showIncludes` 输出会塞满工具输出管道导致 cl/ninja 死锁（实测卡 14 分钟、CPU 0.015s）。
 - 安全策略禁用 `reg.exe`、`Add-Type`、`Assembly.LoadWithPartialName` → 助手**无法截图验证 UI**，UI 改动必须由用户确认。
 - 验证 exe 是否含新代码：用 Python 按字节搜索字符串，比 grep 可靠。
 
