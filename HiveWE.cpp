@@ -358,12 +358,23 @@ void HiveWE::export_mpq() {
 		fs::remove(archive_path, ec);
 	}
 
+	// 本工具暂不支持多语言地图：导出时直接丢弃 _Locales 目录，
+	// 让客户端统一回退到根目录的 war3map.wts（编辑器只维护那一份）。
+	auto is_excluded = [](const fs::path& relative) {
+		const auto first = relative.begin();
+		return first != relative.end() && *first == "_Locales";
+	};
+
 	// 数量必须递归统计，且与下面添加的规则一致（原来只数了顶层，和实际写入数量对不上）
 	DWORD file_count = 0;
 	for (const auto& entry : fs::recursive_directory_iterator(map->filesystem_path)) {
-		if (entry.is_regular_file()) {
-			++file_count;
+		if (!entry.is_regular_file()) {
+			continue;
 		}
+		if (is_excluded(entry.path().lexically_relative(map->filesystem_path))) {
+			continue;
+		}
+		++file_count;
 	}
 	if (file_count == 0) {
 		QMessageBox::warning(this, "Export failed", "当前地图目录里没有任何文件。");
@@ -384,7 +395,11 @@ void HiveWE::export_mpq() {
 			continue;
 		}
 		// MPQ 内部一律用 '/' 分隔
-		const std::string archived_name = entry.path().lexically_relative(map->filesystem_path).generic_string();
+		const fs::path relative = entry.path().lexically_relative(map->filesystem_path);
+		if (is_excluded(relative)) {
+			continue;
+		}
+		const std::string archived_name = relative.generic_string();
 		if (!SFileAddFileEx(handle, entry.path().c_str(), archived_name.c_str(),
 			MPQ_FILE_COMPRESS, MPQ_COMPRESSION_ZLIB, MPQ_COMPRESSION_NEXT_SAME)) {
 			ok = false;

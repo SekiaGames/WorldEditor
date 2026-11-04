@@ -17,7 +17,10 @@
 | 1.7 | Test Map 调 `x86_64\Warcraft III.exe -loadfile`|
 | 1.8 | 设置窗口 | 
 | 1.9 | 退出 |
-| 2.0 | MapInfoEditor |
+
+
+File/Game/MapInfo | 打开 MapInfoEditor 界面 |
+
 ---
 
 ## 2. 视图与渲染（View 选项卡）
@@ -112,9 +115,20 @@
 
 ---
 
-## 8. MapInfoEditor
 
-入口：**File → Game → MapInfo**。原来的 Description / Loading Screen / Options 三个按钮已合并成这一个入口，打开后在这个编辑器内部切换页签。
+# 浮窗
+
+## MapInfoEditor
+1. 多语言设计
+    1.31支持多语言，方式是：
+        客户端先找 _Locales\<自己语言>.w3mod\war3map.wts，找不到才回退到根表。
+    本工具暂时不支持多语言，方案是导出.w3x文件时忽略_Locales目录。
+
+2. Description页
+
+
+
+
 
 | # | 功能 | 结果 |
 |---|---|---|---|---|
