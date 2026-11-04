@@ -108,11 +108,13 @@
 | 7.13 | 相机（Cameras）编辑 | — | **缺失**：只有运行时相机，无编辑 UI | |
 | 7.14 | 声音（Sounds）编辑 | — | **缺失**：只有环境音播放 | |
 | 7.15 | 单位（Units）放置 | — | **缺失**：只有 `Units.cpp` 渲染，Ribbon 无单位面板 | |
-| 7.16 | 复制 / 粘贴 / 剪切 | — | **死按钮**：Ribbon 里有 Copy/Paste 按钮，剪切按钮连 `addWidget` 都被注释掉了，`HiveWE.cpp` 也没有任何连接 | |
+| 7.16 | 复制 / 粘贴 / 剪切 | — | **已随 Home 页签移除**：原先有 Copy/Paste 按钮但 `HiveWE.cpp` 没有任何连接，剪切按钮连 `addWidget` 都被注释掉了，整理页签时一并删除 | |
 
 ---
 
 ## 8. MapInfoEditor
+
+入口：**File → Game → MapInfo**。原来的 Description / Loading Screen / Options 三个按钮已合并成这一个入口，打开后在这个编辑器内部切换页签。
 
 | # | 功能 | 结果 |
 |---|---|---|---|---|

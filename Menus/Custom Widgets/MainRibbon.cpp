@@ -2,49 +2,6 @@
 
 MainRibbon::MainRibbon(QWidget* parent) : QRibbon(parent) {
 	// Home
-	QRibbonTab* home_tab = new QRibbonTab;
-
-	// Undo/Redo History
-	QRibbonSection* history_section = new QRibbonSection;
-	history_section->setText("History");
-
-	undo->setIcon(QIcon("Data/Icons/Ribbon/undo32x32.png"));
-	undo->setText("Undo");
-	history_section->addWidget(undo);
-
-	redo->setIcon(QIcon("Data/Icons/Ribbon/redo32x32.png"));
-	redo->setText("Redo");
-	history_section->addWidget(redo);
-
-	//view_history->setIcon(QIcon("Data/Icons/Ribbon/description32x32.png"));
-	//view_history->setText("View\nHistory");
-	//view_history->setEnabled(false);
-	//history_section->addWidget(view_history);
-
-	/*copy->setIcon(QIcon("Data/Icons/Ribbon/copy32x32.ico"));
-	copy->setText("Copy");
-	home_section->addWidget(copy);
-
-	paste->setIcon(QIcon("Data/Icons/Ribbon/paste32x32.ico"));
-	paste->setText("Paste");
-	home_section->addWidget(paste);
-
-	QVBoxLayout* lay = new QVBoxLayout;
-	QToolButton* but = new QToolButton;
-	QToolButton* butt = new QToolButton;
-	QToolButton* buttt = new QToolButton;
-
-	but->setIcon(QIcon("Data/Icons/Ribbon/paste32x32.ico"));
-	but->setIconSize({ 16, 16 });
-	but->setText("Cut");
-	but->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);*/
-
-	//lay->addWidget(but);
-	//lay->addWidget(butt);
-	//lay->addWidget(buttt);
-
-	//history_section->addLayout(lay);
-	home_tab->addSection(history_section);
 
 	// View
 	QRibbonTab* view_tab = new QRibbonTab;
@@ -154,39 +111,34 @@ MainRibbon::MainRibbon(QWidget* parent) : QRibbon(parent) {
 	file_map_section->addWidget(export_mpq);
 	file_tab->addSection(file_map_section);
 
-	QRibbonSection* file_test_section = new QRibbonSection;
-	file_test_section->setText("Test");
-	file_test_section->addWidget(test_map);
-	file_tab->addSection(file_test_section);
-
-	QRibbonSection* file_app_section = new QRibbonSection;
-	file_app_section->setText("Application");
-	file_app_section->addWidget(settings);
-	file_app_section->addWidget(exit);
-	file_tab->addSection(file_app_section);
-
-	// Map tab
-	QRibbonTab* map_tab = new QRibbonTab;
-
-	QRibbonSection* map_section = new QRibbonSection;
+	QRibbonSection* file_game_section = new QRibbonSection;
+	file_game_section->setText("Game");
+	file_game_section->addWidget(test_map);
 
 	map_description->setIcon(QIcon("Data/Icons/Ribbon/description32x32.png"));
-	map_description->setText("Description");
-	map_section->addWidget(map_description);
+	map_description->setText("MapInfo");
+	file_game_section->addWidget(map_description);
+	file_tab->addSection(file_game_section);
 
-	map_loading_screen->setIcon(QIcon("Data/Icons/Ribbon/loading32x32.png"));
-	map_loading_screen->setText("Loading\nScreen");
-	map_section->addWidget(map_loading_screen);
+	QRibbonSection* file_editor_section = new QRibbonSection;
+	file_editor_section->setText("Editor");
+	file_editor_section->addWidget(settings);
+	file_editor_section->addWidget(exit);
+	file_tab->addSection(file_editor_section);
 
-	map_options->setIcon(QIcon("Data/Icons/Ribbon/options32x32.png"));
-	map_options->setText("Options");
-	map_section->addWidget(map_options);
+	QRibbonSection* file_history_section = new QRibbonSection;
+	file_history_section->setText("History");
 
-	//map_size_camera_bounds->setIcon(QIcon("Data/Icons/Ribbon/sizebounds32x32.png"));
-	//map_size_camera_bounds->setText("Size&&Camera\nBounds");
-	//map_section->addWidget(map_size_camera_bounds);
+	undo->setIcon(QIcon("Data/Icons/Ribbon/undo32x32.png"));
+	undo->setText("Undo");
+	file_history_section->addWidget(undo);
 
-	map_tab->addSection(map_section);
+	redo->setIcon(QIcon("Data/Icons/Ribbon/redo32x32.png"));
+	redo->setText("Redo");
+	file_history_section->addWidget(redo);
+
+	file_tab->addSection(file_history_section);
+
 
 	// Tools tab
 	QRibbonTab* tools_tab = new QRibbonTab;
@@ -258,9 +210,7 @@ MainRibbon::MainRibbon(QWidget* parent) : QRibbon(parent) {
 
 
 	addTab(file_tab, "File");
-	addTab(home_tab, "Home");
 	addTab(view_tab, "View");
-	addTab(map_tab, "Map");
 	addTab(tools_tab, "Tools");
 	addTab(window_tab, "Window");
 

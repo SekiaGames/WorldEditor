@@ -8,7 +8,6 @@ class MainRibbon : public QRibbon {
 public:
 	QRibbonButton* undo = new QRibbonButton;
 	QRibbonButton* redo = new QRibbonButton;
-	QRibbonButton* view_history = new QRibbonButton;
 
 
 	QRibbonButton* copy = new QRibbonButton;
@@ -27,9 +26,6 @@ public:
 	QRibbonButton* reset_camera = new QRibbonButton;
 
 	QRibbonButton* map_description = new QRibbonButton;
-	QRibbonButton* map_loading_screen = new QRibbonButton;
-	QRibbonButton* map_options = new QRibbonButton;
-	QRibbonButton* map_size_camera_bounds = new QRibbonButton;
 
 	QRibbonButton* import_heightmap = new QRibbonButton;
 	QRibbonButton* change_tileset = new QRibbonButton;
