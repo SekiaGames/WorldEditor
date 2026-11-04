@@ -1,6 +1,7 @@
 # HiveWE 0.6 功能摸底测试清单
 
 用途：逐项验证 HiveWE 0.6 的功能完整度，记录「有问题 / 不可用」。
+没有实现的功能就不能修改就行了，原样读原样保存。
 
 ---
 
@@ -53,9 +54,107 @@ Flle/Editor/Exit/ 退出编辑器 |
 | 3.4 | Deformation：平滑/压平 | P1 | | |
 | 3.5 | 纹理（Texture）涂抹 | P1 | | |
 | 3.6 | Cliff 悬崖编辑 | P1 | 悬崖拼接是最容易出错的部分 | |
-| 3.7 | 水面高度与边界 | P1 | `enforce_water_height_limits` 默认 true | |
+| 3.7 | 水面高度与边界 | P1 | `enforce_water_height_limits` 默认 true，语义见 3.10.1 | |
 | 3.8 | 撤销 / 重做 | P1 | **只覆盖地形**，快捷键 Z / Y | |
 | 3.9 | 撤销分组粒度 | P2 | `new_undo_group()` 按笔画分组，检查是否一次撤销过多/过少 | |
+
+### 3.10 顶部 Ribbon：General / Cliff / Pathing（一排 6 个开关）
+
+入口：`Window → Palette → Terrain`。浮窗激活时 `TerrainPalette::event` 发 `ribbon_tab_requested`，
+`HiveWE::set_current_custom_tab`（`HiveWE.cpp:557`）在 Ribbon 里插入一个名为 `Terrain Palette` 的页签。
+
+三个分区都是 `QRibbonSection`，`QRibbonTab::addSection`（`QRibbon.cpp:125`）把它们插进**同一个横向 layout**，
+所以这一排从左到右是 2 + 1 + 3 共 6 个按钮，分区之间只有一条竖线分隔：
+
+| 顺序 | 按钮文字 | 分区 | 默认 | 对应 `TerrainBrush` 字段 |
+|---|---|---|---|---|
+| 1 | Enforce Water Height Limit | General | 开 | `enforce_water_height_limits` |
+| 2 | Update Doodad Z | General | 开 | `change_doodad_heights` |
+| 3 | Relative Height | Cliff | **灰（点不动）** | `relative_cliff_heights`（无人读） |
+| 4 | Cliff Pathing | Pathing | 开 | `apply_cliff_pathing` |
+| 5 | Tile Pathing | Pathing | 开 | `apply_tile_pathing` |
+| 6 | Water Pathing | Pathing | 开 | `apply_water_pathing` |
+
+代码位置：按钮构造与连接 `TerrainPalette.cpp:66-131`；生效点全在 `TerrainBrush::apply()` / `apply_end()`。
+
+#### 3.10.1 Enforce Water Height Limit —— 强制水面高度上限
+
+- 生效位置：`TerrainBrush.cpp:258-262`，只在**悬崖操作**分支里（Cliff 面板的 Lower 2 / Lower 1 / Level / Raise 1 / Raise 2）。
+- 判定：该格本来有水（`corner.water`），且按新层高算出来的地面已经**高过**水面
+  （`final_water_height() < final_ground_height()`，前者 = `water_height + water_offset`，后者 = `height + layer_height - 2`）
+  → 把 `corner.water` 置 false，这格的水被删掉。
+- 关掉的后果：水记录留着、水面沉到地面以下（渲染上看不见水），但该格仍然算水 → 寻路照旧写「水面」相关位（见 3.10.6），
+  `war3map.w3e` 的 0x40 位也照旧保存。表现就是「看着是干地，实际走不进去」。
+- 它**不**调整水位（`water_height` 不动），也不碰 `water_offset`；浅水/深水两个操作和 Ramp 完全不受它影响。
+- 反方向不会自动补水：地面压低到水面以下时，水位仍来自 w3e 里原有的 `water_height`。
+
+#### 3.10.2 Update Doodad Z —— 把可破坏物贴回地面
+
+- 生效位置：`TerrainBrush.cpp:352-366`，前置条件是 `apply_height || apply_cliff`（Deformation 或 Cliff 勾选着）。
+- 行为：遍历 `map->doodads.doodads`，凡是 (x, y) 落在笔刷方块内（`area.contains`，单位是格子/128，不是世界坐标）
+  → `position.z = terrain.interpolated_height(x, y)`（对 `final_ground_height()` 做双线性插值）+ `update()` 重建矩阵；
+  旧值/新值分别记进 `pre_change_doodads` / `post_change_doodads`，`apply_end()` 包成 `DoodadStateAction` 供撤销。
+- 关掉的后果：地形抬升后树木石头原地不动 → 悬空；压低后 → 埋进地里。
+- **单位不受这个开关控制**：`map->units.update_area(updated_area)`（`TerrainBrush.cpp:365`、`Units.cpp:220`）无条件执行，
+  单位始终跟着地面走，这个开关只管可破坏物。
+- 只处理笔刷方块内：`check_nearby()`（`TerrainBrush.cpp:15-38`）会把周围层高差 >2 的格子逐级顺平，
+  这些修正在 `updated_area` 里但常在 `area` 之外，落在上面的可破坏物不会被重新贴地 → **悬崖边缘容易出现悬空的树**。
+
+#### 3.10.3 Relative Height —— 相对高度（死按钮）
+
+- `setEnabled(false)`（`TerrainPalette.cpp:92`），永远灰；`relative_cliff_heights` 除 `TerrainPalette.cpp:125` 赋值外，
+  `TerrainBrush` 里**没有任何读取点** → 纯占位，点了也不会有反应。原意应是「抬降悬崖时按相对高度而非绝对值」。
+
+#### 3.10.4 Cliff Pathing —— 悬崖寻路
+
+- 生效位置：`TerrainBrush.cpp:324-326`（在每笔都会跑的寻路重算里）。
+- 行为：该角的 4×4 子格先清 `0x02|0x04|0x08|0x40`；若该角是悬崖（`cliff` 或 `romp`）且不是坡道入口
+  （`is_corner_ramp_entrance`）→ 写 `0b1010` = 不可行走(0x02) + 不可建造(0x08)。
+- 关掉的后果：悬崖格不再写不可行走，悬崖两侧在 `war3map.wpm` 上连通（进游戏单位会往悬崖里挤）；
+  坡道入口本就被排除，关掉后坡道行为不变。
+
+#### 3.10.5 Tile Pathing —— 地表寻路
+
+- 生效位置：`TerrainBrush.cpp:330-333`，`mask |= pathing_options[tileset_ids[ground_texture]].mask()`。
+- 每个 tile 的「不可行走 / 不可飞行 / 不可建造」来自 `Tools → Change Tile Pathing`（`TilePather`），
+  存在内存 `Terrain::pathing_options`（`Terrain.h:90`）。
+- **注意**：这张表全工程没有任何加载/保存代码，只在 `TilePather::save_tiles()` 里写回内存（`TilePather.cpp:82-90`），
+  重开地图就全丢；默认全 false → **没先在 Change Tile Pathing 里勾过任何 tile，这个开关等于无效**。
+- 笔刷只取 `mask()`，不认 `Operation`（replace / add / remove）→ 在 Change Tile Pathing 里选 remove 也不会让笔刷去清位。
+
+#### 3.10.6 Water Pathing —— 水面寻路
+
+- 生效位置：`TerrainBrush.cpp:335-342`。
+- 行为：非悬崖（或坡道）格且有水 → `mask |= 0x40`；再按水深叠加：
+  - 水深 > 地面 + 0.40 → 追加 `0b1010`（不可行走 + 不可建造，深水）
+  - 水深 ∈ (地面, 地面+0.40] → 追加 `0b1000`（只不可建造，可涉水）
+- 关掉的后果：水面格不写 0x40、也不写深水禁行 → 单位可以直接走进深水区。
+- 0x40 是写进 `war3map.wpm` 的一个位，HiveWE 自己的寻路叠加显示只画 0x02/0x04/0x08 三通道
+  （`Data/Shaders/terrain.fs:98`），所以看不到「水」的颜色；该位在客户端里的实际作用**待验证（P2）**。
+
+#### 3.10.7 三个 pathing 开关的共同坑（重要）
+
+`apply()` 里的寻路重算**不管三个开关怎么设**，都会先把 `updated_area` 内的 `0x4E`（即 0x02|0x04|0x08|0x40）清成 0
+（`TerrainBrush.cpp:321`），再按开关把位加回去。于是：
+
+- 开关 = 关，不是「保持原样」，而是「这片区域这些位被擦掉」；
+- 只刷纹理（Texture 勾上、Deformation/Cliff 都关）**也会**触发这段重算（`updated_area` = 笔刷方块外扩 1 格）
+  → 用 Pathing Palette 手绘的不可行走 / 不可建造会被地形笔刷擦掉。这是最容易踩的坑。
+
+#### 3.10.8 其他已知小问题
+
+- 信号重复连接：`enforce_water_height_limit` 连了两次（`TerrainPalette.cpp:123` / `127`），`cliff_group` 也连了两次（`151` / `164`）；
+  lambda 幂等，暂无可见影响，属冗余。
+- `apply_end()` 里只要 `change_doodad_heights` 为真就一定会 `add_undo_action`（`TerrainBrush.cpp:383-392`），
+  即使一个可破坏物都没动 → 撤销栈里会多出空步。
+- 开关状态不落盘：存在 `TerrainPalette` 自己的 `TerrainBrush brush` 成员里，浮窗是 `WA_DeleteOnClose`，
+  关掉再打开就回到默认（三个 pathing + 两个 General 全开）。
+
+#### 3.10.9 建议的验证动作
+
+1. 造一格水 → 用 Cliff / Level 抬到水面以上：开关开 → 水消失且该格可走；开关关 → 看不见水但 View→Pathing 下仍是红色禁行。
+2. 悬崖边缘放几个树/石头 → 抬悬崖：检查边缘顺平区域的可破坏物是否悬空（预期会，见 3.10.2 最后一条）。
+3. 用 Pathing Palette 手绘一片不可行走 → 再用纹理笔刷扫过：检查手绘是否被擦掉（预期会，见 3.10.7）。
 
 ---
 
@@ -63,12 +162,89 @@ Flle/Editor/Exit/ 退出编辑器 |
 
 | # | 功能 | 风险 | 备注 | 结果 |
 |---|---|---|---|---|
-| 4.1 | 列表加载与搜索 | P1 | 依赖 SLK 数据解析 | |
+| 4.1 | 列表加载与搜索 | P1 | 依赖 SLK 数据解析；搜索框 `search` 在 `.ui` 里就是 `enabled=false`，**搜索不可用** | |
 | 4.2 | 放置装饰物 | P1 | 写入 `.doo` | |
-| 4.3 | 删除/擦除 | P1 | | |
-| 4.4 | 笔刷形状与大小 | P2 | | |
-| 4.5 | 选择与属性编辑（朝向/缩放/生命） | P1 | 界面上没有属性面板，需确认是否只能放置 | |
+| 4.3 | 删除/擦除 | P1 | 走选择模式 + Delete，见 4.7.1 | |
+| 4.4 | 笔刷形状与大小 | P2 | **不可用**：`brushGroupBox` 的 `maximumSize.height=0`（整组被压成 0 高），且 `DoodadPalette.cpp` 里没有任何 `brushSize*` 的 connect。占地由模型的 pathing 贴图尺寸决定，见 4.7.6 | |
+| 4.5 | 选择与属性编辑（朝向/缩放/生命） | P1 | 界面上没有属性面板，需确认是否只能放置。选择模式本身可用，见 4.7.1 | |
 | 4.6 | 装饰物的掉落物表 | P1 | 生成脚本时会引用 `UnitItemDrops_*` | |
+
+### 4.7 顶部 Ribbon：Selection Mode / Placement / Variations / Flags / Pathing
+
+入口：`Window → Palette → Doodads`。浮窗激活时 `DoodadPalette::event` 发
+`ribbon_tab_requested(ribbon_tab, "Doodad Palette")`（`DoodadPalette.cpp:168`），Ribbon 里出现同名页签。
+
+5 个 `QRibbonSection` 依次 `addSection`（`DoodadPalette.cpp:133-137`），横向排成一行，顺序即从左到右：
+
+| 顺序 | 分区标题 | 内容 | 默认 |
+|---|---|---|---|
+| 1 | **（无标题）** | `Selection Mode` 开关按钮 | 关 |
+| 2 | Placement | `Random Rotation`、`Random Scale` | 都开 |
+| 3 | Variations | `Random Variation` + 动态生成的变体按钮（每行 3 个） | 开，变体全选 |
+| 4 | Flags | 三个单选：Invisible non solid / Visible non solid / Visible solid | Visible solid |
+| 5 | Pathing | 选中模型自带 pathing 贴图的预览图（没有则整段隐藏） | — |
+
+#### 4.7.1 Selection Mode（选择模式）
+
+- checkable 按钮，快捷键 **Space**（`setShortCut(Qt::Key_Space, { this, parent })`，同时挂在浮窗和主窗口上，
+  浮窗激活时启用、切到别的面板时禁用）。
+- 点击 → `brush.switch_mode()`（`Brush.cpp:104`），在 `placement` ↔ `selection` 之间翻转。进入选择模式后：
+  - 左键拖框 → `map->doodads.query_area` 框选一片（`DoodadBrush.cpp:184-187`）
+  - 拖框时按住 Ctrl → 已选对象朝鼠标方向原地旋转（`atan2`，181 行）
+  - 小键盘 1-9 → 已选对象按 0.25 格平移（97-112 行）
+  - PageUp/PageDown → 改 `scale.z` 0.1；Ctrl+PageUp/PageDown → 改 `position.z` 0.1（114-151 行）
+  - Delete / 复制 / 剪切 / 粘贴全部走 Brush 基类的 clipboard（`delete_selection` / `copy_selection` / `place_clipboard`）
+- 在列表里点任何一个模型会强制 `selection_mode->setChecked(false)`（`DoodadPalette.cpp:219`）→ 自动退回放置模式。
+- **疑似缺陷（状态脱钩）**：`deactivate()` 只 `clear_selection()`、不复位 `mode`（`DoodadPalette.cpp:252-257`），
+  所以「选择模式 → 切到 Terrain → 切回来」按钮显示未按下、实际仍在 selection 模式。
+  其它改 `mode` 的路径同样不回写按钮：`Ctrl+V` 会临时切到 `pasting`（`Brush.cpp:135-138`），Esc 只清选择不改模式（117-119 行）。
+
+#### 4.7.2 Placement（放置）
+
+- `Random Rotation`（`random_rotation`）：每次放置后把 `rotation` 随机到 `[0, 2π)`（`DoodadBrush.cpp:300-303`）。
+  **只在 `free_rotation` 为真时生效**：`free_rotation` = 「有 pathing 贴图且贴图是正方形」或「没有 pathing 贴图」
+  且 slk 的 `fixedRot < 0`（431-437 行）。所以带非方形 pathing 贴图的树/岩石，这个开关等于无效。
+- `Random Scale`（`random_scale`）：每次放置后在 slk 的 `minScale`~`maxScale` 之间随机（309-312 行）。
+- 关掉 Random Rotation 时，`rotation` 取 slk 的 `fixedRot`（-1 视为 270°，419-423 行）。
+
+#### 4.7.3 Variations（变体）
+
+- `Random Variation`（`random_variation`，默认开）：每次放置从「勾选着的变体集合」里随机取一个
+  （`set_random_variation` → `get_random_variation`）。
+- 右边那组数字按钮是**动态生成**的：选中模型时按 slk 的 `numVar` 重建（`selection_changed`，224-240 行），
+  每行 3 个，默认全勾；取消勾选 = 从 `possible_variations` 里移除。
+- 踩点：全部不勾时 `possible_variations` 为空 → `get_random_variation()` 直接返回 0（`DoodadBrush.cpp:25-27`）
+  → 仍然会放 0 号变体，不报错也不会「不放」。
+
+#### 4.7.4 Flags（可见性/碰撞标记）
+
+- 三个 `QRadioButton` 直接改 `brush.state`，只影响**之后新放的**可破坏物；放置时写进 `doodad.state`
+  （`DoodadBrush::apply`，286 行），最终落在 `.doo` 每条记录的那个 flags 字节（`Doodads.cpp:98`）。
+- 枚举顺序与字节值一致：`invisible_non_solid=0` / `visible_non_solid=1` / `visible_solid=2`（`Doodads.h:22-25`）。
+  HiveWE 自己**不解释**这个字节（渲染完全不看它），效果要到游戏里才看得到。
+- 它们没放进 `QButtonGroup`，靠同父控件的 autoExclusive 互斥；选中已有对象时也不会同步显示该对象的 state。
+
+#### 4.7.5 Pathing（寻路贴图预览）
+
+- 只是一个 `AspectRatioPixmapLabel`（`DoodadPalette.cpp:98`），把选中模型的 `pathTex` 贴图转成 QImage 显示（244-246 行）。
+- 没有 pathing 贴图的模型 → `pathing_section->setHidden(true)`，整段消失（248 行）。
+- 初始还没选中任何模型时这一格是**空框**（构造时没有 setHidden(true)）。
+
+#### 4.7.6 其他观测
+
+- 这一排**没有笔刷大小/形状**：放置占地由 `pathTex` 贴图尺寸决定（`set_size(max(w, h))`，431 行）；
+  没有 pathing 贴图时 `free_placement = true`，直接按鼠标世界坐标放（277-281 行）。
+- 分区 1 没有 `setText()`，所以它那个 caption 是空的（`QRibbonSection` 把 caption 放在按钮下方，`QRibbon.cpp:89`），
+  和另外四个带标题的分区并排时看起来缺一块。
+- 快捷键是 `QShortcut(sequence, attach_to)` 挂在两个 widget 上，`activatedAmbiguously` 只 `printf("kut2\n")`
+  （`QRibbon.cpp:20-24`），焦点候选冲突时控制台会出现这行垃圾输出。
+
+#### 4.7.7 建议验证动作
+
+1. 选一棵树（有 pathing 贴图）→ 看 Pathing 分区是否出现贴图；换成没有 pathTex 的石块 → 分区应消失。
+2. 勾掉所有变体 → 连放 3 个 → 检查是否都落在 0 号变体。
+3. Space 切到选择模式并框选 → 切到 Terrain Palette 再切回来 → 检查按钮显示与实际模式是否一致（预期不一致）。
+4. 三个 Flags 各放一个 → 保存后用二进制查看 `.doo` 的 state 字节是否为 0/1/2。
 
 ---
 
@@ -90,6 +266,8 @@ Flle/Editor/Exit/ 退出编辑器 |
 | 6.1 | Import Heightmap | P1 | 读取图片写高度 | |
 | 6.2 | Change Tileset | P0 | 换 tileset 会重写地形纹理索引，最容易整图损坏 | |
 | 6.3 | Change Tile Pathing | P1 | `TilePather`，含「追溯应用」选项 | |
+    是否可行走、是否可飞行、是否可建筑，这应该是3个需要独立绘制的遮罩。
+    这里可能是指的是用地表笔刷额外绘制的逻辑区域。
 | 6.4 | Change Game Folder | P1 | 切换魔兽安装目录，影响 CASC/MPQ 读取 | |
 | 6.5 | Map Size / Camera Bounds | — | **缺失**：Ribbon 里相关按钮被注释掉，README 也把它列为「可贡献功能」 | |
 
@@ -149,85 +327,44 @@ Flle/Editor/Exit/ 退出编辑器 |
     Loading Screen Subtitle | 载入画面副标题
     Loading Screen Text | 载入画面正文
 
-### 8.3 Options 页
+4. Options 页
 
-开关类（写 w3i 头部 flags 位，`Base/MapInfo.cpp:204-220`）：
+    Melee Map | 对战地图标记，影响客户端对AI、数据是否采用对战版本。勾选后不能有自定义触发器、自定义单位。
 
-| # | 选项 | 中文含义 | flag | 注意 |
-|---|---|---|---|---|
-| 8.3.1 | Melee Map | 对战地图标记？。影响 `Game Data Set` 的默认取值，客户端按对战规则处理玩家/队伍与比赛设置 | `0x0004` | 勾上后官方编辑器会接管玩家/队伍页，本工具没有对应 UI，只能改标记本身 |
+    缩略地图
+    Hide minimap in preview screens | 在预览/房间界面不显示小地图缩略图
+    Masked areas are partially visible | 未探索区域不是纯黑
 
-Hide minimap in preview screens | 在预览/房间界面不显示小地图缩略图
+    水波
+    Show water waves on cliff shores | 悬崖岸边显示水波 | `0x0800` | 需要图里有悬崖贴水的地形才看得到 |
+    Show water waves on rolling shores | 缓坡（非悬崖）岸边显示水波 | `0x1000` | 同上，两者互相独立 |
 
+    商店
+    Use item classification system | 启用物品分类系统（1.30+ 的物品类别：永久/充能/神器…），影响商店分类与物品提示。
 
-| 8.3.3 | Masked areas are partially visible | 未探索（黑幕遮罩）区域半透明可见，能看出地形轮廓，而不是纯黑 | `0x0010` | 客户端 fog 行为，进游戏按 `M`（小地图）/移镜头对比 |
-| 8.3.4 | Show water waves on cliff shores | 悬崖岸边显示水波 | `0x0800` | 需要图里有悬崖贴水的地形才看得到 |
-| 8.3.5 | Show water waves on rolling shores | 缓坡（非悬崖）岸边显示水波 | `0x1000` | 同上，两者互相独立 |
-| 8.3.6 | Use item classification system | 启用物品分类系统（1.30+ 的物品类别：永久/充能/神器…），影响商店分类与物品提示 | `0x8000` | 老图默认关闭；打开后物品栏分类行为会变，属行为变更，测前备份 |
+    雾
+    Use Terrain Fog（组框标题） | 激活雾设置
+    Style | 雾的衰减方式：`Linear` 线性、`Exponential 1` 指数雾 1、`Exponential 2` 指数雾 2（衰减更快） | 
+    Z Start | 雾开始出现的距离地面的高度
+    Z End | 雾完全遮蔽的距离地面的高度
+    Density | 雾浓度，默认0。
+    Color | 雾颜色（色板按钮）
 
-雾（GroupBox，可勾选，勾选状态本身不落盘）：
+    环境类
+    Use Global Weather + 下拉 | 全局天气
+    Custom Sound Environment + 下拉 | 自定义环境音
+    Custom Light Environment + 下拉 | 自定义光照环境
+    Use Water Tinting Color + 色板 | 全局水面染色
 
-| # | 控件 | 中文含义 | 字段 | 注意 |
-|---|---|---|---|---|
-| 8.3.7 | Use Terrain Fog（组框标题） | 「启用地形雾」。**这个勾选框不参与保存** | — | `setChecked(fog_style != 0)`（`:59`）但 `save()` 无条件写 `fogStyle` 索引（`:154`）→ Linear(0) 的图显示为"未勾选"；取消勾选也关不掉雾（w3i 的 `fog_style` 只有 3 种雾型，没有"关闭"值，要关只能把 Density 设 0） |
-| 8.3.8 | Style | 雾的衰减方式：`Linear` 线性、`Exponential 1` 指数雾 1、`Exponential 2` 指数雾 2（指数型随距离衰减更快、远处更快糊成一片） | `fog_style` 0/1/2 | 索引直接写回，0 与"未启用"在数据上无法区分 |
-| 8.3.9 | Z Start | 雾开始出现的**高度**（世界 Z 轴，不是与相机的距离） | `fog_start_z_height` | 单位≈地形高度；相机贴地时调这个最直观 |
-| 8.3.10 | Z End | 雾完全遮蔽的高度 | `fog_end_z_height` | 注意是"高度区间"，不是距离区间，跟大多数引擎的 fog near/far 语义不同 |
-| 8.3.11 | Density | 雾浓度 | `fog_density` | 指数雾下作用更明显；Linear 雾下几乎只受 Z Start/End 控制 |
-| 8.3.12 | Color | 雾颜色（色板按钮）；w3i 里是 4 字节 RGBA，UI 只给 RGB | `fog_color` | alpha 由 `ColorButton::get_glm_color()` 决定，客户端基本不用它 |
+    Game Data Set | 用哪套平衡数据：
+        `Default (Map melee status)`=按 Melee Map 标记决定 / 
+        `Custom (TFT 1.02, RoC 1.01)`=固定老版数据 / 
+        `Melee (Latest Patch)`=最新对战平衡
 
-环境类：
+5. Preferences 页
 
-| # | 控件 | 中文含义 | 字段 | 注意 |
-|---|---|---|---|---|
-| 8.3.13 | Use Global Weather + 下拉 | 全局天气（雨、雪等）。列表来自 `TerrainArt/Weather.slk`，数据是 4 字符 `effectID`；`0` = 无天气 | `weather_id` | 勾选时取下拉的 `currentData()`，未勾选写 0；取消勾选再勾选会丢原来的天气 |
-| 8.3.14 | Custom Sound Environment + 下拉 | 自定义环境音（如 Dungeon/Forest 那套背景声）。列表来自 `UI/SoundInfo/EnvironmentSounds.slk` 的 `EnvironmentType` | `custom_sound_environment`（字符串，空=默认） | 要戴耳机在游戏里听；改了不一定立刻听得出，建议换极端值（如 Water/Underwater）对比 |
-| 8.3.15 | Custom Light Environment + 下拉 | 自定义光照环境：借用**别的 tileset** 的光照参数（列表来自 `WorldEditData.txt` 的 `TileSets` 段，存的是 tileset 首字母） | `custom_light_tileset`（1 字节） | 这是"用 A 地形的光打 B 地形"，不改地形纹理，风险低 |
-| 8.3.16 | Use Water Tinting Color + 色板 | 全局水面染色 | `water_tinting`（`0x10000`）+ `water_color` | 关掉复选框 `water_color` 仍会被写入，只是 flag 不生效 |
-| 8.3.17 | Game Data Set | 用哪套平衡数据：`Default (Map melee status)`=按 Melee Map 标记决定 / `Custom (TFT 1.02, RoC 1.01)`=固定老版数据 / `Melee (Latest Patch)`=最新对战平衡 | `game_data_set` 0/1/2 | **最容易被忽略但影响最大**：同一张图换这里，单位数值会整片变化 |
-
-- 页面顺序：六个开关 → 雾组框 → 天气/音效/光照/水面/Game Data Set。
-- 本页所有控件都写 w3i，保存即生效；不生效只可能是没保存或客户端读旧包。
-
-### 8.4 Preferences 页
-
-- 实测只有一个居中的 `?` 占位 QLabel（`MapInfoEditor.ui:476-493`），**没有任何输入控件**，属未实现。
-- 对应官方编辑器的过场/玩家与队伍一类设置，HiveWE 把这些数据读进了结构体但不给 UI（见 8.5）。
-
-| # | 功能 | 结果 |
-|---|---|---|
-| 8.4.1 | Preferences 页存在但为空（无控件、无保存逻辑） | 未实现 |
-
-### 8.5 有数据但没开放 UI 的 w3i 字段
-
-这些字段**读入后原样写回**，用本工具保存不会丢；只是改不了。
-
-| 字段 | 含义 |
-|---|---|
-| `prologue_screen_model` / `prologue_text` / `prologue_title` / `prologue_subtitle` | 过场（Prologue）画面与字幕 |
-| `fixed_player_settings`（`0x0020`） | 固定玩家设置（进游戏不能改玩家槽位） |
-| `custom_forces`（`0x0040`） | 自定义队伍（Forces） |
-| `custom_techtree`（`0x0080`）/ `custom_abilities`（`0x0100`）/ `custom_upgrades`（`0x0200`） | 自定义科技树 / 技能 / 升级 |
-| `modif_ally_priorities`（`0x0002`） | 允许修改结盟优先级 |
-| `unknown` `0x0008`、`unknown2` `0x0400`、`unknown3` `0x2000`、`unknown4` `0x4000` | 用途未知的位，读写都保留 |
-| `players[]` / `forces[]` | 玩家（名称/种族/类型/起始点）与队伍（结盟、共享视野、共享控制） |
-| `available_upgrades` / `available_tech` | 科技可用性 |
-| `random_unit_tables` / `random_item_tables` | 随机单位表 / 随机物品表 |
-| `camera_left_bottom` … `camera_complements`、`playable_width/height` | 相机边界与可玩区域（README 把 Map Size / Camera Bounds 列为缺失功能，见 6.5） |
-
-### 8.6 本页疑似缺陷汇总（待确认，均未修改）
-
-| # | 现象 | 依据 |
-|---|---|---|
-| A | 战役载入图下拉每项重复两次；从后半段选中会写出越界索引 | `MapInfoEditor.cpp:20-25` 与 `31-36` 重复 |
-| B | 雾的勾选框只是装饰：Linear 雾显示"未勾选"，取消勾选也关不掉雾 | `:59` vs `:154` |
-| C | w3i 存字面量时文本改动被静默丢弃，只在 stdout 打印 `Invalid TRIGSTR set` | `TriggerStrings.cpp:101-113` |
-| D | 新建字符串可能撞号：`next_id` 取的是"行内空格偏移"而不是序号（`STRING 003` → 7），`Test Map` 已用到 `TRIGSTR_046` | `TriggerStrings.cpp:44-50` |
-| E | "去前导零"循环判断 `final_key.front() == '0'`，首字符是 `S`，永远不执行，写出的仍是 `STRING 001`（与 `_Locales` 里 `STRING 0` 风格不一致） | `TriggerStrings.cpp:66-69` |
-| F | 导入载入图下拉恒为空（`Imports::load()` 无调用点，`war3map.imp` 从不加载）；选中该项会把 `loading_screen_model` 写成空串 | `MapInfoEditor.cpp:27-29, 131`；`Base/Map.cpp` 无 `imports.load` |
-| G | 打开 RoC/TFT（v18/v25）老图时 `game_version_*` 与 `lua` 不会被赋值，保存按 v28 写出这 5 个字段 → 可能写出垃圾值（1.31 图是 v28，不受影响） | `MapInfo.cpp:19-24, 87-89, 182-188, 249` |
-
----
+- 未实现。
+- 对应官方编辑器的过场/玩家与队伍一类设置。
 
 ## 9. 设置（Settings）
 
@@ -259,32 +396,6 @@ Hide minimap in preview screens | 在预览/房间界面不显示小地图缩略
 
 ---
 
-## 11. 已知缺陷（本次排查已确认）
-
-| # | 缺陷 | 影响 | 状态 |
-|---|---|---|---|
-| 1 | **脚本生成器系统性残缺**：`CreateDestructables`/`CreateItems` 生成为空函数、`.doo` 字段读取错位（生成出 `SetHeroAgi(u, 1690254504)`）、`SetTeams` 与官方编辑器不一致 | 任何走「重新生成脚本」的导出，地图进游戏立即判负 | 已改为「触发器没改过就保留原始 `war3map.j`」（`f5e09aa`）；**改过触发器后的导出仍未验证** |
-| 2 | `.doo` 解析字段错位 | 单位属性、掉落表可能被读成垃圾值 | 未修，只做了规避 |
-| 3 | 物理碰撞线框默认渲染，画面一层绿线 | 视觉干扰 | 已挂到 Debug 开关，默认关闭 |
-| 4 | Export MPQ 未检查 `SFileCreateArchive` 返回值，句柄未初始化 | 导出直接闪退 | 已修（`efecc98`） |
-| 5 | 1.31 经典客户端 `.build.info` 在安装根目录 | 打开游戏数据失败退出 | 已加回退（`f5e09aa` 之前的提交） |
-| 6 | 官方 0.6 用 Qt 5.12.3，本仓库用 5.15.2 | 控件样式可能有细微差异 | 已知差异，不修 |
-
----
-
-## 12. 建议测试顺序
-
-1. **闭环**（第 0 节）——如果 0.4 不通过，后面的模块测试都没有意义
-2. **地形**（第 3 节）——最容易验证，且是所有编辑的基础
-3. **装饰物 / 寻路**（4、5 节）——都写二进制，出错会体现在导出物上
-4. **地图信息 / 导入管理器**（8、7.1-7.4 节）——同样是写二进制
-5. **触发器**（7.5-7.11 节）——**放最后**，因为生成器已知不可靠，先用「只读」方式验证能不能正确加载/显示，再决定要不要动
-6. **工具类**（6 节）——`Change Tileset` 会整图重写，务必在副本上做
-
-每测完一组，把异常记到「结果」列，附上具体的输入与现象。二进制格式类问题往往表现为「导出后进游戏某处异常」，而不是编辑器里报错，所以**每组测完都要导出一份进客户端验证**。
-
----
-
 # 附录 A：地图目录里每个文件是什么（样本 `Data/Maps/(2)BootyBay`）
 
 样本概况：地形 193×97 格、格式版本 28（1.31）、tileset `L`（Lordaeron 夏）、6 种地面纹理 + 2 种悬崖纹理；顶层 14 个文件 + `_Locales` 下 9 份语言表。
@@ -293,20 +404,34 @@ Hide minimap in preview screens | 在预览/房间界面不显示小地图缩略
 
 | 文件 | 大小 | 是什么 | 本工具读写 | 注意 |
 |---|---|---|---|---|
-| `war3map.w3e` | 131,116 | **地形本体**：地图尺寸（193×97）、tileset、每格地面高度、水面高度与边界、地面/悬崖纹理索引、层高 | **读写**（`Terrain.cpp:329` / `Map.cpp:108`） | 每格 7 字节；改地形必写它，写坏=整图废 |
-| `war3map.w3i` | 319 | **地图信息**：名称/作者/描述/建议人数（TRIGSTR 键）、相机边界、可玩区域、flags 位、载入图、Game Data Set、雾、天气、玩家/队伍/科技 | **读写**（`MapInfo.cpp:318` / `Map.cpp:105`） | 第 8 节整节都作用于它 |
-| `war3map.wpm` | 294,928 | **寻路图**：格数 192×96、每格 4 字节的通行/建造位（不可走、不可建、空中/地面/两栖等） | **读写**（`PathingMap.cpp:59` / `Map.cpp:117`） | 编辑器会按装饰物再叠加一次 pathing（`Map.cpp:141-146`） |
-| `war3map.doo` | 100,574 | **装饰物/可破坏物实例**：模型、坐标、朝向、缩放、生命、掉落表、可见性 | **读写**（`Doodads.cpp:123` / `Map.cpp:124`） | 已知字段错位缺陷（第 11 节 #2） |
-| `war3mapUnits.doo` | 6,935 | **单位/物品实例**：类型、所属玩家、坐标、朝向、生命/魔法、掉落、自定义属性 | **读写**（`Units.cpp:197` / `Map.cpp:159`） | 同上；本工具没有单位放置 UI，只能读进来渲染 |
-| `war3map.wtg` | 597 | **GUI 触发器树**：触发器/事件/条件/动作，用变量 ID 与分类 ID 编码，不含可读代码 | **读写**（`Triggers.cpp:513` / `Map.cpp:89`） | 也是"地图是否加密"的判据：缺它即视为 protected（`Map.cpp:101`） |
-| `war3map.wct` | 17 | **触发器自定义文本**：每个触发器附带的 JASS 片段/注释 | **读写**（`Triggers.cpp:558` / `Map.cpp:94`） | 本样本几乎为空 |
+| `war3map.w3e` | **地形本体**：地图尺寸、tileset、每格地面高度、水面高度与边界、地面/悬崖纹理索引、层高 | 每格 7 字节
+
+| `war3map.w3i` | **地图信息**：名称/作者/描述/建议人数、相机边界、可玩区域、flags 位、载入图、Game Data Set、雾、天气、玩家/队伍/科技
+
+| `war3map.wpm` | **寻路图**：格数、每格 4 字节的通行/建造位（不可走、不可建、空中/地面/两栖等） | 编辑器会按装饰物再叠加一次 pathing
+
+| `war3map.doo` | **装饰物/可破坏物实例**：模型、坐标、朝向、缩放、生命、掉落表、可见性
+
+| `war3mapUnits.doo` | **单位/物品实例**：类型、所属玩家、坐标、朝向、生命/魔法、掉落、自定义属性 | **读写**（`Units.cpp:197` / `Map.cpp:159`） | 同上；本工具没有单位放置 UI，只能读进来渲染 |
+
+| `war3map.wtg` | 597 | **GUI 触发器树**：触发器/事件/条件/动作，用变量 ID 与分类 ID 编码，不含可读代码 | 也是"地图是否加密"的判据：缺它即视为 protected
+
+| `war3map.wct` | 17 | **触发器自定义文本**：每个触发器附带的 JASS 片段/注释
+
 | `war3map.j` | 30,538 | **编译后的 JASS 脚本**，客户端真正执行的就是它 | **只读 + 条件写回**（`Triggers.cpp:125` / `:1384`） | 触发器没改过就原样保留（`f5e09aa`）；改过会重新生成 → 第 11 节 #1 的风险区 |
-| `war3map.wts` | 390 | **触发字符串表**：`STRING nnn { ... }`，w3i 与触发器里只存 `TRIGSTR_nnn` 键 | **读写**（`TriggerStrings.cpp:88` / `Map.cpp:83`） | 地图名/描述/载入文本都在这里，见 8.0 |
+
+| `war3map.wts` | 390 | **触发字符串表**：`STRING nnn { ... }`，w3i 与触发器里只存 `TRIGSTR_nnn` 键 | 地图名/描述/载入文本都在这里
+
 | `war3map.imp` | 338 | **导入文件清单**：版本 1 + 10 条记录，每条 = 1 字节（是否自定义路径）+ 路径；本样本 10 条全是 `_Locales/*/war3map.wts` | **不读不写**（`Imports::load()` 无调用点，`Map::save()` 也不调 `Imports::save()`） | 见 A.3：`_Locales` 被导出丢弃后，清单里还剩 10 条指向不存在文件的记录 |
+
 | `war3map.mmp` | 168 | **小地图图标**：版本 0 + 10 个图标（商店、金矿、传送门等的位置与类型） | **不读不写**（全工程 0 引用） | 图标数据不会被本工具改动，也不会被用来渲染 |
+
 | `war3map.shd` | 294,912 | **静态阴影图**：逐格记录是否被静态阴影覆盖，WE 保存时重算 | **不读不写**（`ShadowMap` 类只有 `load`/`save`，**没有任何调用点**，是死代码） | 改地形后阴影不会跟着更新 |
+
 | `war3mapMap.blp` | 15,083 | **小地图缩略图**（BLP 图片），房间预览与大/小地图用它 | **不读不写**（全工程 0 引用；编辑器的小地图是运行时用 w3e 现画的） | 改地形后缩略图仍是旧的 → 和 8.3.2「Hide minimap in preview screens」一起测容易误判 |
+
 | `war3map.w3r` | 8 | **区域（Regions）**：版本 5 + 数量 0，本样本为空 | **只读**（`Map.cpp:169`，`Regions` 无编辑 UI，见 7.12） | 空文件也要保留，删了客户端不一定报错但 WE 会当新图处理 |
+
 | `war3map.w3c` | 8 | **相机（Cameras）**：版本 0 + 数量 0，本样本为空 | **只读**（`Map.cpp:175`，`GameCameras` 无编辑 UI，见 7.13） | 同上 |
 | `_Locales/<lang>.w3mod/war3map.wts` ×9 | 374–469 | **分语言的字符串表**：deDE/esES/frFR/itIT/koKR/plPL/ruRU/zhCN/zhTW | **不读**；导出时整个 `_Locales` 目录被丢弃（`HiveWE.cpp:360-367`） | 见 8.0.1；`Save Map` 会原样保留它们 |
 
