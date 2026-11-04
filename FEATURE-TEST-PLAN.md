@@ -1,57 +1,39 @@
 # HiveWE 0.6 功能摸底测试清单
 
-用途：逐项验证 HiveWE 0.6 的功能完整度，记录「能用 / 有问题 / 不可用」。
-
-- 依据：Ribbon 工具栏与 `.ui` 文件里的实际入口 + 代码里的注释与实现情况
-- 风险等级：**P0** 会崩溃或丢数据 / **P1** 结果错误 / **P2** 体验或缺失
-- 「结果」一栏留空，测试时填 `OK` / `异常：<现象>` / `缺失`
-
-测试基线：`D:\Test\1.31_maps\(2)BootyBay`（从 1.31 CASC 提取的原生地图目录）。**先整目录备份一份**，多数测试会写回原目录。
-
----
-
-## 0. 先跑通闭环（最高优先级）
-
-| # | 功能 | 入口 | 预期 | 结果 |
-|---|---|---|---|---|
-| 0.1 | 打开地图目录 | File → Open Map (Folder) | 地形/装饰/单位都渲染出来 | |
-| 0.2 | 不做任何修改直接保存 | File → Save Map | 目录内文件被重写，无报错 | |
-| 0.3 | 不做任何修改导出 | File → Export MPQ | 生成 w3x | |
-| 0.4 | 导出的地图进游戏 | 1.31 客户端 | 正常开局，有基地和农民 | |
-
-0.2 的隐含验证点：`war3map.j` 应与原文件**逐字节一致**（触发器没动过时应当原样保留，见「已知缺陷 1」）。比对方法：导出后解包对比哈希。
+用途：逐项验证 HiveWE 0.6 的功能完整度，记录「有问题 / 不可用」。
 
 ---
 
 ## 1. 文件与地图生命周期
 
-| # | 功能 | 代码位置 | 风险 | 备注 | 结果 |
+| # | 功能 | 结果 |
 |---|---|---|---|---|---|
-| 1.1 | New Map（新建地图） | Ribbon File | — | **死按钮**：`HiveWE.cpp:126` 的连接被注释掉 | |
-| 1.2 | Open Map (Folder) | `HiveWE::load_folder` | P1 | 目录里缺 `war3map.w3e` 等关键文件时的表现 | |
-| 1.3 | Open Map (MPQ) | `HiveWE::load_mpq` | P1 | 内部会解包到临时目录 | |
-| 1.4 | Save Map | `HiveWE::save` | P1 | 直接写回当前目录 | |
-| 1.5 | Save Map as | `HiveWE::save_as` | P1 | 会把整个目录复制到新路径 | |
-| 1.6 | Export MPQ | `HiveWE::export_mpq` | P0→已修 | 曾因未初始化句柄闪退（`efecc98`） | |
-| 1.7 | Test Map | `HiveWE::play_test` | P1 | 调 `x86_64\Warcraft III.exe -loadfile`，路径依赖设置 | |
-| 1.8 | 关闭窗口确认 | `HiveWE::closeEvent` | P2 | 有二次确认 | |
-
+| 1.1 | New Map（新建地图）| 未实现
+| 1.2 | Open Map (Folder) |
+| 1.3 | Open Map (MPQ) |
+| 1.4 | Save Map 写回当前目录|
+| 1.5 | Save Map as 另存为新目录|
+| 1.6 | Export MPQ 导出为.w3x|
+| 1.7 | Test Map 调 `x86_64\Warcraft III.exe -loadfile`|
+| 1.8 | 设置窗口 | 
+| 1.9 | 退出 |
+| 2.0 | MapInfoEditor |
 ---
 
 ## 2. 视图与渲染（View 选项卡）
 
-| # | 功能 | 快捷键 | 风险 | 备注 | 结果 |
+| # | 功能 | 结果 |
 |---|---|---|---|---|---|
-| 2.1 | Units 显示 | U | P2 | | |
-| 2.2 | Doodads 显示 | D | P2 | | |
-| 2.3 | Pathing 显示 | P | P2 | | |
-| 2.4 | Brush 显示 | — | P2 | | |
-| 2.5 | Lighting 显示 | L | P2 | 关掉后光照是否退化为平光 | |
-| 2.6 | Wireframe 线框 | T | P2 | 多边形线框模式 | |
-| 2.7 | Debug 叠加 | F3 | P2 | 左上角信息 + 物理碰撞线框（本次已挂到此开关） | |
-| 2.8 | Minimap 窗口 | — | P2 | 小地图支持点击寻位、拖拽窗口 | |
-| 2.9 | Switch Camera | — | P2 | 相机模式切换 | |
-| 2.10 | Reset Camera | — | P2 | | |
+| 2.1 | Units 显示 |
+| 2.2 | Doodads 显示 |
+| 2.3 | Pathing 显示 |
+| 2.4 | Brush 显示 |
+| 2.5 | Lighting 显示 |
+| 2.6 | Wireframe 线框 |
+| 2.7 | Debug 叠加 | 
+| 2.8 | Minimap 小地图 |
+| 2.9 | Switch Camera 相机切换FPS第一人称模式| 感觉FPS操作不了
+| 2.10 | Reset Camera 重置相机位置|
 
 ---
 
@@ -130,14 +112,24 @@
 
 ---
 
-## 8. 地图信息（Map 选项卡）
+## 8. MapInfoEditor
 
-| # | 功能 | 风险 | 备注 | 结果 |
+| # | 功能 | 结果 |
 |---|---|---|---|---|
-| 8.1 | Description 页（名称/作者/描述/建议人数） | P1 | 字符串走 `TRIGSTR_` 引用 | |
-| 8.2 | Loading Screen 页（图片/标题/副标题/文本） | P1 | | |
-| 8.3 | Options 页（迷雾/天气/水面/光照/声音环境/小地图预览） | P1 | 字段多，容易出现写回错位 | |
-| 8.4 | 写入 `war3map.w3i` 的版本 | P1 | **恒写 v28**（`MapInfo.h:157`），未改动也会重写；已验证 1.31 能读 | |
+| 8.1 | Description 页（名称/作者/描述/建议人数） | 改动后未生效
+    Name
+    Suggested Players
+    Description
+    Map Version和EditorVersion是什么意思
+| 8.2 | Loading Screen 页（图片/标题/副标题/文本） | 改动后未生效
+    Loadding Screen Graphic
+        三个选项
+    Loading Screen Tittle
+    Loading Screen Subtitle
+    Loading Screen Text
+| 8.3 | Options 页（迷雾/天气/水面/光照/声音环境/小地图预览） | 得先翻译下每个选项是什么意思
+    Hide minimap in preview creens 开关|
+| 8.3 | Preferences 页 无内容|
 
 ---
 

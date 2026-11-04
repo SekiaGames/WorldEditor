@@ -1,3 +1,9 @@
+# 开发日志
+File也做成切换页签，不走下拉形式。
+
+需要快捷键设置 放在设置窗口
+客户端路径也放在设置窗口
+
 # HiveWE
 
 一个《魔兽争霸 III》世界编辑器。HiveWE 专注于速度与易用性，尤其是在大型地图上——原版世界编辑器在这些场景里往往又慢又笨重。[Hive 论坛讨论帖](https://www.hiveworkshop.com/threads/introducing-hivewe.303183/)
