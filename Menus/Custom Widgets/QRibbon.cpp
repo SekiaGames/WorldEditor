@@ -132,74 +132,7 @@ void QRibbonTab::addSection(QRibbonSection* section) {
 }
 
 
-QRibbonMenu::QRibbonMenu(QWidget* parent) : QMenu(parent) {
-	base->setContentsMargins(1, 1, 1, 1);
-	base->setSpacing(0);
-	actions->setContentsMargins(0, 0, 0, 0);
-
-	QFrame* line = new QFrame();
-	line->setObjectName("verticalSeperator");
-
-	base->addLayout(actions);
-	base->addWidget(line);
-	//base->addLayout(frequent_places);
-
-	setLayout(base);
-
-	//frequent_places->setContentsMargins(0, 0, 0, 0);
-
-	//QLabel* label = new QLabel("Recent Maps");
-	//label->setStyleSheet(R"(
-	//	QLabel {
-	//		background-color: rgb(246, 247, 248);
-	//		
-	//	}
-	//)");
-
-	//frequent_places->addWidget(label);
-	
-	//for (int i = 0; i < 5; i++) {
-	//	QLabel* labell = new QLabel("test");
-	//	labell->setStyleSheet(R"(
-	//		QLabel::hover {
-	//			background-color: rgb(233, 240, 248);
-	//			border: 1px solid rgb(165, 207, 249);
-	//			
-	//		}
-	//	)");
-	//	frequent_places->addWidget(labell);
-	//}
-	//frequent_places->addStretch(1);
-}
-
-//bool QRibbonMenu::eventFilter(QObject *obj, QEvent *event) {
-//	if (event->type() == QEvent::KeyPress) {
-//		QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-//		qDebug("Ate key press %d", keyEvent->key());
-//		return true;
-//	} else {
-//		return QObject::eventFilter(obj, event);
-//	}
-//}
-
-QRibbonFileButton::QRibbonFileButton(QWidget* parent) : QToolButton(parent) {
-	setText("File");
-	setMenu(menu);
-}
-
-QRibbon::QRibbon(QWidget *parent) : QTabWidget(parent) {
-	setCornerWidget(file, Qt::TopLeftCorner);
-}
-
-void QRibbon::addMenuItem(QAbstractButton* widget) {
-	file->menu->actions->addWidget(widget);
-	connect(widget, &QAbstractButton::clicked, [&]() { file->menu->close(); });
-}
-
-void QRibbon::addMenuSeperator() {
-	QFrame* line = new QFrame();
-	line->setObjectName("horizontalSeperator");
-	file->menu->actions->addWidget(line);
+QRibbon::QRibbon(QWidget* parent) : QTabWidget(parent) {
 }
 
 QRibbon::~QRibbon() {

@@ -74,34 +74,10 @@ public:
 };
 
 
-class QRibbonMenu : public QMenu {
-	Q_OBJECT
-public:
-	QHBoxLayout* base = new QHBoxLayout;
-	QVBoxLayout* actions = new QVBoxLayout;
-	QVBoxLayout* frequent_places = new QVBoxLayout;
-
-	QRibbonMenu(QWidget* parent = nullptr);
-
-	//bool eventFilter(QObject *obj, QEvent *event);
-};
-
-class QRibbonFileButton : public QToolButton {
-	Q_OBJECT
-public:
-	QRibbonMenu* menu = new QRibbonMenu;
-	QRibbonFileButton(QWidget* parent = nullptr);
-};
-
 class QRibbon : public QTabWidget {
 	Q_OBJECT
-
-	QRibbonFileButton* file = new QRibbonFileButton;
 
 public:
 	QRibbon(QWidget *parent = nullptr);
 	~QRibbon();
-
-	void addMenuItem(QAbstractButton* widget);
-	void addMenuSeperator();
 };

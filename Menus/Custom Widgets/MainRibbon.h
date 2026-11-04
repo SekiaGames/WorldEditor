@@ -43,17 +43,18 @@ public:
 	QRibbonButton* doodad_palette = new QRibbonButton;
 	QRibbonButton* pathing_palette = new QRibbonButton;
 
-	QToolButton* new_map = new QToolButton;
-	QToolButton* open_map_mpq = new QToolButton;
-	QToolButton* open_map_folder = new QToolButton;
+	// File 页签的按钮和别的页签一样用 QRibbonButton，样式交给主题统一控制
+	QRibbonButton* new_map = new QRibbonButton;
+	QRibbonButton* open_map_mpq = new QRibbonButton;
+	QRibbonButton* open_map_folder = new QRibbonButton;
 
-	QToolButton* save_map = new QToolButton;
-	QToolButton* save_map_as = new QToolButton;
-	QToolButton* export_mpq = new QToolButton;
+	QRibbonButton* save_map = new QRibbonButton;
+	QRibbonButton* save_map_as = new QRibbonButton;
+	QRibbonButton* export_mpq = new QRibbonButton;
 
-	QToolButton* test_map = new QToolButton;
-	QToolButton* settings = new QToolButton;
-	QToolButton* exit = new QToolButton;
+	QRibbonButton* test_map = new QRibbonButton;
+	QRibbonButton* settings = new QRibbonButton;
+	QRibbonButton* exit = new QRibbonButton;
 
 	MainRibbon(QWidget* parent);
 	~MainRibbon();

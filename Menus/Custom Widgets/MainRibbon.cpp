@@ -112,63 +112,58 @@ MainRibbon::MainRibbon(QWidget* parent) : QRibbon(parent) {
 	reset_camera->setText("Reset");
 	camera_section->addWidget(reset_camera);
 
-	// Menu actions
+	// Menu actions -- 全部放进 File 页签，和 Home/View 一样是页签内容
 	new_map->setText("New Map");
 	new_map->setIcon(QIcon("Data/Icons/Ribbon/new32x32.ico"));
-	new_map->setIconSize({ 32, 32 });
-	new_map->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 	new_map->setDisabled(true);
-	addMenuItem(new_map);
 
-	open_map_folder->setText("Open Map (Folder)");
+	open_map_folder->setText("Open Map\n(Folder)");
 	open_map_folder->setIcon(QIcon("Data/Icons/Ribbon/open32x32.png"));
-	open_map_folder->setIconSize({ 32, 32 });
-	open_map_folder->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(open_map_folder);
 
-	open_map_mpq->setText("Open Map (MPQ)");
+	open_map_mpq->setText("Open Map\n(MPQ)");
 	open_map_mpq->setIcon(QIcon("Data/Icons/Ribbon/open32x32.png"));
-	open_map_mpq->setIconSize({ 32, 32 });
-	open_map_mpq->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(open_map_mpq);
 
 	save_map->setText("Save Map");
 	save_map->setIcon(QIcon("Data/Icons/Ribbon/save32x32.png"));
-	save_map->setIconSize({ 32, 32 });
-	save_map->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(save_map);
 
-	save_map_as->setText("Save Map as");
+	save_map_as->setText("Save Map\nas");
 	save_map_as->setIcon(QIcon("Data/Icons/Ribbon/saveas32x32.png"));
-	save_map_as->setIconSize({ 32, 32 });
-	save_map_as->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(save_map_as);
 
-	export_mpq->setText("Export MPQ");
+	export_mpq->setText("Export\nMPQ");
 	export_mpq->setIcon(QIcon("Data/Icons/Ribbon/saveas32x32.png"));
-	export_mpq->setIconSize({ 32, 32 });
-	export_mpq->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(export_mpq);
 
 	test_map->setText("Test Map");
 	test_map->setIcon(QIcon("Data/Icons/Ribbon/test32x32.ico"));
-	test_map->setIconSize({ 32, 32 });
-	test_map->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(test_map);
 
 	settings->setText("Settings");
 	settings->setIcon(QIcon("Data/Icons/Ribbon/options32x32.png"));
-	settings->setIconSize({ 32, 32 });
-	settings->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(settings);
-
-	addMenuSeperator();
 
 	exit->setText("Exit");
 	exit->setIcon(QIcon("Data/Icons/Ribbon/exit32x32.ico"));
-	exit->setIconSize({ 32, 32 });
-	exit->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	addMenuItem(exit);
+
+	// File tab
+	QRibbonTab* file_tab = new QRibbonTab;
+
+	QRibbonSection* file_map_section = new QRibbonSection;
+	file_map_section->setText("Map");
+	file_map_section->addWidget(new_map);
+	file_map_section->addWidget(open_map_folder);
+	file_map_section->addWidget(open_map_mpq);
+	file_map_section->addWidget(save_map);
+	file_map_section->addWidget(save_map_as);
+	file_map_section->addWidget(export_mpq);
+	file_tab->addSection(file_map_section);
+
+	QRibbonSection* file_test_section = new QRibbonSection;
+	file_test_section->setText("Test");
+	file_test_section->addWidget(test_map);
+	file_tab->addSection(file_test_section);
+
+	QRibbonSection* file_app_section = new QRibbonSection;
+	file_app_section->setText("Application");
+	file_app_section->addWidget(settings);
+	file_app_section->addWidget(exit);
+	file_tab->addSection(file_app_section);
 
 	// Map tab
 	QRibbonTab* map_tab = new QRibbonTab;
@@ -262,6 +257,7 @@ MainRibbon::MainRibbon(QWidget* parent) : QRibbon(parent) {
 	window_tab->addSection(palette_section);
 
 
+	addTab(file_tab, "File");
 	addTab(home_tab, "Home");
 	addTab(view_tab, "View");
 	addTab(map_tab, "Map");
