@@ -2,16 +2,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+PROJECT="$ROOT/Godot"
 PRESET="macOS"
-APP_NAME="War3 World Editor"
-OUT="$ROOT/$APP_NAME.app"
+APP_NAME="WorldEditor"
+OUT="$PROJECT/$APP_NAME.app"
 
 die() {
 	printf '\n[ERROR] %s\n' "$1" >&2
 	exit 1
 }
 
-printf 'Project: %s\n' "$ROOT"
+printf 'Project: %s\n' "$PROJECT"
 
 if ! command -v dotnet >/dev/null 2>&1; then
 	for dir in /usr/local/share/dotnet /opt/homebrew/bin /opt/homebrew/opt/dotnet/libexec "$HOME/.dotnet"; do
@@ -55,7 +56,7 @@ printf 'Godot:   %s (%s)\n' "$GODOT" "$VERSION_STRING"
 [ -f "$TEMPLATES/macos.zip" ] || die "macOS export templates missing: $TEMPLATES/macos.zip"
 
 printf 'dotnet:  %s\n' "$(command -v dotnet)"
-printf 'Signing: %s\n\n' "$(grep -m1 '^codesign/codesign=' "$ROOT/export_presets.cfg" 2>/dev/null || echo 'n/a')"
+printf 'Signing: %s\n\n' "$(grep -m1 '^codesign/codesign=' "$PROJECT/export_presets.cfg" 2>/dev/null || echo 'n/a')"
 
 if [ -e "$OUT" ]; then
 	printf 'Removing previous bundle: %s\n' "$OUT"
@@ -63,7 +64,7 @@ if [ -e "$OUT" ]; then
 fi
 
 printf 'Exporting preset "%s"...\n\n' "$PRESET"
-if ! "$GODOT" --headless --path "$ROOT" --export-release "$PRESET" "$OUT"; then
+if ! "$GODOT" --headless --path "$PROJECT" --export-release "$PRESET" "$OUT"; then
 	die "Export failed, see the log above."
 fi
 

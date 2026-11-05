@@ -3,14 +3,23 @@
 HiveWE 0.6 的界面在 Godot 4.7 / .NET 上的复刻。**当前只做界面，全部功能打桩**：点任何按钮只会打印
 `[STUB] <id>` 并在底部弹一条提示，不会读写地图。
 
+```
+D:/WorldEditor/
+  HiveWE/           C++ 参考实现（HiveWE 0.6 源码 + 分析文档）
+  Godot/            Godot 工程本体（工程文件、C# 源码、资源）
+  tools/            截图核对用的小工具
+  export.bat        Windows 一键导出
+  export.command    macOS 一键导出
+```
+
 ## 运行
 
 ```bash
 # 编译
-dotnet build WorldEdit.csproj
+dotnet build Godot/WorldEdit.csproj
 
 # 启动
-"D:/Ghost/GameDev/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64.exe" --path .
+"D:/Ghost/GameDev/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64.exe" --path Godot
 ```
 
 > Godot 编辑器里的 C# 构建依赖 PATH 中的 `dotnet`。系统 PATH 里如果没有 `C:\Program Files\dotnet`，
@@ -33,7 +42,7 @@ cmd //c export.bat          # 或双击 export.bat
 想看双文件形态（exe + `data_*/`）把 `dotnet/embed_build_outputs` 关掉即可，两者功能一致。
 
 **AOT**：`WorldEdit.csproj` 里开了 `<PublishReadyToRun>true</PublishReadyToRun>`，IL 预先编译成原生代码，运行时不 JIT。
-NativeAOT（`PublishAot`）本机走不通——缺 MSVC 链接器，且 Godot 的 .NET 导出也没有桌面 NativeAOT 通道，详见 `../Doc/03-打包与AOT.md`。
+NativeAOT（`PublishAot`）本机走不通——缺 MSVC 链接器，且 Godot 的 .NET 导出也没有桌面 NativeAOT 通道，详见 `HiveWE/Doc/03-打包与AOT.md`。
 
 三个容易踩的点：
 
@@ -62,12 +71,12 @@ NativeAOT（`PublishAot`）本机走不通——缺 MSVC 链接器，且 Godot �
 
 ```bash
 # 首屏（只有主窗口，与 HiveWE 启动状态一致）
-Godot.exe --path . -- --shot=C:/tmp/hero.png --frames=30
+Godot.exe --path Godot -- --shot=C:/tmp/hero.png --frames=30
 
 # 指定面板 / 窗口
-Godot.exe --path . -- --shot=C:/tmp/a.png --palette=doodads
-Godot.exe --path . -- --shot=C:/tmp/b.png --window=mapinfo
-Godot.exe --path . -- --shot=C:/tmp/c.png --palette=none      # 关掉调色板看 Ribbon
+Godot.exe --path Godot -- --shot=C:/tmp/a.png --palette=doodads
+Godot.exe --path Godot -- --shot=C:/tmp/b.png --window=mapinfo
+Godot.exe --path Godot -- --shot=C:/tmp/c.png --palette=none      # 关掉调色板看 Ribbon
 ```
 
 **窗口是独立的系统窗口**（`display/window/subwindows/embed_subwindows=false`），主窗口截图拍不到它们。
@@ -103,6 +112,8 @@ python tools/crop_png.py shot.png corner.png 6 126 40 30 10   # 左上角 10 倍
 
 ## 结构
 
+路径相对 `Godot/`：
+
 ```
 src/Game/App/
   Main.cs        主窗口装配、打桩路由、快捷键、截图入口
@@ -116,7 +127,7 @@ src/Game/Ui/
   Palettes.cs    地形 / 装饰物 / 寻路 / 单位 / 区域
   Windows.cs     地图信息、触发器、导入、设置、瓦片集、瓦片寻路、替换瓦片、对象编辑器、玩家、模型预览
   Defs.cs        假数据（纹理名、装饰物分类、单位列表）
-assets/icons/    从 WorldEditor 的 Data/Icons 复制（ICO 已转 PNG）
+assets/icons/    从 `HiveWE/Data/Icons` 复制（ICO 已转 PNG）
 assets/shaders/  占位地形与水面着色器
 ```
 
