@@ -2,3 +2,7 @@
 /toolchain
 
 toolchain.7z
+
+# Mac
+/Godot/WorldEditor.app
+.DS_Store

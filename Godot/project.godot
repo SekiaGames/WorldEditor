@@ -10,18 +10,21 @@ config_version=5
 
 [application]
 
-config/name="Godot"
+config/name="WorldEditor"
+config/version="0.1.0"
+run/main_scene="res://Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
 [display]
 
-window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/subwindows/embed_subwindows=false
 
 [dotnet]
 
-project/assembly_name="Godot"
+project/assembly_name="WorldEdit"
 
 [physics]
 
@@ -30,3 +33,5 @@ project/assembly_name="Godot"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=2
