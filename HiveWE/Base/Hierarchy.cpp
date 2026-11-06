@@ -17,9 +17,18 @@ void Hierarchy::open_casc(fs::path directory) {
 BinaryReader Hierarchy::open_file(const fs::path& path) const {
 	casc::File file;
 
+	// 调试：确认每个资源到底从哪儿读的（war3 目录里的同名文件优先于 CASC）
+	static int trace_count = 0;
+	const bool trace = trace_count < 40 && path.extension() == ".blp";
+	if (trace) {
+		++trace_count;
+	}
+
 	if (map_file_exists(path)) {
+		if (trace) std::cout << "[RES] " << path.string() << " <- map\n";
 		return map_file_read(path);
 	} else if (fs::exists(warcraft_directory / path)) { //Probably shouldn't be supported but WC3 allows it
+		if (trace) std::cout << "[RES] " << path.string() << " <- warcraft dir\n";
 		std::ifstream fin(warcraft_directory / path, std::ios_base::binary);
 		fin.seekg(0, std::ios::end);
 		const size_t fileSize = fin.tellg();
@@ -29,10 +38,12 @@ BinaryReader Hierarchy::open_file(const fs::path& path) const {
 		fin.close();
 		return BinaryReader(buffer);
 	} else if (game_data.file_exists("war3.w3mod:_tilesets/"s + tileset + ".w3mod:"s + path.string())) {
+		if (trace) std::cout << "[RES] " << path.string() << " <- casc tileset\n";
 		file = game_data.file_open("war3.w3mod:_tilesets/"s + tileset + ".w3mod:"s + path.string());
 	} else if (game_data.file_exists("war3.w3mod:_locales/enus.w3mod:"s + path.string())) {
 		file = game_data.file_open("war3.w3mod:_locales/enus.w3mod:"s + path.string());
 	} else if (game_data.file_exists("war3.w3mod:"s + path.string())) {
+		if (trace) std::cout << "[RES] " << path.string() << " <- casc\n";
 		file = game_data.file_open("war3.w3mod:"s + path.string());
 	} else if (game_data.file_exists("war3.w3mod:_deprecated.w3mod:"s + path.string())) {
 		file = game_data.file_open("war3.w3mod:_deprecated.w3mod:"s + path.string());

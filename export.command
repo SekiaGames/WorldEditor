@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$ROOT/Godot"
 PRESET="macOS"
 APP_NAME="WorldEditor"
-OUT="$PROJECT/$APP_NAME.app"
+OUT="$ROOT/$APP_NAME.app"
 
 die() {
 	printf '\n[ERROR] %s\n' "$1" >&2

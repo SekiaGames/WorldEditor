@@ -1,0 +1,28 @@
+# 导出产物（export.bat / export.command 输出到仓库根）
+/WorldEditor.exe
+/WorldEditor.app/
+
+# 导出时的临时/备份文件
+*.old
+*.new.exe
+
+# 测试产物目录：解包出来的地图、自制测试图、对比截图都放这里，不进仓库
+/test/*
+!/test/.gitkeep
+
+# 从 War3 客户端提取的资产（extract.bat / extract.command 重新生成），不进仓库
+# 模型 / 贴图 / 侧车
+/Godot/assets/converted/**/*.glb
+/Godot/assets/converted/**/*.png
+/Godot/assets/converted/**/*.wc3.json
+# 音频与字体：不解码，原样拷贝
+/Godot/assets/converted/**/*.wav
+/Godot/assets/converted/**/*.mp3
+/Godot/assets/converted/**/*.ttf
+/Godot/assets/converted/**/*.TTF
+# 转换报告，以及 Godot 导入时留下的临时残留（xx.png.import~RFxxxx.TMP）
+/Godot/assets/converted/_convert-report.txt
+/Godot/assets/converted/**/*.TMP
+# Godot 导入元数据：由 extract 脚本末尾的导入步骤（--editor --quit）重建
+# 实测：重建后除 uid 外与旧文件逐字节相同；场景都按路径引用，不走 uid
+/Godot/assets/converted/**/*.import

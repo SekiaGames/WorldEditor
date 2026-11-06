@@ -1,4 +1,5 @@
 using Godot;
+using System;
 
 namespace WorldEdit;
 
@@ -9,6 +10,12 @@ namespace WorldEdit;
 public partial class Ribbon : TabContainer
 {
     private const int BarHeight = 119;
+
+    /// <summary>View → 小地图 开关。UI 只负责发事件，显隐由 Main 处理。</summary>
+    public event Action<bool> MinimapToggled;
+
+    /// <summary>「光照」开关，对应 HiveWE 的 render_lighting。</summary>
+    public event Action<bool> LightingToggled;
 
     /// <summary>所有页签共用同一个内容高度，切页签时 Ribbon 不会跳动。</summary>
     private const int PageHeight = 89;
@@ -109,20 +116,14 @@ public partial class Ribbon : TabContainer
         var newMap = W.Big("新建地图", "new32x32", "新建空白地图（打桩）", false);
         newMap.Pressed += () => Stub.Fire("file.new");
 
-        var openFolder = W.Big("打开地图（目录）", "open32x32", "打开解包后的地图目录", false);
-        openFolder.Pressed += () => Stub.Fire("file.open_folder");
-
-        var openMpq = W.Big("打开地图（MPQ）", "open32x32", "直接打开 .w3m / .w3x", false);
-        openMpq.Pressed += () => Stub.Fire("file.open_mpq");
+        var open = W.Big("打开地图", "open32x32", "打开 .w3m / .w3x，把内容读进内存", false);
+        open.Pressed += () => Stub.Fire("file.open");
 
         var save = W.Big("保存地图", "save32x32", "Ctrl+S", false);
         save.Pressed += () => Stub.Fire("file.save");
 
         var saveAs = W.Big("另存为", "saveas32x32", "Ctrl+Shift+S", false);
         saveAs.Pressed += () => Stub.Fire("file.save_as");
-
-        var export = W.Big("导出 MPQ", "saveas32x32", "把地图目录打包成 MPQ", false);
-        export.Pressed += () => Stub.Fire("file.export");
 
         var testMap = W.Big("测试地图", "test32x32", "Ctrl+T，保存后启动客户端", false);
         testMap.Pressed += () => Stub.Fire("file.test");
@@ -142,7 +143,7 @@ public partial class Ribbon : TabContainer
         var redo = W.Big("重做", "redo32x32", "Ctrl+Y", false);
         redo.Pressed += () => Stub.Fire("edit.redo");
 
-        row.AddChild(W.Section("地图", newMap, openFolder, openMpq, save, saveAs, export));
+        row.AddChild(W.Section("地图", newMap, open, save, saveAs));
         row.AddChild(W.VSep());
         row.AddChild(W.Section("游戏", testMap, info));
         row.AddChild(W.VSep());
@@ -166,13 +167,17 @@ public partial class Ribbon : TabContainer
         var brush = Toggle("笔刷", "brush32x32", "显示笔刷高亮", true);
         brush.Toggled += on => Stub.Fire($"view.brush={on}");
         var lighting = Toggle("光照", "lighting32x32", "地形光照 (L)", true);
-        lighting.Toggled += on => Stub.Fire($"view.lighting={on}");
+        lighting.Toggled += on => LightingToggled?.Invoke(on);
         var wire = Toggle("线框", "wireframe32x32", "线框模式 (T)", false);
         wire.Toggled += on => Stub.Fire($"view.wireframe={on}");
         var debug = Toggle("调试", "debug32x32", "物理调试绘制 (F3)", false);
         debug.Toggled += on => Stub.Fire($"view.debug={on}");
         var minimap = Toggle("小地图", "minimap32x32", "显示小地图", true);
-        minimap.Toggled += on => Stub.Fire($"view.minimap={on}");
+        minimap.Toggled += on =>
+        {
+            GD.Print($"[VIEW] 小地图={(on ? "显示" : "隐藏")}");
+            MinimapToggled?.Invoke(on);
+        };
 
         var switchCam = W.Big("切换相机", "switch32x32", "第一人称 / 轨道 (F1)", false);
         switchCam.Pressed += () => Stub.Fire("view.switch_camera");
@@ -199,14 +204,9 @@ public partial class Ribbon : TabContainer
         var tilePathing = W.Big("瓦片寻路", "pathing32x32", "修改每种瓦片的默认可走性", false);
         tilePathing.Pressed += () => Stub.Fire("ui.tilepather");
 
-        var warcraft = W.Big("更换游戏目录", "options32x32", "切换 War3 客户端路径", false);
-        warcraft.Pressed += () => Stub.Fire("tools.switch_warcraft");
-
         row.AddChild(W.Section("导入", heightmap));
         row.AddChild(W.VSep());
         row.AddChild(W.Section("地形集", tileset, tilePathing));
-        row.AddChild(W.VSep());
-        row.AddChild(W.Section("游戏", warcraft));
         row.AddChild(W.Spacer());
         return Wrap(row);
     }

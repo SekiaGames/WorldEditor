@@ -12,6 +12,20 @@ GroundTexture::GroundTexture(const fs::path& path) {
 		blp::BLP blp = blp::BLP(reader);
 		auto[width, height, data] = blp.mipmaps.front();
 
+		{
+			// 调试：打印解码后的平均色，用来确认 BLP 解码出来的颜色和参考是否一致
+			long long sr = 0, sg = 0, sb = 0, sa = 0;
+			const size_t count = static_cast<size_t>(width) * height;
+			for (size_t i = 0; i < count; i++) {
+				sb += data[i * 4 + 0];
+				sg += data[i * 4 + 1];
+				sr += data[i * 4 + 2];
+				sa += data[i * 4 + 3];
+			}
+			std::cout << "[TEX] " << path.string() << " " << width << "x" << height
+				<< " avg BGRA " << sb / count << "," << sg / count << "," << sr / count << "," << sa / count << "\n";
+		}
+
 		tile_size = height * 0.25;
 		extended = (width == height * 2);
 		

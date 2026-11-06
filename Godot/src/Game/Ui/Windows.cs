@@ -1,4 +1,5 @@
 using Godot;
+using WorldEdit.Core.Map;
 
 namespace WorldEdit;
 
@@ -95,14 +96,26 @@ public static class Windows
 
     // ------------------------------------------------------------ 地图信息
 
-    public static Control MapInfo()
+    /// <summary>地图信息窗口的返回值：Main 需要拿名称输入框去写回 wts。</summary>
+    public sealed class MapInfoView
     {
+        public Control Root;
+        public LineEdit Name;
+    }
+
+    public static MapInfoView MapInfo(MapDocument document)
+    {
+        var view = new MapInfoView();
         var tabs = new TabContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         tabs.CustomMinimumSize = new Vector2(680, 440);
 
         // 描述
         var desc = W.Col(8);
-        desc.AddChild(Field("地图名称", W.Edit("", "(2)BootyBay")));
+        var nameEdit = W.Edit("", document?.MapName ?? "");
+        nameEdit.Editable = document != null;
+        nameEdit.TooltipText = document == null ? "先打开一张地图" : "改名会写进 war3map.wts，保存后生效";
+        view.Name = nameEdit;
+        desc.AddChild(Field("地图名称", nameEdit));
         desc.AddChild(Field("建议玩家", W.Edit("", "2")));
         var descBox = new TextEdit
         {
@@ -201,7 +214,8 @@ public static class Windows
         tabs.AddChild(size);
         tabs.SetTabTitle(3, "尺寸与边界");
 
-        return tabs;
+        view.Root = tabs;
+        return view;
     }
 
     // ------------------------------------------------------------ 触发器
@@ -341,9 +355,12 @@ public static class Windows
 
     // ------------------------------------------------------------ 设置
 
-    public static Control Settings()
+    /// <summary>设置窗口默认打开第几个页签（调试截图用）。</summary>
+    public static int SettingsTab;
+
+    public static Control Settings(ViewportPanel view)
     {
-        var tabs = new TabContainer { CustomMinimumSize = new Vector2(480, 220), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        var tabs = new TabContainer { CustomMinimumSize = new Vector2(500, 330), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
 
         var general = W.Col(10);
         general.AddChild(Field("主题", W.Combo("暗色", "亮色")));
@@ -352,13 +369,75 @@ public static class Windows
         tabs.AddChild(general);
         tabs.SetTabTitle(0, "常规");
 
+        // 相机参数直接读写视口，改一下立刻生效；下面还有个实时读数，方便和我们截图对照
+        var camera = W.Col(8);
+        camera.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+        var fov = W.Spin(20, 120, 0.1, view.Fov);
+        fov.ValueChanged += value => view.SetFov((float)value);
+        camera.AddChild(Field("视野 FOV", fov, 116));
+        camera.AddChild(W.Dim("垂直视角（度）。默认 50.705° 是 HiveWE 的实际视角（它把度数当弧度传了）；官方 WE 更接近 70°。"));
+
+        var distance = W.Spin(0.5, 1000, 0.1, view.Distance / ViewportPanel.CellSize);
+        distance.ValueChanged += value => view.SetDistance((float)value * ViewportPanel.CellSize);
+        camera.AddChild(Field("相机距离（格）", distance, 116));
+
+        var yaw = W.Spin(-180, 180, 1, view.Yaw);
+        var pitch = W.Spin(-88, -6, 0.1, view.Pitch);
+        yaw.ValueChanged += value => view.SetOrbit((float)value, (float)pitch.Value);
+        pitch.ValueChanged += value => view.SetOrbit((float)yaw.Value, (float)value);
+        camera.AddChild(Field("水平角", yaw, 116));
+        camera.AddChild(Field("俯角", pitch, 116));
+        camera.AddChild(W.Dim("初始朝向：水平角 180°、俯角 -55.98°（= HiveWE 的 vertical_angle -0.977）。"));
+
+        var targetHeight = W.Spin(-200, 30000, 10, view.TargetHeight);
+        targetHeight.ValueChanged += value => view.SetTargetHeight((float)value);
+        camera.AddChild(Field("视觉中心高度", targetHeight, 116));
+
+        var maxHeight = W.Spin(500, 30000, 100, view.MaxCameraHeight);
+        maxHeight.ValueChanged += value => view.MaxCameraHeight = (float)value;
+        camera.AddChild(Field("相机最高高度", maxHeight, 116));
+        camera.AddChild(W.Dim("相机能抬到的最高世界单位（1 格 = 128）。滚轮、旋转、Shift 升降都受它约束。"));
+
+        foreach (Control spin in new Control[] { fov, distance, yaw, pitch, targetHeight, maxHeight })
+        {
+            spin.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+            spin.CustomMinimumSize = new Vector2(120, 26);
+        }
+
+        Label live = W.L("", 11, UiTheme.TextDim);
+        System.Action refresh = () =>
+        {
+            if (!GodotObject.IsInstanceValid(live))
+            {
+                return;
+            }
+            Vector2 tile = view.TargetTile;
+            live.Text = $"当前：相机 ({view.CameraPosition.X:0}, {view.CameraPosition.Y:0}, {view.CameraPosition.Z:0})"
+                        + $"  中心格 ({tile.X:0.0}, {tile.Y:0.0})  FOV {view.Fov:0}";
+        };
+        view.CameraChanged += refresh;
+        live.TreeExiting += () => view.CameraChanged -= refresh;
+        refresh();
+        camera.AddChild(live);
+
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        scroll.AddChild(camera);
+        tabs.AddChild(scroll);
+        tabs.SetTabTitle(1, "相机");
+
         var test = W.Col(10);
         test.AddChild(Field("测试参数", W.Edit("-window")));
         test.AddChild(W.Dim("启动客户端时追加到命令行。"));
         test.AddChild(W.Spacer());
         tabs.AddChild(test);
-        tabs.SetTabTitle(1, "测试");
+        tabs.SetTabTitle(2, "测试");
 
+        tabs.CurrentTab = SettingsTab;
         return tabs;
     }
 

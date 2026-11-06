@@ -154,6 +154,10 @@ public:
 
 	float interpolated_height(float x, float y) const;
 
+	/// 调试：沿一条格坐标直线向下打射线，同时算一遍渲染三角面的插值高度。
+	/// 用来确认斜坡是曲面还是分段平面，以及碰撞面和渲染面是否落在同一个高度上。
+	void probe_slope(float x0, float y0, float x1, float y1, int steps);
+
 	//bool is_corner_ramp_mesh(int x, int y);
 	bool is_corner_ramp_entrance(int x, int y);
 	//bool is_corner_cliff(int x, int y);

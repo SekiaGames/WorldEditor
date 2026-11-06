@@ -35,6 +35,7 @@ ini::INI world_edit_strings;
 ini::INI world_edit_game_strings;
 ini::INI world_edit_data;
 WindowHandler window_handler;
+DebugLaunch debug_launch;
 
 slk::SLK units_slk;
 slk::SLK units_meta_slk;
@@ -185,7 +186,50 @@ HiveWE::HiveWE(QWidget* parent) : QMainWindow(parent) {
 	map = new Map();
 	connect(&map->terrain, &Terrain::minimap_changed, minimap, &Minimap::set_minimap);
 	//map->load("C:\\Users\\User\\stack\\Projects\\MCFC\\7.3\\Backup\\MCFC 7.3.w3x");
-	map->load("Data/Test Map/");
+	if (!debug_launch.map_directory.isEmpty()) {
+		// 命令行指定了地图目录（--map），用它替换内置的测试地图
+		map->load(fs::path(debug_launch.map_directory.toStdWString()));
+		// 参考图只留地形，装饰物/单位/寻路会盖住地表颜色，比对时一律关掉
+		map->render_doodads = !debug_launch.hide_doodads;
+		map->render_units = !debug_launch.hide_units;
+		map->render_pathing = !debug_launch.hide_pathing;
+		map->render_water = !debug_launch.hide_water;
+		map->render_lighting = !debug_launch.hide_lighting;
+		// 取景：map->load 里已经照 Camera::reset 摆好了，这里按命令行覆盖
+		if (debug_launch.target_set) {
+			if (auto* tps = dynamic_cast<TPSCamera*>(camera)) {
+				tps->ground_locked = false;
+			}
+			camera->position = { debug_launch.target_x, debug_launch.target_y, debug_launch.target_z };
+			std::cout << "[CAM] target=(" << camera->position.x << ", " << camera->position.y << ", "
+				<< camera->position.z << ") dist=" << camera->distance << "\n";
+		} else if (debug_launch.focus_x >= 0.f && debug_launch.focus_y >= 0.f) {
+			camera->position.x = debug_launch.focus_x;
+			camera->position.y = debug_launch.focus_y;
+			camera->position.z = map->terrain.interpolated_height(debug_launch.focus_x, debug_launch.focus_y);
+		}
+		if (debug_launch.distance > 0.f) {
+			camera->distance = debug_launch.distance;
+		}
+		if (debug_launch.focus_x >= 0.f || debug_launch.distance > 0.f || debug_launch.target_set) {
+			camera->update(0);
+			if (debug_launch.target_set) {
+				const glm::vec3 eye = camera->position - camera->direction * camera->distance;
+				std::cout << "[CAM] 更新后 target=(" << camera->position.x << ", " << camera->position.y
+					<< ", " << camera->position.z << ") eye=(" << eye.x << ", " << eye.y << ", "
+					<< eye.z << ")\n";
+			}
+		}
+		setWindowTitle("HiveWE 0.6 - " + QString::fromStdString(map->filesystem_path.string()));
+	} else {
+		map->load("Data/Test Map/");
+	}
+
+	if (debug_launch.probe_steps > 0) {
+		map->terrain.probe_slope(debug_launch.probe_x0, debug_launch.probe_y0,
+			debug_launch.probe_x1, debug_launch.probe_y1, debug_launch.probe_steps);
+		QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+	}
 
 	//QTimer::singleShot(50, [this]() {
 	//	auto palette = new TerrainPalette(this);

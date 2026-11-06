@@ -1,7 +1,12 @@
-# WorldEditor（Godot + C#）· 界面打桩版
+# WorldEditor（Godot + C#）
 
-HiveWE 0.6 的界面在 Godot 4.7 / .NET 上的复刻。**当前只做界面，全部功能打桩**：点任何按钮只会打印
-`[STUB] <id>` 并在底部弹一条提示，不会读写地图。
+HiveWE 0.6 的界面在 Godot 4.7 / .NET 上的复刻，加上从 0 写的 War3 格式层。
+
+**已经能用的**：打开 `.w3m/.w3x`（MPQ 解析 + 表解密 + 多扇区解压）→ 地形笔刷能刷出来的东西都在视口里按真实资源渲染：
+高度、四层地表叠加、悬崖模型、斜坡过渡、逐格水面（深浅配色）；保存 / 另存为写回 MPQ。
+其余按钮仍然打桩，点下去只打印 `[STUB] <id>`。
+
+资源取自 `assets/`（已从 1.27 客户端提取），**不依赖 War3 安装目录**。
 
 ```
 D:/WorldEditor/
@@ -32,11 +37,11 @@ dotnet build Godot/WorldEdit.csproj
 cmd //c export.bat          # 或双击 export.bat
 ```
 
-产物是**单个 exe，没有任何附带文件**（`export_presets.cfg` 里开了 `binary_format/embed_pck` 与 `dotnet/embed_build_outputs`）：
+产物是**单个 exe，没有任何附带文件**，输出到仓库根目录（`D:/WorldEditor/WorldEditor.exe`）（`export_presets.cfg` 里开了 `binary_format/embed_pck` 与 `dotnet/embed_build_outputs`）：
 
 | 文件 | 说明 |
 |---|---|
-| `WorldEditor.exe` | 190 MB，导出模板 + 内嵌 PCK + 内嵌 .NET 运行时与程序集，拷到任何空白目录都能直接跑 |
+| `WorldEditor.exe`（仓库根） | 190 MB，导出模板 + 内嵌 PCK + 内嵌 .NET 运行时与程序集，拷到任何空白目录都能直接跑 |
 
 体积构成（实测）：模板 + 项目 PCK 约 109 MB，加上内嵌的 .NET 8 运行时约 80 MB；开启 ReadyToRun 后多约 10 MB。
 想看双文件形态（exe + `data_*/`）把 `dotnet/embed_build_outputs` 关掉即可，两者功能一致。
@@ -108,7 +113,22 @@ python tools/crop_png.py shot.png corner.png 6 126 40 30 10   # 左上角 10 倍
 | `--tab=<n>` | 启动时切到第 n 个 Ribbon 页签 |
 | `--check-tabs` | 逐页签切一遍并打印 Ribbon 高度，验证切页签不跳 |
 | `--camera-test` | 平移/旋转/升降的数值自检 |
+| `--map=<path>` | 启动时直接打开地图 |
+| `--map-dialog` | 启动时弹出打开地图对话框 |
+| `--tile-dump=<tileID>\|<dir>` | 按瓦片 ID 查 Terrain.slk 并解码成 PNG |
+| `--blp-dump=<相对路径>\|<png>` | 直接解码单张 BLP 到 PNG |
 | `--tooltip-probe` | 按 Godot 生成 Tooltip 的同一结构建一个探针，打印解析出的底色/字色/字体，并画一份在视口上供截图 |
+| `--dist=<世界单位>` | 启动时把相机距离设成指定值（近景核对用） |
+| `--focus=<x>,<z>` | 启动时把相机目标移到某格（格坐标），配合 `--dist` 看局部 |
+| `--no-water` | 不生成水面，排查地形/悬崖破洞用 |
+| `--shot-view` | 只存 3D 视口（不含 UI），和 HiveWE 的视口截图逐像素比 |
+| `--view-size=<W>x<H>` | 固定 3D 视口像素尺寸 |
+| `--fov=<度>` | 改垂直 FOV（默认已经是 HiveWE 的 50.705°） |
+| `--mpq-unpack=<mpq>|<dir>` | 把地图解包成目录，供 HiveWE 的目录模式打开 |
+| `--cam=<x,y,z>` | 把相机放到指定世界坐标（标题栏里的坐标可以原样贴回来复现） |
+| `--yaw=` / `--pitch=` | 覆盖水平角 / 俯角 |
+| `--minimap-dump=<w3m>\|<png>` | 导出小地图 PNG（校验方向用） |
+| `--no-minimap` | 启动时不显示小地图（截图对比用，等价于 View → 小地图 取消勾选） |
 
 ## 结构
 
@@ -130,6 +150,20 @@ src/Game/Ui/
 assets/icons/    从 `HiveWE/Data/Icons` 复制（ICO 已转 PNG）
 assets/shaders/  占位地形与水面着色器
 ```
+
+## 地图显示
+
+`文件 → 打开地图` 选 `.w3m/.w3x`，视口会显示真实地形：高度来自 `war3map.w3e` 的角点，
+地表贴图按 `Terrain.slk` 映射到 BLP 并叠成 `Texture2DArray`，水面按 `Water.slk` 的 tileset 偏移定位。
+
+技术细节与踩过的坑见 `HiveWE/Doc/04-打开地图与地形渲染.md`，这里只列关键的三条：
+
+- BLP1 头 156 字节后有 **1024 字节共享调色板**，`mipOffsets` 多算了它
+- 地形贴图是 **4 分量 JPEG（BGRA）**，Godot 的 stb_image 不支持，所以自带一个基线 JPEG 解码器
+- 世界高度必须加 **`layer_height`**：`(raw-8192)/512 + layer - 2`，漏了整张图会沉到水下
+
+**已知限制**：悬崖尚未渲染，相邻角点层高差会显示成斜坡（看起来像锯齿）；水面是单平面；
+没有阴影与雾效。
 
 ## 与 HiveWE 0.6 的差异
 

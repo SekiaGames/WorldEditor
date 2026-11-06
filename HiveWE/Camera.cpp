@@ -96,7 +96,9 @@ void TPSCamera::update(double delta) {
 	} else if (input_handler.key_pressed(Qt::Key_Down)) {
 		position += forward * 40.f * static_cast<float>(delta) * (distance / 30.f);
 	}
-	position.z = map->terrain.interpolated_height(position.x, position.y);
+	if (ground_locked) {
+		position.z = map->terrain.interpolated_height(position.x, position.y);
+	}
 
 	projection = glm::perspective(fov, aspect_ratio, draw_distance_close, draw_distance);
 	view = glm::lookAt(position - direction * distance, position, up);

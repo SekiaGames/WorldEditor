@@ -5,12 +5,3 @@
 # 构建产物
 bin/
 obj/
-
-# 导出产物（与 export_presets.cfg 里的输出一致）
-/WorldEditor.exe
-/WorldEditor.pck
-/data_WorldEdit_windows_x86_64/
-
-# 导出时的临时/备份文件
-*.old
-*.new.exe

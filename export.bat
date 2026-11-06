@@ -6,8 +6,9 @@ rem   export.bat                          -> "WorldEditor.exe"
 rem   export.bat "WorldEditor.new.exe"      -> export under another name
 rem The exe cannot be overwritten while the app is running, so the second form
 rem lets you build next to a running instance and swap it in afterwards.
-rem The Godot project lives in .\Godot; artifacts are written there too.
+rem The Godot project lives in .\Godot; artifacts are written next to this script.
 set "PROJECT=%~dp0Godot\"
+set "OUTPUT=%~dp0"
 if exist "%ProgramFiles%\dotnet\dotnet.exe" set "PATH=%ProgramFiles%\dotnet;%PATH%"
 if exist "%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe" set "PATH=%LOCALAPPDATA%\Microsoft\dotnet;%PATH%"
 
@@ -22,8 +23,8 @@ if not exist "%GODOT%" (
 )
 
 echo Project: %PROJECT%
-echo Exporting to "%PROJECT%%OUT%"
-"%GODOT%" --headless --path "%PROJECT%." --export-release "Windows Desktop" "%PROJECT%%OUT%"
+echo Exporting to "%OUTPUT%%OUT%"
+"%GODOT%" --headless --path "%PROJECT%." --export-release "Windows Desktop" "%OUTPUT%%OUT%"
 if errorlevel 1 (
   echo [ERROR] Export failed, see the log above.
   echo         If it says the temp file could not be renamed, the target exe is
@@ -31,6 +32,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [OK] Done. Output: "%PROJECT%%OUT%"
+echo [OK] Done. Output: "%OUTPUT%%OUT%"
 echo      Single-file build: no data folder is produced (embed_build_outputs=true).
 endlocal

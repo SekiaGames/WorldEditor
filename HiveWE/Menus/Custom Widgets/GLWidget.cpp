@@ -5,11 +5,19 @@
 #include <QTimer>
 #include <QOpenGLFunctions_4_5_Core>
 #include <QPainter>
+#include <QImage>
+#include <QDir>
+#include <QFileInfo>
+#include <QCoreApplication>
+#include <vector>
 
 #include "Utilities.h"
 #include "InputHandler.h"
 
 #include "HiveWE.h"
+
+QString GLWidget::screenshot_path;
+int GLWidget::screenshot_countdown = -1;
 
 
 void APIENTRY gl_debug_output(const GLenum source, const GLenum type, const GLuint id, const GLenum severity, const GLsizei, const GLchar *message, void *) {
@@ -139,6 +147,28 @@ void GLWidget::paintGL() {
 	map->render(width(), height());
 
 	gl->glBindVertexArray(0);
+
+	// 调试截图：等若干帧之后读一次帧缓冲存 PNG 再退出。读的是纯 3D 画面，
+	// 不含后面 QPainter 叠的调试文字，方便和 Godot 版逐像素比。
+	if (!screenshot_path.isEmpty() && screenshot_countdown >= 0) {
+		if (screenshot_countdown > 0) {
+			--screenshot_countdown;
+		} else {
+			const int w = width();
+			const int h = height();
+			std::vector<uint8_t> pixels(static_cast<size_t>(w) * h * 4);
+			gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, defaultFramebufferObject());
+			gl->glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			gl->glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+			const QImage image(pixels.data(), w, h, QImage::Format_RGBA8888);
+			const QImage flipped = image.mirrored(false, true);
+			QDir().mkpath(QFileInfo(screenshot_path).absolutePath());
+			const bool ok = flipped.save(screenshot_path);
+			std::cout << "[SHOT] " << screenshot_path.toStdString() << " " << w << "x" << h << " ok=" << ok << std::endl;
+			screenshot_path.clear();
+			QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+		}
+	}
 
 	if (map->render_debug) {
 		QPainter p(this);

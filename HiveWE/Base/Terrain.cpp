@@ -1,6 +1,9 @@
 #include <set>
 #include <bitset>
 #include <iostream>
+#include <limits>
+#include <algorithm>
+#include <cmath>
 
 #include "Terrain.h"
 #include "Hierarchy.h"
@@ -389,6 +392,10 @@ void Terrain::render() const {
 	}
 
 	// Render water
+	if (!map->render_water) {
+		gl->glEnable(GL_BLEND);
+		return;
+	}
 	water_shader->use();
 
 	gl->glUniformMatrix4fv(0, 1, GL_FALSE, &camera->projection_view[0][0]);
@@ -531,6 +538,49 @@ glm::u16vec4 Terrain::get_texture_variations(const int x, const int y) const {
 		tiles[component++] = texture + (index.to_ulong() << 5);
 	}
 	return tiles;
+}
+
+void Terrain::probe_slope(const float x0, const float y0, const float x1, const float y1, int steps) {
+	if (steps < 1) {
+		steps = 1;
+	}
+	std::cout << std::fixed;
+	std::cout.precision(4);
+	std::cout << "[PROBE] ray down z=+200 -> -200, tile = 1.0, layer = 1.0\n";
+	for (int s = 0; s <= steps; s++) {
+		const float t = static_cast<float>(s) / steps;
+		const float x = x0 + (x1 - x0) * t;
+		const float y = y0 + (y1 - y0) * t;
+
+		btVector3 from(x, y, 200.f);
+		btVector3 to(x, y, -200.f);
+		btCollisionWorld::ClosestRayResultCallback callback(from, to);
+		physics.dynamicsWorld->rayTest(from, to, callback);
+		const float collision = callback.hasHit() ? callback.m_hitPointWorld.getZ()
+			: std::numeric_limits<float>::quiet_NaN();
+
+		// 渲染面照 terrain.vs 来：顶点高度取 ground_corner_heights，
+		// 两个三角形沿 (1,0)-(0,1) 对角线分开（Utilities.h 的 quad_indices）。
+		const int tx = std::clamp(static_cast<int>(std::floor(x)), 0, width - 2);
+		const int ty = std::clamp(static_cast<int>(std::floor(y)), 0, height - 2);
+		const float u = std::clamp(x - tx, 0.f, 1.f);
+		const float v = std::clamp(y - ty, 0.f, 1.f);
+		const float h00 = ground_corner_heights[ty * width + tx];
+		const float h10 = ground_corner_heights[ty * width + tx + 1];
+		const float h01 = ground_corner_heights[(ty + 1) * width + tx];
+		const float h11 = ground_corner_heights[(ty + 1) * width + tx + 1];
+		const float render = (u + v >= 1.f)
+			? h11 * (u + v - 1.f) + h10 * (1.f - v) + h01 * (1.f - u)
+			: h00 * (1.f - u - v) + h10 * u + h01 * v;
+
+		const Corner& corner = corners[tx][ty];
+		std::cout << "[PROBE] " << s << " x=" << x << " y=" << y
+			<< " collision=" << collision << " render=" << render
+			<< " layer=" << static_cast<int>(corner.layer_height)
+			<< " ramp=" << corner.ramp << " cliff=" << corner.cliff
+			<< " ramp_entrance=" << is_corner_ramp_entrance(tx, ty) << "\n";
+	}
+	std::cout.flush();
 }
 
 float Terrain::interpolated_height(float x, float y) const {

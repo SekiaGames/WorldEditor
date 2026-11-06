@@ -24,6 +24,10 @@ rem ===========================================================================
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 
+rem 整个脚本以仓库根为工作目录，后面一律用相对路径，
+rem 这样整棵 HiveWE 目录搬走之后不用改任何东西。
+pushd "%ROOT%" || exit /b 1
+
 rem ---------------------- Paths: edit only this block -----------------------
 rem  Everything lives inside the repo; toolchain\ is in .gitignore.
 set "LOCAL_TT=%ROOT%\toolchain"
@@ -35,7 +39,7 @@ set "DEPS_BUILD=%LOCAL_TT%\deps\build"
 set "CONFIG=Release"
 rem -------------------------------------------------------------------------
 
-set "BUILD_DIR=%ROOT%/build"
+set "BUILD_DIR=build"
 
 set "ACTION=%~1"
 if "%ACTION%"=="" set "ACTION=app"
@@ -233,16 +237,22 @@ rem ===========================================================================
 echo.
 echo ===== Configuring HiveWE =====
 
-rem Ninja is single config: wipe a build directory produced by another generator
+rem CMakeCache 会写死源码目录和工具链的绝对路径，目录一搬就失效。
+rem 这里把缓存里记录的源码目录和当前目录比一下，不一致就丢掉缓存重配。
 if exist "%BUILD_DIR%\CMakeCache.txt" (
-	findstr /c:"CMAKE_GENERATOR:INTERNAL=Ninja" "%BUILD_DIR%\CMakeCache.txt" >nul 2>&1 || (
-		echo [CLEAN] generator changed, removing stale build directory
+	set "STALE="
+	set "CACHED_SRC="
+	for /f "tokens=1,* delims==" %%a in ('findstr /b /c:"CMAKE_HOME_DIRECTORY:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt" 2^>nul') do set "CACHED_SRC=%%b"
+	findstr /c:"CMAKE_GENERATOR:INTERNAL=Ninja" "%BUILD_DIR%\CMakeCache.txt" >nul 2>&1 || set "STALE=1"
+	if not "!CACHED_SRC!"=="" if /i not "!CACHED_SRC!"=="%ROOT%" set "STALE=1"
+	if defined STALE (
+		echo [CLEAN] build cache is stale ^(source dir or generator changed^), removing %BUILD_DIR%
 		rmdir /s /q "%BUILD_DIR%"
 	)
 )
 
-"%CMAKE%" -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
- -DCMAKE_INSTALL_PREFIX=%ROOT%/out ^
+"%CMAKE%" -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=%CONFIG% ^
+ -DCMAKE_INSTALL_PREFIX=out ^
  -DQt5_DIR=%QT_DIR%/lib/cmake/Qt5 ^
  -DQSCINTILLA_ROOT=%QT_DIR% ^
  -Dqt5advanceddocking_DIR=%ADS_DIR%/lib/cmake/qt5advanceddocking ^

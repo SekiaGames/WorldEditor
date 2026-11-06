@@ -58,6 +58,10 @@ struct TPSCamera : Camera {
 
 	bool rolling = false;
 
+	/// 关掉之后 update() 不再把相机锚到地表高度上。
+	/// 正常操作时相机始终贴着地面；调试 --target 时要复现"轨道中心在地下"这种机位，得放开。
+	bool ground_locked = true;
+
 	void update(double delta) override;
 	void mouse_move_event(QMouseEvent* event) override;
 	void mouse_scroll_event(QWheelEvent* event) override;

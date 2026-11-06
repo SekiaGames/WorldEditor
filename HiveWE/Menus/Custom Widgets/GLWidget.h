@@ -16,6 +16,10 @@ public:
 	TPSCamera tps_camera;
 	FPSCamera fps_camera;
 
+	/// 截图路径（空 = 不截）和还剩几帧，由 main.cpp 的 --shot/--frames 写入。
+	static QString screenshot_path;
+	static int screenshot_countdown;
+
 	explicit GLWidget(QWidget* parent);
 	~GLWidget() = default;
 

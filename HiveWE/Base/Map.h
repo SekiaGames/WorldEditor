@@ -52,6 +52,7 @@ public:
 	bool render_lighting = true;
 	bool render_wireframe = false;
 	bool render_debug = false;
+	bool render_water = true;
 
 	fs::path filesystem_path;
 	std::string name;
