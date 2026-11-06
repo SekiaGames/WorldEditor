@@ -24,7 +24,7 @@ public static class MdxExportCli
     /// --mdx-export=输出目录              同上，指定输出
     /// --mdx-export=源目录|输出目录        从解包目录读
     /// </summary>
-    public static void Export(string sourceDirectory, string targetDirectory)
+    public static void Export(string sourceDirectory, string targetDirectory, string only = null)
     {
         string target = CliPath.ResolveOutput(string.IsNullOrEmpty(targetDirectory)
             ? DefaultTarget
@@ -64,6 +64,12 @@ public static class MdxExportCli
             Console.WriteLine($"[MDX] 源 {source}，共 {entries.Count} 个 .mdx");
         }
 
+        if (!string.IsNullOrEmpty(only))
+        {
+            entries.RemoveAll(entry => entry.Relative.IndexOf(only, StringComparison.OrdinalIgnoreCase) < 0);
+            Console.WriteLine($"[MDX] 只导匹配 \"{only}\" 的 {entries.Count} 个模型");
+        }
+
         var failures = new List<string>();
         long totalSource = 0;
         long totalTarget = 0;
@@ -80,6 +86,8 @@ public static class MdxExportCli
                 Directory.CreateDirectory(Path.GetDirectoryName(output));
                 (byte[] blob, JsonObject _) = GlbWriter.Build(document, Path.GetDirectoryName(output), convertedRoot);
                 File.WriteAllBytes(output, blob);
+                // 材质 / 动画 / per-model 场景拆成独立 Godot 资源，glb 只留几何 + 骨骼 + 蒙皮
+                ModelBundle.Write(document, output);
                 File.WriteAllBytes(Path.ChangeExtension(output, ".wc3.json"),
                     new UTF8Encoding(false).GetBytes(Sidecar(document).ToJsonString(JsonOptions)));
                 totalSource += data.Length;

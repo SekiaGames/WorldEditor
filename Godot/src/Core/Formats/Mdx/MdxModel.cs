@@ -66,6 +66,44 @@ public sealed class MdxSequence
     public uint End;
 }
 
+public sealed class MdxGeosetAnimation
+{
+    public int GeosetId;
+    public float Alpha = 1f;
+    public uint Flags;
+    public float[] Color = { 1f, 1f, 1f };
+    public MdxTrack AlphaTrack;
+
+    /// <summary>按时间（毫秒）求 geoset 的 alpha；没有 KGAO 轨道时就是静态 alpha。</summary>
+    public float AlphaAt(uint time)
+    {
+        if (AlphaTrack == null || AlphaTrack.Keys.Count == 0)
+        {
+            return Alpha;
+        }
+
+        var keys = new List<MdxKey>(AlphaTrack.Keys);
+        keys.Sort((a, b) => a.Frame.CompareTo(b.Frame));
+        if (time <= keys[0].Frame)
+        {
+            return keys[0].Value[0];
+        }
+        for (int i = 0; i + 1 < keys.Count; i++)
+        {
+            if (time < keys[i + 1].Frame)
+            {
+                if (AlphaTrack.Interpolation == 0 || keys[i + 1].Frame == keys[i].Frame)
+                {
+                    return keys[i].Value[0];
+                }
+                float t = (time - keys[i].Frame) / (float)(keys[i + 1].Frame - keys[i].Frame);
+                return keys[i].Value[0] + (keys[i + 1].Value[0] - keys[i].Value[0]) * t;
+            }
+        }
+        return keys[^1].Value[0];
+    }
+}
+
 public sealed class MdxGeoset
 {
     public float[] Positions;
@@ -73,7 +111,10 @@ public sealed class MdxGeoset
     public float[] Uvs;
     public uint[] Indices = Array.Empty<uint>();
     public byte[] VertexGroups;
-    public uint[] MatrixGroups;
+    /// <summary>MTGC：每个蒙皮组包含的矩阵（骨骼）个数。</summary>
+    public uint[] MatrixGroupSizes;
+    /// <summary>MATS：展平的骨骼 objectId 列表，第 g 组占 MatrixGroupSizes[g] 个。</summary>
+    public uint[] MatrixIds;
     public int MaterialId;
 }
 
@@ -88,6 +129,7 @@ public sealed class MdxDocument
     public readonly List<MdxTexture> Textures = new();
     public readonly List<MdxMaterial> Materials = new();
     public readonly List<MdxGeoset> Geosets = new();
+    public readonly List<MdxGeosetAnimation> GeosetAnimations = new();
     public readonly List<MdxNode> Bones = new();
     public readonly List<MdxNode> Helpers = new();
     public readonly List<MdxNode> Attachments = new();
@@ -163,6 +205,10 @@ public sealed class MdxDocument
                     ReadRecords(reader, end, data, record => document.Geosets.Add(ReadGeoset(reader, record)));
                     break;
 
+                case "GEOA":
+                    ReadRecords(reader, end, data, record => document.GeosetAnimations.Add(ReadGeosetAnimation(reader, record)));
+                    break;
+
                 case "BONE":
                     ReadNodes(reader, end, data, document.Bones);
                     break;
@@ -213,6 +259,71 @@ public sealed class MdxDocument
         }
 
         return document;
+    }
+
+    /// <summary>
+    /// 某个 geoset 在指定时间点的 alpha。GEOA 的静态 alpha 恒为 1，真正的显隐在 KGAO 轨道里，
+    /// 死亡才出现的骸骨 / 血迹靠这条轨道在 Stand 期间为 0。
+    /// </summary>
+    public float GeosetAlphaAt(int geosetIndex, uint time)
+    {
+        foreach (MdxGeosetAnimation animation in GeosetAnimations)
+        {
+            if (animation.GeosetId == geosetIndex)
+            {
+                return animation.AlphaAt(time);
+            }
+        }
+        return 1f;
+    }
+
+    private static MdxGeosetAnimation ReadGeosetAnimation(MdxReader reader, int size)
+    {
+        int end = reader.Position + size;
+        reader.U32();
+        var animation = new MdxGeosetAnimation { Alpha = reader.Floats(1)[0] };
+        animation.Flags = reader.U32();
+        animation.Color = reader.Floats(3);
+        animation.GeosetId = (int)reader.U32();
+
+        while (reader.Position + 16 <= end)
+        {
+            int before = reader.Position;
+            string tag = reader.Tag();
+            int count = (int)reader.U32();
+            uint interpolation = reader.U32();
+            reader.U32();
+            if (count < 0 || count > 1 << 16)
+            {
+                reader.Position = before;
+                break;
+            }
+
+            var track = new MdxTrack { Interpolation = interpolation };
+            for (int i = 0; i < count; i++)
+            {
+                uint frame = reader.U32();
+                float[] value = reader.Floats(1);
+                if (interpolation > 1)
+                {
+                    // 和节点轨道一样，Hermite/Bezier 的每个关键帧后面还跟着 inTan / outTan
+                    reader.Floats(2);
+                }
+                track.Keys.Add(new MdxKey(frame, value));
+            }
+
+            if (tag == "KGAO")
+            {
+                animation.AlphaTrack = track;
+            }
+            if (reader.Position <= before)
+            {
+                reader.Position = before + 16;
+            }
+        }
+
+        reader.Position = end;
+        return animation;
     }
 
     private static void ReadRecords(MdxReader reader, int end, byte[] data, Action<int> handler)
@@ -307,30 +418,35 @@ public sealed class MdxDocument
         {
             int before = reader.Position;
             string tag = reader.Tag();
-            int length = (int)reader.U32();
+            // 这个字段在 KGTR/KGRT/KGSC 上是「关键帧个数」，在 GEOS/ATCH 上才是块字节数
+            int payload = (int)reader.U32();
             int body = reader.Position;
             switch (tag)
             {
                 case "GEOS":
                     reader.U32();
                     reader.U32();
+                    reader.Position = body + payload;
                     break;
                 case "KGTR":
-                    node.Tracks["translation"] = ReadTrack(reader, 3);
+                    node.Tracks["translation"] = ReadTrack(reader, 3, payload);
                     break;
                 case "KGRT":
-                    node.Tracks["rotation"] = ReadTrack(reader, 4);
+                    node.Tracks["rotation"] = ReadTrack(reader, 4, payload);
                     break;
                 case "KGSC":
-                    node.Tracks["scale"] = ReadTrack(reader, 3);
+                    node.Tracks["scale"] = ReadTrack(reader, 3, payload);
                     break;
                 case "ATCH":
                     node.AttachmentPath = reader.String(260);
                     reader.U32();
                     node.AttachmentId = (int)reader.U32();
+                    reader.Position = body + payload;
+                    break;
+                default:
+                    reader.Position = body + payload;
                     break;
             }
-            reader.Position = body + length;
             if (reader.Position <= before)
             {
                 // 畸形长度会让位置不前进，兜底跳过这条记录
@@ -342,11 +458,12 @@ public sealed class MdxDocument
         return node;
     }
 
-    private static MdxTrack ReadTrack(MdxReader reader, int width)
+    private static MdxTrack ReadTrack(MdxReader reader, int width, int count)
     {
-        int count = (int)reader.U32();
         uint interpolation = reader.U32();
+        reader.U32();
         var track = new MdxTrack { Interpolation = interpolation };
+        count = Math.Clamp(count, 0, 1 << 16);
         for (int i = 0; i < count && reader.Position + width * 4 <= reader.Data.Length; i++)
         {
             uint frame = reader.U32();
@@ -464,20 +581,27 @@ public sealed class MdxDocument
                     reader.Position = body + count;
                     break;
                 case "MTGC":
-                    geoset.MatrixGroups = new uint[count];
+                    geoset.MatrixGroupSizes = new uint[count];
                     for (int i = 0; i < count; i++)
                     {
-                        geoset.MatrixGroups[i] = BinaryPrimitives.ReadUInt32LittleEndian(reader.Data.AsSpan(body + i * 4));
+                        geoset.MatrixGroupSizes[i] = BinaryPrimitives.ReadUInt32LittleEndian(reader.Data.AsSpan(body + i * 4));
                     }
                     reader.Position = body + count * 4;
                     break;
                 case "MATS":
-                    geoset.MaterialId = (int)BinaryPrimitives.ReadUInt32LittleEndian(reader.Data.AsSpan(body));
+                    geoset.MatrixIds = new uint[count];
+                    for (int i = 0; i < count; i++)
+                    {
+                        geoset.MatrixIds[i] = BinaryPrimitives.ReadUInt32LittleEndian(reader.Data.AsSpan(body + i * 4));
+                    }
                     reader.Position = body + count * 4;
+                    // 紧跟 MATS 的裸 uint32 才是材质号（之前误用 MATS[0]，2048 个模型里绝大多数 geoset 套错贴图）
+                    geoset.MaterialId = (int)reader.U32();
                     seenMaterials = true;
-                    continue;
+                    break;
                 case "UVBS":
                     geoset.Uvs = reader.Floats(count * 2);
+                    reader.Position = end;
                     break;
                 default:
                     reader.Position = body;

@@ -9,6 +9,7 @@ namespace WorldEdit.Assets;
 public sealed class UnitModel
 {
     public PackedScene Scene;
+    public string ScenePath = "";
     public float Scale = 1f;
 }
 
@@ -77,6 +78,6 @@ public static class UnitMeshLibrary
             scale = parsed;
         }
 
-        return new UnitModel { Scene = scene, Scale = scale };
+        return new UnitModel { Scene = scene, ScenePath = path, Scale = scale };
     }
 }

@@ -30,31 +30,12 @@ public static class GlbWriter
         -MathF.Sin(-MathF.PI / 4f), 0f, 0f, MathF.Cos(-MathF.PI / 4f),
     };
 
-    /// <summary>
-    /// WC3 的 filterMode 与 glTF alphaMode 的对应关系（阈值照 HiveWE 的 static_mesh_instanced.fs）：
-    ///   0 NONE        → OPAQUE
-    ///   1 TRANSPARENT → MASK，alphaCutoff 0.75（镂空，不混合）
-    ///   2 BLEND       → BLEND
-    ///   3-6 是加法/调制类（ADDITIVE / ADDITIVEALPHA / MODULATE / MODULATE2X），
-    ///       glTF 没有对应表达，暂时退化成 BLEND，做特效时再单独处理。
-    /// </summary>
-    private static readonly Dictionary<uint, (string Mode, float Cutoff)> FilterAlpha = new()
-    {
-        [0] = ("OPAQUE", 0f),
-        [1] = ("MASK", 0.75f),
-        [2] = ("BLEND", 0f),
-        [3] = ("BLEND", 0f),
-        [4] = ("BLEND", 0f),
-        [5] = ("BLEND", 0f),
-        [6] = ("BLEND", 0f),
-    };
-
-    private static float[] ConvertPosition(float x, float y, float z)
+    internal static float[] ConvertPosition(float x, float y, float z)
     {
         return new[] { x, z, -y };
     }
 
-    private static float[] ConvertScale(float x, float y, float z)
+    internal static float[] ConvertScale(float x, float y, float z)
     {
         return new[] { x, z, y };
     }
@@ -72,7 +53,7 @@ public static class GlbWriter
         };
     }
 
-    private static float[] ConvertQuaternion(float[] q)
+    internal static float[] ConvertQuaternion(float[] q)
     {
         float[] result = QuaternionMultiply(QuaternionMultiply(RotationQuaternion, q), RotationQuaternionInverse);
         float norm = MathF.Sqrt(result[0] * result[0] + result[1] * result[1]
@@ -199,38 +180,12 @@ public static class GlbWriter
         }
     }
 
-    private static string TextureUri(string path, uint replaceableId, string glbDirectory, string convertedRoot)
-    {
-        string name;
-        if (replaceableId == 1)
-        {
-            name = "ReplaceableTextures/TeamColor/TeamColor00";
-        }
-        else if (replaceableId == 2)
-        {
-            name = "ReplaceableTextures/TeamGlow/TeamGlow00";
-        }
-        else
-        {
-            if (string.IsNullOrEmpty(path))
-            {
-                return null;
-            }
-            name = Path.ChangeExtension(path.Replace('\\', '/'), null);
-        }
-
-        string target = Path.GetFullPath(Path.Combine(convertedRoot, name + ".png"));
-        return Path.GetRelativePath(glbDirectory, target).Replace('\\', '/');
-    }
-
     /// <summary>组装 .glb，返回文件字节与解析用的 JSON（便于调用方核对）。</summary>
     public static (byte[] Blob, JsonObject Gltf) Build(MdxDocument model, string glbDirectory, string convertedRoot)
     {
         var builder = new Builder();
         var nodes = new JsonArray();
         var meshes = new JsonArray();
-        var materials = new JsonArray();
-        var images = new List<string>();
         List<MdxNode> bones = model.Bones;
         float[] pivots = model.Pivots;
 
@@ -294,24 +249,35 @@ public static class GlbWriter
             }
         }
 
-        // 关节的静止世界位置：累加父级偏移，用来算 inverseBindMatrices
+        // 关节的静止世界位置：沿父链累加偏移，用来算 inverseBindMatrices。
+        // 不能依赖 allNodes 的遍历顺序（父节点 objectId 比子节点大时会先算到子节点）。
         var worldOffset = new Dictionary<int, float[]>();
-        foreach (MdxNode node in allNodes)
+        var resolving = new HashSet<int>();
+        float[] WorldOffsetOf(MdxNode node)
         {
-            MdxNode parent = allNodes.Find(candidate => candidate.ObjectId == node.ParentId);
-            float[] offset = translationOfObject[node.ObjectId];
-            if (parent != null && parent != node && worldOffset.ContainsKey(parent.ObjectId))
+            if (worldOffset.TryGetValue(node.ObjectId, out float[] cached))
             {
-                float[] parentOffset = worldOffset[parent.ObjectId];
-                worldOffset[node.ObjectId] = new[]
+                return cached;
+            }
+            float[] local = translationOfObject[node.ObjectId];
+            MdxNode parent = allNodes.Find(candidate => candidate.ObjectId == node.ParentId);
+            float[] world = local;
+            if (parent != null && parent != node && resolving.Add(node.ObjectId))
+            {
+                float[] parentOffset = WorldOffsetOf(parent);
+                world = new[]
                 {
-                    parentOffset[0] + offset[0], parentOffset[1] + offset[1], parentOffset[2] + offset[2],
+                    parentOffset[0] + local[0], parentOffset[1] + local[1], parentOffset[2] + local[2],
                 };
             }
-            else
-            {
-                worldOffset[node.ObjectId] = offset;
-            }
+            resolving.Remove(node.ObjectId);
+            worldOffset[node.ObjectId] = world;
+            return world;
+        }
+
+        foreach (MdxNode node in allNodes)
+        {
+            WorldOffsetOf(node);
         }
 
         JsonObject skin = null;
@@ -336,9 +302,10 @@ public static class GlbWriter
                 matrices[start + 5] = 1f;
                 matrices[start + 10] = 1f;
                 matrices[start + 15] = 1f;
-                matrices[start + 3] = -offset[0];
-                matrices[start + 7] = -offset[1];
-                matrices[start + 11] = -offset[2];
+                // glTF 的 MAT4 按列主序存，平移在第 4 列（12/13/14），不是第 4 行（3/7/11）
+                matrices[start + 12] = -offset[0];
+                matrices[start + 13] = -offset[1];
+                matrices[start + 14] = -offset[2];
             }
 
             int inverseBind = builder.AddFloat(matrices, 16, "MAT4", 0, false);
@@ -358,22 +325,6 @@ public static class GlbWriter
         for (int i = 0; i < bones.Count; i++)
         {
             objectToJoint[bones[i].ObjectId] = i;
-        }
-
-        int TextureIndex(string path, uint replaceableId)
-        {
-            string uri = TextureUri(path, replaceableId, glbDirectory, convertedRoot);
-            if (uri == null)
-            {
-                return -1;
-            }
-            int existing = images.IndexOf(uri);
-            if (existing >= 0)
-            {
-                return existing;
-            }
-            images.Add(uri);
-            return images.Count - 1;
         }
 
         var sceneChildren = new JsonArray();
@@ -426,12 +377,19 @@ public static class GlbWriter
             attributes["TEXCOORD_0"] = builder.AddFloat((float[])uvs.Clone(), 2, "VEC2", 34962, false);
 
             bool skinned = false;
-            if (skin != null && geoset.VertexGroups != null && geoset.MatrixGroups != null && geoset.MatrixGroups.Length > 0)
+            if (skin != null && geoset.VertexGroups != null
+                && geoset.MatrixGroupSizes != null && geoset.MatrixGroupSizes.Length > 0
+                && geoset.MatrixIds != null && geoset.MatrixIds.Length > 0)
             {
-                var jointOfGroup = new int[geoset.MatrixGroups.Length];
-                for (int i = 0; i < geoset.MatrixGroups.Length; i++)
+                // MTGC 是每组包含的骨骼个数，MATS 是展平的骨骼 objectId。
+                // 第 g 组的骨骼是 MatrixIds[offset[g] .. offset[g]+sizes[g])，War3 在组内均分权重。
+                int groupCount = geoset.MatrixGroupSizes.Length;
+                var groupOffset = new int[groupCount];
+                int cursor = 0;
+                for (int i = 0; i < groupCount; i++)
                 {
-                    jointOfGroup[i] = objectToJoint.TryGetValue((int)geoset.MatrixGroups[i], out int joint) ? joint : -1;
+                    groupOffset[i] = cursor;
+                    cursor += (int)geoset.MatrixGroupSizes[i];
                 }
 
                 var jointIndices = new ushort[count * 4];
@@ -439,12 +397,38 @@ public static class GlbWriter
                 for (int vertex = 0; vertex < count; vertex++)
                 {
                     int group = geoset.VertexGroups[vertex];
-                    if (group < jointOfGroup.Length && jointOfGroup[group] >= 0)
+                    if (group >= groupCount)
                     {
-                        jointIndices[vertex * 4] = (ushort)jointOfGroup[group];
-                        jointWeights[vertex * 4] = 1f;
-                        skinned = true;
+                        continue;
                     }
+                    int start = groupOffset[group];
+                    int size = (int)geoset.MatrixGroupSizes[group];
+                    int used = 0;
+                    for (int k = 0; k < size && used < 4; k++)
+                    {
+                        int index = start + k;
+                        if (index >= geoset.MatrixIds.Length)
+                        {
+                            break;
+                        }
+                        if (!objectToJoint.TryGetValue((int)geoset.MatrixIds[index], out int joint))
+                        {
+                            continue;
+                        }
+                        jointIndices[vertex * 4 + used] = (ushort)joint;
+                        used++;
+                    }
+                    if (used == 0)
+                    {
+                        continue;
+                    }
+                    // 超过 4 根骨骼时截断，权重在留下的几根里重新归一化
+                    float weight = 1f / used;
+                    for (int k = 0; k < used; k++)
+                    {
+                        jointWeights[vertex * 4 + k] = weight;
+                    }
+                    skinned = true;
                 }
 
                 if (skinned)
@@ -470,56 +454,6 @@ public static class GlbWriter
             }
             primitive["mode"] = 4;
 
-            int materialId = geoset.MaterialId;
-            if (materialId >= 0 && materialId < model.Materials.Count)
-            {
-                MdxMaterial material = model.Materials[materialId];
-                var jsonMaterial = new JsonObject
-                {
-                    ["name"] = $"mat{materialId}",
-                    ["doubleSided"] = true,
-                };
-                if (material.Layers.Count > 0)
-                {
-                    MdxLayer layer = material.Layers[0];
-                    int textureId = layer.TextureId;
-                    if (textureId >= 0 && textureId < model.Textures.Count)
-                    {
-                        MdxTexture texture = model.Textures[textureId];
-                        int index = TextureIndex(texture.Path, texture.ReplaceableId);
-                        if (index >= 0)
-                        {
-                            jsonMaterial["pbrMetallicRoughness"] = new JsonObject
-                            {
-                                ["baseColorTexture"] = new JsonObject { ["index"] = index },
-                                ["metallicFactor"] = 0.0,
-                                ["roughnessFactor"] = 1.0,
-                            };
-                            (string mode, float cutoff) = FilterAlpha.TryGetValue(layer.FilterMode, out var entry)
-                                ? entry
-                                : ("BLEND", 0f);
-                            jsonMaterial["alphaMode"] = mode;
-                            if (mode == "MASK")
-                            {
-                                jsonMaterial["alphaCutoff"] = cutoff;
-                            }
-                            jsonMaterial["extensions"] = new JsonObject
-                            {
-                                ["KHR_materials_unlit"] = new JsonObject(),
-                            };
-                            jsonMaterial["extras"] = new JsonObject
-                            {
-                                ["wc3FilterMode"] = layer.FilterMode,
-                                ["wc3Alpha"] = layer.Alpha,
-                                ["wc3LayerCount"] = material.Layers.Count,
-                            };
-                        }
-                    }
-                }
-                primitive["material"] = materials.Count;
-                materials.Add(jsonMaterial);
-            }
-
             meshes.Add(new JsonObject
             {
                 ["name"] = $"geoset{geosetIndex}",
@@ -539,157 +473,7 @@ public static class GlbWriter
             sceneChildren.Add(nodes.Count - 1);
         }
 
-        var animations = new JsonArray();
-        foreach (MdxSequence sequence in model.Sequences)
-        {
-            uint start = sequence.Start;
-            uint end = sequence.End;
-            if (end <= start)
-            {
-                continue;
-            }
-
-            var channels = new JsonArray();
-            var samplers = new JsonArray();
-
-            foreach (MdxNode node in allNodes)
-            {
-                foreach (string path in new[] { "translation", "rotation", "scale" })
-                {
-                    if (!node.Tracks.TryGetValue(path, out MdxTrack track) || track.Keys.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    // 0x80000000 位表示「不循环」，这类关键帧不参与序列采样
-                    var keys = new List<MdxKey>();
-                    foreach (MdxKey key in track.Keys)
-                    {
-                        if ((key.Frame & 0x80000000) == 0)
-                        {
-                            keys.Add(key);
-                        }
-                    }
-                    if (keys.Count == 0)
-                    {
-                        continue;
-                    }
-                    keys.Sort((a, b) => a.Frame.CompareTo(b.Frame));
-
-                    var selected = new List<MdxKey>();
-                    foreach (MdxKey key in keys)
-                    {
-                        if (key.Frame >= start && key.Frame <= end)
-                        {
-                            selected.Add(key);
-                        }
-                    }
-                    if (selected.Count == 0)
-                    {
-                        MdxKey before = default;
-                        bool hasBefore = false;
-                        foreach (MdxKey key in keys)
-                        {
-                            if (key.Frame < start)
-                            {
-                                before = key;
-                                hasBefore = true;
-                            }
-                        }
-                        bool hasAfter = false;
-                        MdxKey after = default;
-                        foreach (MdxKey key in keys)
-                        {
-                            if (key.Frame > end)
-                            {
-                                after = key;
-                                hasAfter = true;
-                                break;
-                            }
-                        }
-                        if (hasBefore)
-                        {
-                            selected.Add(new MdxKey(start, before.Value));
-                        }
-                        if (hasAfter)
-                        {
-                            selected.Add(new MdxKey(end, after.Value));
-                        }
-                        if (selected.Count == 1)
-                        {
-                            selected.Add(new MdxKey(end, selected[0].Value));
-                        }
-                    }
-                    if (selected.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    var times = new float[selected.Count];
-                    for (int i = 0; i < selected.Count; i++)
-                    {
-                        times[i] = (selected[i].Frame - start) / 1000f;
-                    }
-
-                    int components;
-                    string typeName;
-                    var values = new List<float>();
-                    if (path == "rotation")
-                    {
-                        components = 4;
-                        typeName = "VEC4";
-                        foreach (MdxKey key in selected)
-                        {
-                            values.AddRange(ConvertQuaternion(key.Value));
-                        }
-                    }
-                    else if (path == "translation")
-                    {
-                        components = 3;
-                        typeName = "VEC3";
-                        foreach (MdxKey key in selected)
-                        {
-                            values.AddRange(ConvertPosition(key.Value[0], key.Value[1], key.Value[2]));
-                        }
-                    }
-                    else
-                    {
-                        components = 3;
-                        typeName = "VEC3";
-                        foreach (MdxKey key in selected)
-                        {
-                            values.AddRange(ConvertScale(key.Value[0], key.Value[1], key.Value[2]));
-                        }
-                    }
-
-                    samplers.Add(new JsonObject
-                    {
-                        ["input"] = builder.AddFloat(times, 1, "SCALAR", 0, true),
-                        ["output"] = builder.AddFloat(values.ToArray(), components, typeName, 0, false),
-                        ["interpolation"] = "LINEAR",
-                    });
-                    channels.Add(new JsonObject
-                    {
-                        ["sampler"] = samplers.Count - 1,
-                        ["target"] = new JsonObject
-                        {
-                            ["node"] = nodeOfObject[node.ObjectId],
-                            ["path"] = path,
-                        },
-                    });
-                }
-            }
-
-            if (channels.Count > 0)
-            {
-                animations.Add(new JsonObject
-                {
-                    ["name"] = string.IsNullOrEmpty(sequence.Name) ? "seq" : sequence.Name,
-                    ["channels"] = channels,
-                    ["samplers"] = samplers,
-                });
-            }
-        }
+        // 动画与材质不写进 glb：见 ModelBundle（材质 .tres / AnimationLibrary .tres / per-model .tscn）
 
         byte[] binary = builder.Bin.ToArray();
         int paddedBinary = (binary.Length + 3) / 4 * 4;
@@ -708,31 +492,10 @@ public static class GlbWriter
             ["accessors"] = builder.Accessors,
             ["bufferViews"] = builder.BufferViews,
             ["buffers"] = new JsonArray { new JsonObject { ["byteLength"] = paddedBinary } },
-            ["extensionsUsed"] = new JsonArray { "KHR_materials_unlit" },
         };
-        if (materials.Count > 0)
-        {
-            gltf["materials"] = materials;
-        }
-        if (images.Count > 0)
-        {
-            var imageArray = new JsonArray();
-            var textureArray = new JsonArray();
-            for (int i = 0; i < images.Count; i++)
-            {
-                imageArray.Add(new JsonObject { ["uri"] = images[i] });
-                textureArray.Add(new JsonObject { ["source"] = i });
-            }
-            gltf["images"] = imageArray;
-            gltf["textures"] = textureArray;
-        }
         if (skin != null)
         {
             gltf["skins"] = new JsonArray { skin };
-        }
-        if (animations.Count > 0)
-        {
-            gltf["animations"] = animations;
         }
 
         var options = new JsonSerializerOptions

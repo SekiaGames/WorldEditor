@@ -13,8 +13,8 @@ namespace WorldEdit.Core.Tools;
 /// </summary>
 public static class ConvertCli
 {
-    private const string DefaultTableTarget = "Godot/assets/converted/Tables";
-    private const string DefaultTextTarget = "Godot/assets/converted/Texts";
+    private const string DefaultTableTarget = "Godot/assets/generated/Tables";
+    private const string DefaultTextTarget = "Godot/assets/generated/Texts";
 
     /// <summary>按扩展名从 MPQ 的 listfile 里挑出文件（返回反斜杠相对路径，已排序）。</summary>
     private static List<string> War3Files(string extension)

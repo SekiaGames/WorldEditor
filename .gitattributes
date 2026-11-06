@@ -4,3 +4,7 @@
 # 批处理必须是 CRLF，否则 cmd 会把命令行拆错
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# shell 脚本必须是 LF，否则 macOS 上 shebang 带着 ^M 直接跑不起来
+*.command text eol=lf
+*.sh text eol=lf

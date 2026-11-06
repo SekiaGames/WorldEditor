@@ -869,6 +869,7 @@ public partial class ViewportPanel : SubViewportContainer
             instance.Rotation = new Vector3(0f, Mathf.Pi + entry.Angle, 0f);
             instance.Scale = Vector3.One * model.Scale;
             instance.Name = $"{entry.Id}_{placed}";
+            ModelLibrary.ApplyMissingMaterials(instance, model.ScenePath);
             materialSlots += ApplyUnitTextureFilter(instance);
             holder.AddChild(instance);
             placed++;

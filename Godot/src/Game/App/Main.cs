@@ -59,6 +59,9 @@ public partial class Main : Control
 
     public override void _Ready()
     {
+        // 必须最先做：调试包里资产不在 exe 内，字体、贴图、模型都从挂载后的 res:// 读
+        Assets.ExternalAssets.Mount();
+
         // Tooltip 之类的弹窗由视口自己创建，不挂在 Main 下就继承不到 UiTheme，
         // 会退回引擎默认主题（深底 + 无中文字形的 Open Sans）。这里把回退字体统一成中文字体。
         ThemeDB.FallbackFont = UiTheme.Font;
@@ -1250,9 +1253,46 @@ public partial class Main : Control
                 GetTree().Quit();
                 return;
             }
+            else if (a.StartsWith("--mdx-bundle="))
+            {
+                // --mdx-bundle=相对路径片段   只重导匹配的模型（如 Units\Creeps\Gnoll\Gnoll），
+                // 输出仍是 assets/converted，用于单模型迭代验证
+                string only = a.Substring("--mdx-bundle=".Length);
+                WorldEdit.Core.Tools.MdxExportCli.Export("", "", only);
+                GetTree().Quit();
+                return;
+            }
             else if (a.StartsWith("--mdx-probe="))
             {
                 WorldEdit.Core.Tools.MdxExportCli.Probe(a.Substring("--mdx-probe=".Length));
+                GetTree().Quit();
+                return;
+            }
+            else if (a.StartsWith("--asset-status="))
+            {
+                // --asset-status=目录   打印解压产物的版本标记状态，
+                // 末行固定 STATE=FRESH / STALE / MISSING / INCOMPLETE，解压脚本据此决定要不要重跑
+                WorldEdit.Core.Tools.AssetStamp.PrintStatus(a.Substring("--asset-status=".Length));
+                GetTree().Quit();
+                return;
+            }
+            else if (a.StartsWith("--asset-stamp="))
+            {
+                // --asset-stamp=目录[|源目录]   整轮解压成功后写版本标记（版本号唯一来源是 AssetStamp.Version）
+                string[] stampParts = a.Substring("--asset-stamp=".Length).Split('|');
+                WorldEdit.Core.Tools.AssetStamp.Write(
+                    stampParts[0], stampParts.Length >= 2 ? stampParts[1] : "");
+                GetTree().Quit();
+                return;
+            }
+            else if (a == "--asset-version" || a.StartsWith("--asset-version="))
+            {
+                // --asset-version             打印 VERSION=N
+                // --asset-version=文件        只把数字写进文件，export.bat 用它拼 converted.v<N>.pck
+                string target = a.StartsWith("--asset-version=")
+                    ? a.Substring("--asset-version=".Length)
+                    : null;
+                WorldEdit.Core.Tools.AssetStamp.PrintVersion(target);
                 GetTree().Quit();
                 return;
             }
