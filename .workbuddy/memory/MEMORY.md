@@ -28,6 +28,6 @@
 - Editor工程：是地图编辑器，依赖于extract.pck
     可以打开.gmap文件进行编辑、保存
 - Wiki工程：是预览工具，依赖于extract.pck
-    未开发
+    能预览几乎所有运行时表现。
 - Launcher工程：是Godot启动器
-    未开发
+    加载.gmap文件运行游戏
