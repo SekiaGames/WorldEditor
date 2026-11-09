@@ -15,14 +15,13 @@ Wiki方向
 # 待办
 
 > 2026-11-09 从 Wiki(Godot) 实机验收整理。顺序：Extract 侧 → Wiki 侧。
-> 已完成：`extract.pck` 的 `include_filter` 补上 `assets/*`，shader 与 fallback 贴图已进包；4 个页面 0 报错，随机抽 25 个模型 25/25 加载通过。
 
-## P0 Extract：geoset 可见性（挡住建筑/技能模型预览）
+**已完成**
 
-- [ ] `ModelBundle` 导出时把 GEOA 的 `KGAO` alpha 轨道带进 `.wc3.json`（现在 `geosetAnimations` 只有 `staticAlpha`，`tracks` 为空）。
-- [ ] 或按 `Stand` 首帧预计算每个 geoset 的 alpha，`alpha < 0.01` 时给节点写 `visible = false`。
-- 现状：`TownHall` 36 个 geoset、`AltarOfKings` 13 个、`BlizzardTarget` 3 个，`visible=false` 全是 0；全库 4041 个 `.tscn` 只有 648 个带 `visible=false`。
-- 影响：施工架、升级形态（Keep/Castle）、地面 decal 叠在一起；技能模型被超大面片拉远取景，实际只剩一个小环（见 `BlizzardTarget`）。
+- `extract.pck` 的 `include_filter` 补上 `assets/*`，shader 与 fallback 贴图已进包；4 个页面 0 报错，随机抽 25 个模型 25/25 加载通过。
+- **P0 geoset 可见性**：改为「tscn 静态默认值 + 动画 `:visible` 轨道」承载（`wc3.json` 不塞 KGAO）。
+  `TownHall` 36 个 geoset / 隐藏 20、`AltarOfKings` 13 / 10、`BlizzardTarget` 3 / 2；全库 787 个 tscn 带 `visible=false`。
+  动画文件里有 `tracks/N/path = NodePath("Model/Skeleton3D/geoset0:visible")`。实测城镇大厅、国王祭坛的施工架/升级形态消失。
 
 ## P1 Extract：其他
 
@@ -32,7 +31,8 @@ Wiki方向
 
 ## P2 Wiki：可看性
 
-- [ ] geoset 面板：逐个显隐 + 顶点数/尺寸/贴图名；默认自动隐藏「顶点 ≤ 8 且最大边 > 中位面片 2.2 倍」的面片；取景只算合理面片。
+- [ ] 取景改用「主体网格」：`BlizzardTarget` 的 `Birth` 里 geoset 从 y=26 铺到 y=991，按整体包围盒算距离导致主体只剩一个小环；建筑也偏小（距离公式里 `+ size.Z * 0.5` 太大）。
+- [ ] geoset 面板：逐个显隐 + 顶点数/尺寸/贴图名，方便对照动画轨道带来的变化。
 - [ ] 无动画的模型隐藏动画工具栏（现在显示「0 条动画」+ 空下拉）。
 - [ ] 音效单实例播放，切条目/切页即停。
 - [ ] 键盘 ← → 切换条目、Esc 返回列表。
