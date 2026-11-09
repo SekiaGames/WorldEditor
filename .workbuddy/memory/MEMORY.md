@@ -13,9 +13,8 @@
 
 ## 参考资源
 
-- 客户端源码参考：/test/Open-Warcraft3
-- HiveWE版本地图编辑器参考：/test/HiveWE
-- War3客户端参考：/test/War3_1.27a
+- 客户端源码-参考客户端逻辑/资源加载/效果实现：/test/Open-Warcraft3
+- HiveWE版本地图编辑器-参考地图编辑：/test/HiveWE
 
 ## 项目目标
 
