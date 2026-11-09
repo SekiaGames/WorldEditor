@@ -32,13 +32,7 @@ echo [1/8] dotnet build
 dotnet build "%PROJECT%\Extract.csproj" -v:minimal --nologo
 if errorlevel 1 goto :failed
 
-echo [2/8] tables and texts
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" --table-export
-if errorlevel 1 goto :failed
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" --text-export
-if errorlevel 1 goto :failed
-
-echo [3/8] unpack mpq
+echo [2/8] unpack mpq
 if not exist "%WORK%" mkdir "%WORK%"
 if not exist "%OUT%" mkdir "%OUT%"
 if exist "%WORK%\%UNPACK_MARKER%" (
@@ -50,12 +44,18 @@ if errorlevel 1 goto :failed
 type nul > "%WORK%\%UNPACK_MARKER%"
 :unpack_done
 
+echo [3/8] tables and texts
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" --table-export
+if errorlevel 1 goto :failed
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" --text-export
+if errorlevel 1 goto :failed
+
 echo [4/8] images to png
 "%GODOT%" --headless --quiet --path "%PROJECT%" -- "--image-convert=%WORK%|%OUT%"
 if errorlevel 1 goto :failed
 
 echo [5/8] mdx to glb
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--mdx-export=%OUT%"
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" "--mdx-export=%OUT%"
 if errorlevel 1 goto :failed
 
 echo [6/8] copy audio

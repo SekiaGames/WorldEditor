@@ -56,11 +56,7 @@ printf 'Pack   : %s\n\n' "$PACK"
 printf '[1/8] dotnet build\n'
 dotnet build "$PROJECT/Extract.csproj" -v:minimal --nologo
 
-printf '\n[2/8] tables and texts\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--game-dir=$WAR3_DIR" --table-export
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--game-dir=$WAR3_DIR" --text-export
-
-printf '\n[3/8] unpack mpq to %s\n' "$WORK"
+printf '\n[2/8] unpack mpq to %s\n' "$WORK"
 mkdir -p "$WORK" "$OUT"
 if [ -f "$WORK/$UNPACK_MARKER" ]; then
 	printf '      marker found, skip unpack\n'
@@ -69,11 +65,15 @@ else
 	: > "$WORK/$UNPACK_MARKER"
 fi
 
+printf '\n[3/8] tables and texts\n'
+"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" --table-export
+"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" --text-export
+
 printf '\n[4/8] images to png\n'
 "$GODOT" --headless --quiet --path "$PROJECT" -- "--image-convert=$WORK|$OUT"
 
 printf '\n[5/8] mdx to glb\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--game-dir=$WAR3_DIR" "--mdx-export=$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" "--mdx-export=$OUT"
 
 printf '\n[6/8] copy audio\n'
 "$GODOT" --headless --quiet --path "$PROJECT" -- "--media-copy=$WORK|$OUT"
