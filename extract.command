@@ -57,8 +57,8 @@ printf '[1/8] dotnet build\n'
 dotnet build "$PROJECT/Extract.csproj" -v:minimal --nologo
 
 printf '\n[2/8] tables and texts\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- --table-export
-"$GODOT" --headless --quiet --path "$PROJECT" -- --text-export
+"$GODOT" --headless --quiet --path "$PROJECT" -- "--game-dir=$WAR3_DIR" --table-export
+"$GODOT" --headless --quiet --path "$PROJECT" -- "--game-dir=$WAR3_DIR" --text-export
 
 printf '\n[3/8] unpack mpq to %s\n' "$WORK"
 mkdir -p "$WORK" "$OUT"

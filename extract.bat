@@ -33,9 +33,9 @@ dotnet build "%PROJECT%\Extract.csproj" -v:minimal --nologo
 if errorlevel 1 goto :failed
 
 echo [2/8] tables and texts
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- --table-export
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" --table-export
 if errorlevel 1 goto :failed
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- --text-export
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" --text-export
 if errorlevel 1 goto :failed
 
 echo [3/8] unpack mpq
