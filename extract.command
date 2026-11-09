@@ -15,6 +15,7 @@ PACK="$ROOT/extract.pck"
 UNPACK_MARKER=".unpacked"
 
 WAR3_DIR="${WAR3_DIR%/}"
+GD_ARGS=(-- "--game-dir=$WAR3_DIR")
 
 die() {
 	printf '\n[ERROR] %s\n' "$1" >&2
@@ -61,22 +62,22 @@ mkdir -p "$WORK" "$OUT"
 if [ -f "$WORK/$UNPACK_MARKER" ]; then
 	printf '      marker found, skip unpack\n'
 else
-	"$GODOT" --headless --quiet --path "$PROJECT" -- "--war3-extract=$WAR3_DIR|$WORK"
+	"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--war3-extract=$WAR3_DIR|$WORK"
 	: > "$WORK/$UNPACK_MARKER"
 fi
 
 printf '\n[3/8] tables and texts\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" --table-export
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" --text-export
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" --table-export
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" --text-export
 
 printf '\n[4/8] images to png\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--image-convert=$WORK|$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--image-convert=$WORK|$OUT"
 
 printf '\n[5/8] mdx to glb\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--source-dir=$WORK" "--mdx-export=$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--mdx-export=$OUT"
 
 printf '\n[6/8] copy audio\n'
-"$GODOT" --headless --quiet --path "$PROJECT" -- "--media-copy=$WORK|$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--media-copy=$WORK|$OUT"
 
 printf '\n[7/8] importing into godot, this takes 20 to 40 minutes\n'
 if ! "$GODOT" --headless --quiet --path "$PROJECT" --import; then

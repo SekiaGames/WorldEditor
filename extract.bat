@@ -39,27 +39,27 @@ if exist "%WORK%\%UNPACK_MARKER%" (
   echo       marker found, skip unpack
   goto :unpack_done
 )
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--war3-extract=%WAR3_DIR%|%WORK%"
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--war3-extract=%WAR3_DIR%|%WORK%"
 if errorlevel 1 goto :failed
 type nul > "%WORK%\%UNPACK_MARKER%"
 :unpack_done
 
 echo [3/8] tables and texts
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" --table-export
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--source-dir=%WORK%" --table-export
 if errorlevel 1 goto :failed
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" --text-export
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--source-dir=%WORK%" --text-export
 if errorlevel 1 goto :failed
 
 echo [4/8] images to png
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--image-convert=%WORK%|%OUT%"
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--image-convert=%WORK%|%OUT%"
 if errorlevel 1 goto :failed
 
 echo [5/8] mdx to glb
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--source-dir=%WORK%" "--mdx-export=%OUT%"
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--source-dir=%WORK%" "--mdx-export=%OUT%"
 if errorlevel 1 goto :failed
 
 echo [6/8] copy audio
-"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--media-copy=%WORK%|%OUT%"
+"%GODOT%" --headless --quiet --path "%PROJECT%" -- "--game-dir=%WAR3_DIR%" "--media-copy=%WORK%|%OUT%"
 if errorlevel 1 goto :failed
 
 echo [7/8] importing into godot, this takes 20 to 40 minutes
