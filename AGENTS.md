@@ -18,6 +18,7 @@
     如果效果不对，就需要深挖本工程的数据加载，Extract工程从数据层面和本工程对齐。
     数据加载调试心得，Extract工程有导出问题必看：WIKI-DEBUG-NOTES.md
 - HiveWE版本地图编辑器-参考地图编辑：/test/HiveWE
+- test目录：用于存放参考项目或临时资源
 
 ## 项目目标
 
@@ -32,5 +33,5 @@
 - Map工程：负责w3x地图文件和.gmap文件之间的转换
     .gmap文件是Godot资源文件压缩包，包含完整地图资源。
     可以作为独立的exe工具被Editor用于打开地图/保存/另存为
-- Launcher工程：是Godot启动器
+- Launcher工程：是Godot启动器，依赖于extract.pck
     加载.gmap文件运行游戏

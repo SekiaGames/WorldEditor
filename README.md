@@ -104,14 +104,3 @@ P0（半天内能补完，观感提升最大）：地基 GroundSplat → 建筑�
 P1：建造进度滑杆（0–100% → Birth seek）、训练中开关、KMTA 材质透明度（Extract 侧）
 P2：附着点可视化、选中圈、KEVT 帧事件音效没有改任何代码。需要我先把 P0 里的哪一项做出来，或者先补哪个工程的？
 
-
-
-待你确认的问题清单（KGTR 未导出，762 个发射器 / 310 个模型）
-数据面：762 个发射器带节点平移轨，其中 613 个在至少一个 clip 里可见；带缩放轨的只有 2 个。挑了几个现象最明显、最好判断的：
-#	Wiki 里打开	clip	现在（Wiki）	应该是
-1	技能 · FlameStrike（火焰风暴）	birth	冲击波环钉在地面不动	环从地面升起再落下：节点 z 0 → 256 → 246 → 0
-2	建筑 · GreatHall（兽人大厅）	Death	爆裂直接从房子中间冒出来	fx78 BlastFlare01 从 z=-2361 升到 +30 才炸
-3	建筑 · HumanBarracks（人类兵营）	Birth	锯末固定在一个点	fx40 SawDustParticles 在 XY ±140 范围内跟着锯子来回跑
-4	建筑 · GreatHall	Stand Work / Stand	蘑菇云静止	fx74 MushroomCap 上升 87 单位
-5	技能 · BreathOfFireMissile / BreathOfFrostMissile	起飞/飞行	拖尾粒子大小不变	唯一两个带 KGSC 缩放轨的发射器
-操作：Wiki 左侧「模型库」→ 搜模型名（如 FlameStrike、GreatHall）→ 右侧下拉选上面那个 clip → 播放。你看完告诉我「哪些确实是问题、哪些不算」，我再按确认范围补 KGTR（必要时加 KGSC），补完后同样用数据验收（逐 clip 的输出位置 vs 客户端），再请你看第二遍。
