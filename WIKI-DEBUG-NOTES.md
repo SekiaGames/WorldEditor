@@ -39,6 +39,7 @@ war3.mdx  ──(Extract: ModelBundle/GlbWriter)──>  extract/*.tscn|*.tres  
 - **坐标系**：客户端是 **Z-up**（相机 `CreateLookAt(..., Vector3.UnitZ)`，重力减在 `.Z`）；Godot 是 Y-up。
   导出换算 `ConvertPosition(x,y,z) = (x, z, -y)`，四元数用 `R * q * R⁻¹`（R 为绕 X 轴 -90°），向量反向换算 `(gx, gy, gz) → (gx, -gz, gy)`。
 - **squirt vs 连续发射**：`Squirt != 0` 时 Godot 侧必须写 `one_shot = true` + 默认 `emitting = false`，否则加载瞬间会喷一发。
+- **全局序列（GLBS）**：带 `GlobalSequenceId` 的轨道（锯齿、风车、锯末这类循环动画）在客户端是 `frame = globalFrame % period`，**不是**把整段 clip 均分成一个周期。导出时要按 `(clipStart + t) % period` 重采样，否则看着就像“完全不动”。
 
 ## 4. 需要时怎么加回调试开关
 
@@ -79,9 +80,14 @@ WIKI_DEBUG_PARTICLES=1 Godot --path Wiki -- --shot=/abs/out.png@units:htow|Stand
 
 | MDX 通道 | 导出到 Godot | 说明 |
 |---|---|---|
-| KP2V 可见性 | `fx_nodeNN:visible` 轨 | 每个 clip 一条 |
+| KP2V 可见性 | `fx_nodeNN:visible` 轨 | 每个 clip 一条，窗口内无键时用 fallback=可见 |
 | KP2E 发射率 | `fx_nodeNN:emitting` 轨 | 值 0 时关闭 |
 | KGRT 节点旋转 | `.tscn` 静态基 + `fx_nodeNN:rotation` 轨 | 影响发射方向与发射面朝向 |
-| KGTR 节点平移 | **未导出** | 缺失会让整团粒子不跟随移动 |
-| KGSC 节点缩放 | **未导出** | 缺失会让粒子尺寸不随动画变化 |
+| KGTR 节点平移 | `.tscn` 静态基 + `fx_nodeNN:position` 轨 | 值 = pivot + translation（转换到 Y-up 后） |
+| KGSC 节点缩放 | `.tscn` 静态基 + `fx_nodeNN:scale` 轨 | 注意粒子着色器只取矩阵平移，尺寸不会跟缩放走 |
 | KP2S/R/L/G/N/W 等 | 逐 clip 采样后写入材质 | 速度/变化/纬度/重力/长宽 |
+
+两个与节点动画相关的开关必须成对：
+
+- `local_coords = (emitter.ModelSpace)`：非 modelSpace 发射器在客户端是“发射瞬间就固定在世界空间”，粒子不跟随节点；写成 `true` 会让整团粒子被移动的节点拖着走。
+- 节点 transform 的权威定义是客户端的 `T(-pivot)*S*R*T(pivot+translation)`：它的**矩阵平移列**等于 `pivot + translation - pivot*R`，而**粒子发射中心**等于 `pivot + translation`（发射点先减 pivot 再加回来）。核对位置时要用发射中心，不要用矩阵平移列。
