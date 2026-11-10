@@ -2,7 +2,7 @@
 
 /WorldEditor.exe
 /WorldEditor.app/
-/extract.pck
+extract.pck*
 
 /test/*
 !/test/.gitkeep

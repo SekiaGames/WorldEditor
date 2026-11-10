@@ -86,8 +86,36 @@ WIKI_DEBUG_PARTICLES=1 Godot --path Wiki -- --shot=/abs/out.png@units:htow|Stand
 | KGTR 节点平移 | `.tscn` 静态基 + `fx_nodeNN:position` 轨 | 值 = pivot + translation（转换到 Y-up 后） |
 | KGSC 节点缩放 | `.tscn` 静态基 + `fx_nodeNN:scale` 轨 | 注意粒子着色器只取矩阵平移，尺寸不会跟缩放走 |
 | KP2S/R/L/G/N/W 等 | 逐 clip 采样后写入材质 | 速度/变化/纬度/重力/长宽 |
+| TXAN 贴图动画 | 材质 `uv_offset/uv_scale/uv_rotation`（第二层用 `detail_uv_*`）+ 每 clip 一条 value 轨 | 路径 `geosetN:surface_material_override/0:shader_parameter/uv_offset`；材质需 `resource_local_to_scene = true` 才能逐实例动画 |
+| GEOA 颜色（KGAC） | 材质 `geoset_tint` + 每 clip 一条 value 轨 | 仅 `flags & 2` 时才动；窗口内无键按客户端语义取 0（黑），有静态色则取静态色 |
+| EVTS 事件 | 写进 `.wc3.json` 的 `eventObjects[].frames` | 格式是 `KEVT, count, globalSeqId, frame[count]`，**没有名字字段**；Wiki 目前不消费 |
 
 两个与节点动画相关的开关必须成对：
 
 - `local_coords = (emitter.ModelSpace)`：非 modelSpace 发射器在客户端是“发射瞬间就固定在世界空间”，粒子不跟随节点；写成 `true` 会让整团粒子被移动的节点拖着走。
 - 节点 transform 的权威定义是客户端的 `T(-pivot)*S*R*T(pivot+translation)`：它的**矩阵平移列**等于 `pivot + translation - pivot*R`，而**粒子发射中心**等于 `pivot + translation`（发射点先减 pivot 再加回来）。核对位置时要用发射中心，不要用矩阵平移列。
+## 8. 全量覆盖审计（先跑这个，别一个个撞问题）
+
+不要靠“打开某个模型发现不对”来推进。用两条命令把 3264 个 MDX 的**数据结构**和**导出产物**对一遍：
+
+```
+# 1) 客户端读出每个模型的通道清单（seq/gseq/骨骼轨/发射器/ribbon/灯光/挂点/事件/相机/材质…）
+OpenWC3.Game --mdx-inventory test/war3-unpack > inventory.txt
+
+# 2) 和 Extract 产物逐模型比对，只输出不一致项
+python3 audit_mdx_coverage.py 5
+```
+
+审计项与判定口径：
+
+| 审计项 | 口径 |
+|---|---|
+| `clip-count-mismatch` | 该序列没有任何轨道时不写 clip，属正常；若模型有轨道却缺 clip 才是问题 |
+| `bone-track-missing` | 只统计“关键帧落在某个 clip 窗口内、或全局序列 id 合法”的骨骼；全局序列周期为 0 的算静止，不算缺失 |
+| `global-bone-not-resampled` | 有合法全局序列的骨骼必须在某个 clip 里出现密集采样键（否则就是循环没导出） |
+| `uv-animation-missing` | TXAN 动画的材质必须带 `uv_offset` 参数 |
+| `geoset-tint-missing` | GEOA 颜色（flags&2）必须至少有一条 `geoset_tint` 轨 |
+| `camera-not-exported` | CAMS 未导出；客户端用它做「肖像/电影镜头」，预览取景可对齐 |
+| `event-frames-missing` | EVTS 的关键帧必须写进 `.wc3.json` 的 `frames` |
+
+改完导出后先跑审计，再重打 `extract.pck`，最后才去 Wiki 里看效果。

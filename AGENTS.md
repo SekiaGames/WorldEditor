@@ -12,7 +12,7 @@
 ## 参考资源
 
 - 客户端源码-参考客户端逻辑/资源加载/效果实现：/test/Open-Warcraft3
-- 客户端源码的Wiki版-用于作为权威参考：/Open-Warcraft3_Wiki
+- 客户端侧/客户端源码的Wiki版-用于作为权威参考：/Open-Warcraft3_Wiki
     可以进行便利化改造用于调试目的。
     主要目的是通过挖掘客户端源码，更好的在Extract工程转换Godot资源，更好的在Wiki工程用Godot版资源还原效果。
     如果效果不对，就需要深挖本工程的数据加载，Extract工程从数据层面和本工程对齐。
