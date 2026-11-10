@@ -25,12 +25,12 @@
 - Extract工程：将暴雪资源解压为Godot资源，封装为extract.pck
     尽可能的将资源拆的细碎，便于灵活组装。
     模型、.tscn、材质、动画、动画库、状态机、粒子特效、wc3.json
+- Wiki工程：是预览工具，依赖于extract.pck
+    能预览几乎所有运行时表现。
+- Editor工程：是地图编辑器，依赖于extract.pck
+    可以打开.gmap文件进行编辑、保存
 - Map工程：负责w3x地图文件和.gmap文件之间的转换
     .gmap文件是Godot资源文件压缩包，包含完整地图资源。
     可以作为独立的exe工具被Editor用于打开地图/保存/另存为
-- Editor工程：是地图编辑器，依赖于extract.pck
-    可以打开.gmap文件进行编辑、保存
-- Wiki工程：是预览工具，依赖于extract.pck
-    能预览几乎所有运行时表现。
 - Launcher工程：是Godot启动器
     加载.gmap文件运行游戏
