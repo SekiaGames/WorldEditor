@@ -26,6 +26,34 @@
 
 ---
 
+## 0.5 第一轮执行结果（2026-11-12）
+
+阶段 1 已落地（`7b8a4b3`、`745a0d5`）：`Vec2`、`IRuntimeObjectData`、`AbilityTypeObjectData` 适配器、`Ability`/`Buff` 的 29 个客户端可重写点、`TryCast` 的 `OnEffect` 分派与生命周期钩子。
+
+| 指标 | 执行前 | 执行后 |
+|---|---|---|
+| 字节一致 | 4 | 6（多 `Vec2`、`IRuntimeObjectData`，这两个是新增文件，不计入 191） |
+| 191 对中编译可换 | 4 | 7 |
+| 编译错误总数 | 8,652 | 6,416（−26%） |
+| CS0115 缺虚成员 | 2,846 | 1,830 |
+| CS0246 缺类型 | 4,216 | 2,372 |
+
+**但这 3 个新可编译的文件一个都没换**，原因值得记下来：
+
+| 文件 | 客户端版本是什么 | 直接换的后果 |
+|---|---|---|
+| `RuntimeUltravisionAbility` | 标记类，注释明写"夜视由 RefreshUnitTechEffects 给" | Launcher 没有那条科技刷新路径，夜视直接丢 |
+| `RuntimeImpalingBoltAbility` | 标记类，行为在 `Repb` 的 `rasd/renw` 武器科技里 | Launcher 没实现 rasd，穿刺武器失去配置 |
+| `RuntimeStormHammersAbility` | 派生自 `RuntimeStormBoltAbility` 的空壳 | Launcher 的实现在自己那份里 |
+
+实测证据：换掉 `RuntimeUltravisionAbility` 后 `--state-probe` 的「夜视生效」「物品夜视装备后生效」两项立刻失败，已回退并写进提交信息。
+
+结论：**编译可换不等于行为可换**。客户端把一批技能做成"标记类 + 行为沉在科技/物编刷新里"，Launcher 把行为直接写在技能类里。这类文件换过来会静默丢功能，只能等对应管线（科技 effect、物编覆盖）补齐后再换。
+
+下一批要动的是 `Unit` 侧：CS1061 从 282 涨到 476，主要是 `Owner.Health`（客户端把伤害/治疗/闪避做成组件，Launcher 是字段 + World 方法）。补 `Health` 门面之前，182 个技能文件里绝大多数连编译都过不去。
+
+---
+
 ## 1. 六个杠杆
 
 按"改一处能解锁多少文件"排序。数字是**涉及该符号的文件数**，不是错误条数。
@@ -86,12 +114,12 @@ public override bool CheckCanUse(Unit target,Vec2 point)=>false;
 | 阶段 | 动作 | 预计新增字节一致 | 前置 | 风险 |
 |---|---|---|---|---|
 | 0 | 命名空间对齐 | 0（但消除永久性的 1 行差异） | — | 已完成，`09e1dec` |
-| 1 | `Ability`/`Buff` 补齐 26 个虚成员 + 5 个虚属性，签名按客户端 | 0 | 无 | 低：新增成员，不动现有逻辑 |
+| 1 | `Ability`/`Buff` 补齐 29 个可重写点 + `Vec2` + `IRuntimeObjectData` + 对象数据适配器 | 0（编译可换 4→7，但 3 个都有行为缺口） | 无 | 已完成 |
 | 2 | 引入 `Vec2`，`Ability` 的 `OnCast/CheckCanUse/CanTarget` 改 `Vec2` 签名 | 约 25 | 阶段 1 | 中：Launcher 全部 99 个技能类要跟着改点目标坐标 |
 | 3 | `TargetFlags` 换成客户端枚举，`Weapon`/`Unit` 的目标掩码跟着改 | 约 25（与阶段 2 重叠） | 阶段 2 | 中：`TargetKind`/`TargetRelation` 两套语义合并 |
 | 4 | `RuntimeAbilityFactory` 改成客户端特化流水线（5 分册 1,744 行的机制） | 0 | 阶段 1-3 | 高：技能注册表 513 条要重新绑定 |
 | 5 | 替换 `Ability.cs`/`Buff.cs` 为客户端版本，逐个迁移 Launcher 自有的 99 个技能类 | +128 | 阶段 4 | 高：`Ability` 从 294 行涨到 1,152 行 |
-| 6 | `Health`/`Stats` 补成员（`Owner.Health.*` 282 处） | +10 | 阶段 5 | 高：v2 §4.2 的伤害观测者重构 |
+| 6 | `Health`/`Stats` 补成员（`Owner.Health.*`，阶段 1 后涨到 476 处） | +10 | 阶段 5 | 高：v2 §4.2 的伤害观测者重构。**这是当前最大单一阻塞** |
 | 7 | `World` 门面 + 订单体系（`COrder` 8 文件） | +10 | 阶段 6 | 高：v2 §4.1 |
 
 阶段 1-3 是"只增不减"的渐进式改动，随时可停，构建和探针都能保持绿色。阶段 5 是断点：`Ability` 一换，Launcher 现有 99 个技能类全部要改签名，绿不了几天。

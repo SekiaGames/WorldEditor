@@ -65,8 +65,12 @@
 | `Src/Core/DefenseType.cs` | 5 | 8 种护甲类型 |
 | `Src/Core/DamageType.cs` | 38 | 客户端 22 种 JASS 伤害类型 + `DamageTypeCodec`。Launcher 原为 3 值，照搬后是超集，旧代码只用 `Normal/Magic/Universal`，行为不变 |
 | `Src/Abilities/AbilityTargetMode.cs` | 13 | 客户端 6 种目标形态（含 `Destructable`）。Launcher 原为 3 值，数值 0/1/2 与原实现一致 |
+| `Src/Core/Vec2.cs` | 21 | 新增文件，客户端没有同路径对应（Launcher 原先只有 Godot `Vector3`） |
+| `Src/Abilities/IRuntimeObjectData.cs` | 15 | 新增文件，能力层对象数据的读取接口 |
 
-覆盖后 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
+前 4 个是同路径覆盖，后 2 个是新增镜像文件。全部 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
+
+> 191 对里编译可通过的现在是 7 个（多 `RuntimeImpalingBolt`、`RuntimeStormHammers`、`RuntimeUltravision`），但这 3 个换过去会丢行为，没有采用，原因见路线文档 §0.5。
 
 ---
 
