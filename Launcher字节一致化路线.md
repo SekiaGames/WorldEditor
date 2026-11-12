@@ -438,6 +438,12 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **净化仍然卡住**，原因不变：A 的 `AddSlow` 阶数系统与客户端 `RuntimePurgeBuff` 并存，减速叠加出 0.4688（期望 0.95），驱散也走另一套开关。这是唯一需要先定「以哪套为准」的子系统。
 
+### 第二十二轮（`9d746ce`）
+
+补 Stats/Health 门面成员（护甲、生命上限、生命/法力回复、法力百分比），献祭簇试过后回退：`ObjectDataBuff` → `RuntimeObjectNumbers` → `RuntimeConfigCache` 三层，最后一层是客户端的配置缓存，不属于对战逻辑。
+
+**计数口径需要更新**：早期统计用的是 191 对同路径文件（当时快照）。现在同名对照文件已经到 **210 对，其中字节一致 37 个**。两个口径的差异来自后来新增的镜像文件（`TargetRules`、`Effect`、`SpecialEffect`、`AbilityDisableType`、`ICastOrderTiming` 等）。后续统一报 210/37 这个口径。
+
 ---
 
 ## 1. 六个杠杆
