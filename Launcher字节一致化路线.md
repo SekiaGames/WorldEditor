@@ -406,6 +406,21 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **这说明“编译通过”和“行为一致”之间还隔着数据口径**：客户端技能读 `ObjectData` 的 `DataA/B/C`，A 的 `AbilityTypeObjectData` 只暴露了部分列；读不到就走默认值，行为就偏了。下一轮该先核对 `GetLevelFloat` 这一层，而不是急着搬第三个簇。
 
+### 第二十轮（`a84514a`、`bcf238a`）
+
+按簇迁移第一次真正落地：**反馈（Feedback）簇通过**，同时挖出两个形状级 bug。
+
+| 问题 | 表现 | 根因 |
+|---|---|---|
+| 出伤钩子只派单参 | 客户端的 `ModifyOutgoingDamage(Unit, ref)` 从不被调用，魔法反馈、命令光环的加成静默失效 | `ApplyDamagePacketModifiers` 只调了 `ModifyOutgoingDamage(ref)` |
+| 目标掩码缺阵营位 | `targs=air,ground,ward,vuln,invu,tree` 的技能全部放不出（`CheckCanTarget` 恒 false） | `CanBeTargetedBy` 把「没有阵营位」当成「不允许任何阵营」，客户端 `TargetRules.Normalize` 的语义是「双方都允许」 |
+
+补完之后：`RuntimeFeedbackAbility` 落地并过探针，同路径字节一致 **14 → 15**。
+
+**净化簇仍然回退**，这次原因清楚：客户端净化用 `RuntimePurgeBuff` 叠减速，A 侧是 `AddSlow` 阶数系统。两套并存时移速比算出 0.4688（重复减速），驱散也走 `DispelBuffs` 的另一套开关。要落地得先定「减速/驱散」以哪套为准——这是唯一还没统一的战斗子系统。
+
+**这轮的方法论收获**：探针红不一定是技能写错了，先看探针调的是不是旧钩子。反馈那两条（烧蓝 200≠180、加伤 10≠30）全部由「探针直接调 `ModifyOutgoingAttack(float)`」引起，改成构造伤害包后一次通过。
+
 ---
 
 ## 1. 六个杠杆
