@@ -87,6 +87,26 @@
 
 要么按簇换（光环 9 个、攻击管线 16 个，各簇自带基类和一整套断言），要么直接换基类（阶段 5，99 个技能同时迁移）。单点补虚成员这条路，收益已经归零。
 
+### 第四轮（`403ce8c` → `b7269ed`）
+
+这轮做的是光环簇的前置：**`Buff` 从独立类改成 `: Ability`**（客户端模型）。改完编译 0 错 0 警告，两条探针全过，`Buff` 与 `Ability` 的 16 处同名成员按 `override` / `new` 分好类。
+
+顺带补的：`Unit.CanBeTargetedBy(TargetFlags)`、`Unit.AddAbility/RemoveAbility(Ability)`、`RuntimeAbilityFactory.ReadFloat/ReadInt/ReadString`、`Ability.HasPersistentTargetArts`。
+
+然后照搬 `AuraAbility.cs` + `AuraBuff.cs`，编译失败，暴露出下一道墙：
+
+| 客户端写法 | Launcher 现状 |
+|---|---|
+| `Owner.World.GameplayConfig`（实例） | `War3GameplayConfig` 是**静态类**（`Src/Configuration/War3GameplayConfig.cs:7`） |
+| `World.RentUnitListForAura()` / `ReturnUnitListForAura()` / `CollectNearbyUnits(pos, r, list)` | 无空间查询，`RefreshAuras` 直接遍历全表 |
+| `Ability.ConfiguredTargets` / `HasConfiguredTargets` | 只有 `AbilityType.Targets`（自家 `SpellTargets` 枚举） |
+| `Unit.MovementType` | 只有 `UnitType.Flying` / `MoveType` 字符串 |
+| `War3GameplayConfig.PolymorphedUnitsBestowAuras` 等旗标 | 未解析 |
+
+`War3GameplayConfig` 在 Launcher 里只有 31 处引用，静态改实例的改动面比想象小。但客户端那版是 700 行的实例配置，还带 `Default` 单例和 Misc 解析，替换等于把配置层整个换掉。
+
+**结论更新**：光环簇的真实前置不是两个基类，是**配置层实例化**。这道墙不拆，客户端技能代码里的 `Owner.World?.GameplayConfig` 一律编不过——它是 182 个技能文件里的高频写法。
+
 ---
 
 ## 1. 六个杠杆
