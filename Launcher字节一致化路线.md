@@ -250,6 +250,31 @@
 
 也就是说：**技能文件的最后一公里不是逻辑，是特效**。要么给 A 补一层 `Effect` 门面（把 SpecialEffectApplication 包进去），要么这些技能就一直停在 2 条错误上。
 
+### 第十一轮（`6958bb1`）
+
+补表现层抽象的第一块，同时把一批客户端口径成员补齐：
+
+| 改动 | 说明 |
+|---|---|
+| `Effect.cs` / `SpecialEffect.cs` | 照搬客户端特效基类（`Step(World,float)` + 可视化元数据） |
+| `World.Tick` | A 侧原是 `const float`，客户端按实例属性用；改名 `FrameSeconds` 后补实例 `Tick` 属性，37 个文件随之调整 |
+| `StateModType` | 客户端的状态枚举 + `AddState/RemoveState/HasState` 门面，同时给 `StateMod` 补了 9 个枚举值 |
+| `Ability.BuffRawcodes` / `EffectArts` / `SpecialArts` / `AreaEffectArts` / `CasterArts` / `TargetArts` | 客户端技能要读的美术与 Buff 列表 |
+
+字节一致仍是 14（`Effect`/`SpecialEffect` 是新增文件，不在 191 里），镜像文件总数到 27。
+
+**试了三个依赖特效的技能，各差 1-2 个成员**：
+
+| 文件 | 还差 |
+|---|---|
+| `RuntimeCloudOfFogAbility` | `CloudOfFog` 类型（定义在另一个客户端文件里） |
+| `RuntimeBurningOilAbility` | 工厂注册项（`(War3ObjectData)` 构造） |
+| `RuntimeInfernoAbility` | `Unit.Hidden` |
+
+这就是现在的形态：**不是"缺一个大件"，是"每个文件缺一个不同的零件"**。35 个文件各停在 1 条错误上，把这条尾巴扫掉需要 30 多次单点补齐，每次收益 1 个文件。
+
+要不要继续扫这条尾巴，取决于目标——如果目标是字节一致数量，扫完大约能到 45-50；如果要到 128，必须换 `Ability` 基类本体。
+
 ---
 
 ## 1. 六个杠杆
