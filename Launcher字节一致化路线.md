@@ -495,6 +495,18 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **计数**：完全一致 41，另有 1 个 1 行改动。
 
+### 第二十六轮（`aa37990`、`fa7d081`、`f914494`）
+
+三个技能簇落地，同路径一致 **41 → 44**：疲惫（`Cripple`）、龙卷风（`TornadoDamage`）、反魔法外壳（`AntiMagicShell`）。
+
+**最有价值的修复：客户端 Buff 挂着即过期**
+
+客户端 Buff 只写 `Duration` 字段，A 侧倒计时用 `Remaining`。`AddAbility` 不初始化 `Remaining`，Buff 一挂上就判定过期。反魔法外壳「持续 90 秒」恒为 0、睡眠读不到时长，都是这一个原因。修在 `AddAbility` 里：Buff 挂上时 `RefreshExpiration()`。
+
+**工程口径**：`NoWarn` 加 `CS9113`（未读主构造参数）、`CS0108`（同名成员隐藏）。客户端技能自带 `HeroDuration` 这类同名属性是正常写法，逐处打 `new` 会让文件偏离原样。试过把 A 的 `Ability.HeroDuration` 改名，牵连 72 处，回退。
+
+**睡眠仍卡住**：时长对了，但「挨打立刻醒」不触发。调试打印显示 `prot=True`——目标身上同时挂着 `RuntimeSleepProtectionBuff`，客户端唤醒逻辑要求它不存在才醒；而 A 侧伤害没打进去（hp 420/420 未变），两层都得查。回退。
+
 ---
 
 ## 1. 六个杠杆
