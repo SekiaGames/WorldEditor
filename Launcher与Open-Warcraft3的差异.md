@@ -85,9 +85,9 @@ Launcher/
 #### 五条配套规则
 
 1. **namespace 跟客户端**：领域代码用 `OpenWC3` / `OpenWC3.Game`，Godot 壳用 `OpenWC3.Launcher`。这样从客户端复制代码时不用改 `using`，也不会因为命名空间不同而看不出是同源文件。
-2. **一个客户端文件 = 一个 Launcher 文件**：不合并、不拆分。客户端把 10 个技能类塞进 `RuntimeHumanOrcUltimates.cs`，Launcher 也照做；客户端一个技能一个文件，Launcher 也一个技能一个文件。
+2. **1:1 对齐**：一个客户端文件对应一个 Launcher 文件。既不把客户端的多个文件合并成一个，也不把一个客户端文件拆成多个。唯一例外是现存聚合文件（见规则 4），需要先拆开才能对齐。
 3. **取消 `partial class World` 的横向拆分**：现在 `World.WeaponSystem.cs`、`World.Orders.cs`、`World.Targeting.cs` 都是同一个类的 partial 分册，客户端对应的是独立类（`WeaponSystem`、`OrderQueue`、`World.Targeting`）。这类要按客户端拆成独立类，否则"同路径"只是表面一致、diff 依旧对不上。
-4. **聚合文件按客户端拆分**：`src/Skills/` 现在是 103 个文件装 220 个类（如 `HumanUnits.cs` 装 7 个技能），客户端是 190 个 `Runtime*Ability.cs`。P-1d 阶段按技能拆分，拆完与客户端 1:1。
+4. **聚合文件按客户端拆分**：`src/Skills/` 现在是 103 个文件装 220 个类（如 `HumanUnits.cs` 装 7 个技能），客户端是 190 个 `Runtime*Ability.cs`。在 P-1g 阶段按技能拆开，拆完与客户端 1:1。
 5. **Godot 特有能力不进镜像目录**：`Node3D` 子类、`_Process`、资源加载这些放 `Platform/Godot/`，用继承或 partial 挂到领域类上，保证镜像目录里的文件"内容可逐行对照"。
 
 #### 执行方式与收益
@@ -130,7 +130,8 @@ Launcher/
 
 ## 2. 全量文件映射
 
-> 说明：一行一个 Launcher 文件。「客户端对应」为**安卓版实际运行路径**。「—」表示客户端无对应实现（Launcher 原创或平台替代）。
+> 说明：一行一个 Launcher 文件。「客户端对应」为**安卓版实际运行路径**。
+> 「客户端对应」列同时就是**迁移目标路径**（按 0.4 的镜像原则）：单值即目标路径；多值取第一项为主落点，其余是拆分后的落点；「—」表示迁入 `Platform/Godot/`。
 > 证据等级：**A** = 两侧代码亲读确认；**B** = 同名同构 + 抽样确认；**C** = 按职责推断，待复核。
 
 ### 2.1 模拟核心：World / Units / Components
@@ -595,6 +596,22 @@ Launcher/
 
 ### 4.2 阶段计划
 
+#### P-1：结构镜像（1-2 天，纯搬迁，不改行为）
+
+| 批次 | 内容 | 文件数 | 校验 |
+|---|---|---|---|
+| P-1a | 建 `Src/` 镜像，移 `Abilities/`、`Components/`、`Units/`、`Items/` | 约 21 | 构建 + 两个探针 |
+| P-1b | 移 `Core/`：`Combat/`、`Abilities/` → `Src/Core/`；`Formats/` → `GameCore/L1_Adapter/Formats/` | 约 24 | 同上 |
+| P-1c | 移 `Simulation/Configuration/` → `GameCore/L3_Simulation/Simulation/Configuration/`；`Maps/` → `.../Simulation/Maps/` | 17 | 同上 |
+| P-1d | 移 `Environment/`、`Presentation/`、`Audio/`、`UI/`、`Camera/`、`Scenes/` → `GameCore/L4_Composition/Game/` 对应目录 | 约 55 | 同上 |
+| P-1e | 拆 `World.*.cs` partial 为客户端独立类（`WeaponSystem`、`OrderQueue`、`CargoTransport`、`CRallyPoint` 等） | 30 | 探针逐项 |
+| P-1f | namespace 统一为 `OpenWC3` / `OpenWC3.Game`，Godot 壳用 `OpenWC3.Launcher` | 全量 | 构建 |
+| P-1g | `Skills/` 按客户端拆成一技能一文件（220 类 → 对齐客户端 190 个文件） | 103 | 码表覆盖率不变 |
+| P-1h | 入库 `sync-check.command`：`diff -rq` 两侧同名文件，输出待跟进清单 | 1 | 人工确认输出 |
+
+> **P-1 与 P0 的穿插顺序**：先 P-1a~P-1d（纯移动，不改内容），再 P0（改数值），最后 P-1e/P-1f（拆类与改 namespace）。理由：P0 改的是内容，如果同时移动文件，diff 会呈现成"整文件重写"，review 时看不出真正的逻辑改动。
+> P-1 全部完成后，第 2 章的映射表即可废弃——同路径即同源。
+
 #### P0：数值基准修正（半天，改完立刻可验证）
 
 | 步骤 | 改动 | 文件 | 验收 |
@@ -665,5 +682,8 @@ Launcher/
 ## 5. 一句话总结
 
 Launcher 与客户端的对应关系是：**模拟主干同构可搬、表现层重写有缺、数值层取错了表**。
-优先做的不是补齐表现，而是先把 P0 那八处"读错源"修正——因为它们让所有后续对比失去基准；再按 P1 把规则分支逐条搬回来；表现层放在最后，因为它不影响"打得对不对"，只影响"看起来像不像"。
+
+落地顺序：**先把目录结构搬成与客户端一致（P-1），再修 P0 那八处读错源，然后按 P1 逐条搬规则，表现层放最后**。
+
+路径先对齐的理由很简单——它决定了以后每一次同步是"打开同名文件直接改"，还是"先查表再猜该改哪"。而 P0 决定数值对不对，P1/P2 决定规则和观感像不像。顺序错了，改动会互相覆盖，review 时也分不清差异来自逻辑还是来自挪文件。
 
