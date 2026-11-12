@@ -479,6 +479,22 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **下一层只能按类型搬**：`Hero`（439 行）、`ObjectDataBuff`+`RuntimeObjectNumbers`+`RuntimeConfigCache`（三层）、`SpellLightningVisuals`。每个都是独立工程。
 
+### 第二十五轮（`a213def`、`fae9fd6`、`b5bbfbf`）
+
+第一次出现「改一行就采纳」的文件。
+
+| 文件 | 做法 | 差异 |
+|---|---|---|
+| `RuntimeAttributeModSkillAbility` | 新增 `Hero` 三围视图（`HeroStat.Base/Bonus/Total`、`Recalculate`、`Of(Unit)`），把 `Abilities.Get<Hero>()` 改成 `Hero.Of(Owner)` | **1 行** |
+| `RuntimeConfigCache.cs` | 照搬（276 行，客户端字符串配置解析缓存） | 0 |
+| `World.LoggingEnabled`/`Log`、`GameLogger`、`Unit.Name` | 补门面 | — |
+
+客户端的 `Hero` 是挂在技能表里的能力对象（439 行，含经验/升级/复活）；Launcher 的英雄状态在 `Unit` 上。做同名三围视图比整块搬 `Hero` 便宜得多，也不会和 A 的升级逻辑打架。**这是「按类型搬」和「做视图」之间的一个折中样本**：类型的行为不搬，只搬它被读取的那部分形状。
+
+回退两个：物品幻象（缺 `Unit.Classifications` 可写与 `VertexColorRgba`）、献祭三层（`War3ObjectData.CreateBuff` 对不上，客户端的 `War3ObjectData` 是对象数据访问器，A 的是 w3u 解析器，同名不同物）。
+
+**计数**：完全一致 41，另有 1 个 1 行改动。
+
 ---
 
 ## 1. 六个杠杆
