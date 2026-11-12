@@ -507,6 +507,23 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **睡眠仍卡住**：时长对了，但「挨打立刻醒」不触发。调试打印显示 `prot=True`——目标身上同时挂着 `RuntimeSleepProtectionBuff`，客户端唤醒逻辑要求它不存在才醒；而 A 侧伤害没打进去（hp 420/420 未变），两层都得查。回退。
 
+### 第二十七轮（`2986412`）
+
+永久隐身对落地：`RuntimePermanentInvisibilityAbility`（128 行）+ `RuntimeInvisibleGhostAbility`。同路径一致 **44 → 46**。
+
+两个依赖都不重：
+
+| 依赖 | 处理 |
+|---|---|
+| `StandalonePathing.Core.NativeSoftFloat.Truncate` | 独立文件垫片 |
+| `Unit.Attack`（客户端是攻击组件） | 用当前武器代表「能打」，只做空判 |
+
+顺带修了一个编译期坑：同一个 `.cs` 里不能有两个文件级命名空间声明，垫片必须拆文件。
+
+游荡（`RuntimeWanderAbility`）试过后回退：它要 `OrderQueue`，而 `OrderQueue` 是客户端的整套指令队列（`COrder`/`CastOrder`/抢占/版本号），搬它等于搬指令系统。
+
+**剩下的同类项都已经不是「类型」而是「子系统」**：`ObjectDataBuff`（配置装载）、`ChainLightningBeamEffect`（特效管线）、`AbilityTypeData`（自定义对象数据）、`OrderQueue`（指令队列）、`COrder`（指令基类）。按类型搬进不去了。
+
 ---
 
 ## 1. 六个杠杆
