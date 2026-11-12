@@ -1,8 +1,9 @@
 # Launcher 与 Open-Warcraft3 差异清单与同步计划
 
-> 对象：`/Volumes/Data/Work/WorldEditor/Launcher`（Godot 4 + C#，46.8k 行）
-> 基准：`/Volumes/Data/Work/WorldEditor/test/Open-Warcraft3`（295.9k 行，**按安卓版运行路径取基准**）
+> 对象：`/Volumes/Data/Work/WorldEditor/Launcher`（Godot 4 + C#，46.8k 行，HEAD `4d76270` 2026-11-12）
+> 基准：`/Volumes/Data/Work/WorldEditor/test/Open-Warcraft3`（295.9k 行，HEAD `14b62fd5` 2026-11-11，**按安卓版运行路径取基准**）
 > 生成时间：2026-11-12
+> 说明：`Open-Warcraft3_Wiki` 是同一仓库的较早快照（少若干次推送），不作为基准；本文全部结论以 `test/Open-Warcraft3` 当前工作树为准。
 
 ---
 
@@ -38,6 +39,65 @@
 ### 0.3 Launcher 的定位
 
 Launcher 不是客户端的移植，而是**按功能重写的删减版**（16% 代码量）。文件命名大量直接沿用客户端（69 个文件同名），但内部逻辑是按"能跑对战"重写的。
+
+### 0.4 路径镜像原则（本文的核心建议）
+
+**现状的问题**：目录结构不同，同步时无法直接定位。
+
+| Launcher 现有位置 | 客户端实际位置 | 同步时的代价 |
+|---|---|---|
+| `src/World/World.WeaponSystem.cs` | `Src/Components/WeaponSystem.cs` | 要先查表，才知道改哪个文件 |
+| `src/Units/Unit.Combat.cs` | `Src/Units/Unit.Combat.cs` | 同名，唯一不用查的一类 |
+| `src/Simulation/Configuration/UnitCatalog.cs` | `GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.cs` | 名字都不一样 |
+| `src/Environment/TerrainGridFactory.cs` | `GameCore/L4_Composition/Game/Environment/TerrainGridFactory.cs` | 同名但差了 4 层目录 |
+
+**结论**：Launcher 应改用与客户端**完全相同的相对路径与文件名**。这样"映射表"退化成"同路径即同源"，同步成本从"查表 + 猜"降到"同路径直接 diff"。
+
+#### 目标目录结构
+
+```text
+Launcher/
+├── Src/                                  # 镜像客户端 Src/
+│   ├── Abilities/                        # Ability.cs、Buff.cs、CAbility*.cs
+│   ├── Components/                       # WeaponSystem.cs、Health*.cs、OrderQueue.cs
+│   ├── Configuration/                    # War3GameplayConfig.cs
+│   ├── Core/                             # World.cs、DamageData.cs、FogOfWar.cs、Pathing/
+│   ├── Items/                            # ItemBonus.cs、NativeItemCharges.cs
+│   ├── Skills/                           # 每个技能一个文件，与客户端同名
+│   └── Units/                            # Unit*.cs（含 Unit.Combat.cs、Unit.Items.cs）
+├── GameCore/                             # 镜像客户端 GameCore/
+│   ├── L1_Adapter/Formats/               # War3Pathing.cs、Text/
+│   ├── L2_Core/MapBrowser/               # MapInfoParser.cs、TerrainParser.cs
+│   ├── L3_Simulation/Simulation/
+│   │   ├── Configuration/                # Runtime*Ability.cs、War3ObjectData.cs
+│   │   ├── Jass/                         # 仅当搬运 melee native 时才需要
+│   │   └── Maps/                         # War3MapUnits.cs、War3MapDoodads.cs
+│   └── L4_Composition/Game/
+│       ├── Environment/ Presentation/ Audio/ Camera/ Rendering/ UI/
+│       └── Scenes/War3GameScene/
+└── Platform/Godot/                       # 客户端无对应，Godot 壳
+    ├── App/                              # LauncherApp.cs
+    ├── Nodes/                            # Node3D / Control 派生类（渲染实现）
+    ├── Assets/                           # 资源装配（ModelLibrary、DoodadMeshLibrary…）
+    └── Extensions/                       # Gmap 导入、MapBrowser、GameOverPanel 等原创件
+```
+
+#### 五条配套规则
+
+1. **namespace 跟客户端**：领域代码用 `OpenWC3` / `OpenWC3.Game`，Godot 壳用 `OpenWC3.Launcher`。这样从客户端复制代码时不用改 `using`，也不会因为命名空间不同而看不出是同源文件。
+2. **一个客户端文件 = 一个 Launcher 文件**：不合并、不拆分。客户端把 10 个技能类塞进 `RuntimeHumanOrcUltimates.cs`，Launcher 也照做；客户端一个技能一个文件，Launcher 也一个技能一个文件。
+3. **取消 `partial class World` 的横向拆分**：现在 `World.WeaponSystem.cs`、`World.Orders.cs`、`World.Targeting.cs` 都是同一个类的 partial 分册，客户端对应的是独立类（`WeaponSystem`、`OrderQueue`、`World.Targeting`）。这类要按客户端拆成独立类，否则"同路径"只是表面一致、diff 依旧对不上。
+4. **聚合文件按客户端拆分**：`src/Skills/` 现在是 103 个文件装 220 个类（如 `HumanUnits.cs` 装 7 个技能），客户端是 190 个 `Runtime*Ability.cs`。P-1d 阶段按技能拆分，拆完与客户端 1:1。
+5. **Godot 特有能力不进镜像目录**：`Node3D` 子类、`_Process`、资源加载这些放 `Platform/Godot/`，用继承或 partial 挂到领域类上，保证镜像目录里的文件"内容可逐行对照"。
+
+#### 执行方式与收益
+
+- 全部用 `git mv` 移动，保留 blame 历史。
+- 每移一批：`dotnet build` + `--combat-probe` + `--state-probe` 必须仍全过。
+- 移完自检：`diff -rq Launcher/Src test/Open-Warcraft3/Src` 应只剩"Launcher 尚未实现"的文件，不应有"同路径不同内容"的意外。
+- 收益：客户端每次改动后，`diff -rq` 一遍就知道哪几个 Launcher 文件要跟；不用再维护本文第 2 章那张表（那张表会退化成"迁移进度清单"）。
+
+> 这一步不改变任何行为，纯结构搬迁，但它是后续所有同步的地基，所以排在 P0 之前（见 4.2 的 P-1）。
 
 ---
 
