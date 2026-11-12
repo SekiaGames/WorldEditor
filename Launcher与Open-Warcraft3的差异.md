@@ -500,10 +500,10 @@ Launcher/
 | 9 | ~~虚无不免疫物理~~ **已修** | `World.DamageMembers.cs:226` 补 `physical && Ethereal → 0` | `Health.cs:196` 直接 0 伤；`Weapon.cs:138` 连目标都选不上 | 放逐的物理免疫恢复（2026-11-12，commit `7bf1b26`） | ★ |
 | 10 | ~~在建建筑护甲类型~~ **误判，已实现** | `MakeAttackDamage` 里 `underConstruction ? DefenseType.Unarmored` 且 `ArmorFactor` 取 1 | `Health.DamageScaling.cs:16-22` | 无差异（此前审计读错行，2026-11-12 复核更正） | — |
 | 11 | 免伤分类口径 | `DamageMembers.cs:226` 只按 `DamageType==Normal` 判物理 | `Health.cs:183-192` 按位掩码 + `AttackType` 分类 | 攻城/英雄攻击配 Universal 时魔免判定错 | ★★ |
-| 12 | 死亡缠绕 | `Skills/DeathCoil.cs:49` 全额 + `Magic` | `RuntimeUndeadHeroAbilities.cs:42-44` `HealAmount/2` + `Death` | 伤害翻倍 | ★ |
-| 13 | 圣光术对敌方亡灵 | `Skills/HolyLight.cs:23` 只接受友军 | `Src/Skills/HolyLight.cs:34-52` 可打敌方亡灵 `DataA/2` | 不能净化敌方亡灵 | ★ |
-| 14 | 霜冻新星主目标 | `Skills/FrostNova.cs:31-42` 主目标只吃 `DataB` | `RuntimeFrostNovaAbility.cs:88-118` 主目标先吃范围 `DataA` 再吃 `DataB` | 主目标少一次伤害 | ★ |
-| 15 | 暴风雪槽位 | `Skills/Blizzard.cs:19-21` `WaveInterval=>Data('D')` | `RuntimeAbilityFactory.cs:533-541` 波间隔取 `Cast`，`DataD`=建筑减伤 | 数值巧合相等，但缺每波总量上限 | ★★ |
+| 12 | ~~死亡缠绕~~ **已修** | `RuntimeDeathCoilAbility.cs:49` 改为 `Amount*0.5`（commit `3773182`） | `RuntimeUndeadHeroAbilities.cs:42-44` `HealAmount/2` + `Death` | 伤害不再翻倍 | ★ |
+| 13 | ~~圣光术对敌方亡灵~~ **已修** | 友军一律治疗、敌方亡灵可选并吃半额伤害（`3773182`） | `Src/Skills/HolyLight.cs:34-52` | 可净化敌方亡灵，且不再误伤友军亡灵 | ★ |
+| 14 | ~~霜冻新星主目标~~ **已修** | 先范围 `DataA` 全员、再给主目标补 `DataB`（`3773182`） | `RuntimeFrostNovaAbility.cs:88-118` | 主目标伤害补齐 | ★ |
+| 15 | ~~暴风雪槽位~~ **已修** | 波间隔改读 `Cast`，`DataD` 改回建筑减伤、`DataF` 补每波上限（`c97fb3b`） | `RuntimeAbilityFactory.cs:533-541` | 波次与引导时长翻倍修正（3s→6s） | ★★ |
 | 16 | 引导中断条件 | `World.Channels.cs:96-101` `Stunned || Silenced` | `Src/Units/Unit.Step.cs:32-35` `Stunned || Sleeping` | 被沉默会误打断引导 | ★ |
 | 17 | 嗜血类 Buff 叠加 | `Skills/OrcUnits.cs:21-31` 每次 new 叠加 | `RuntimeBloodlustAbility` 同源刷新 | 重复施法线性叠加攻速 | ★★ |
 | 18 | 光环离场余韵 | `World.Abilities.cs:298-325` 每 tick 重算 | `RuntimeUnholyAuraAbility.cs:105-118` Buff 4 秒滞留 | 离开光环立即失效 | ★★ |
@@ -512,8 +512,8 @@ Launcher/
 
 | # | 项 | Launcher | 客户端 | 影响 | 难度 |
 |---|---|---|---|---|---|
-| 19 | 攻击移动 | `World.Orders.cs:7-20` 只有 Move/Attack/Patrol，`Attack` 必须带 `Target` | `GameSession.cs:79` `AttackMoveCommand` → `COrderTarget(Point)` | 点地面无法边走边打 | ★★ |
-| 20 | 订单队列深度 | `World.Orders.cs:27` 12 | `OrderQueue.cs:58` 500 | Shift 连点被静默丢弃 | ★ |
+| 19 | ~~攻击移动~~ **已修** | 新增 `UnitOrderKind.AttackMove`，主循环途中索敌、到点清标记（commit `d5ead17`） | `GameSession.cs:79` `AttackMoveCommand` → `COrderTarget(Point)` | 现在点地面 = 边走边打 | ★★ |
+| 20 | ~~订单队列深度~~ **已修** | `MaxQueuedOrders` 12→500 | `OrderQueue.cs:58` 500 | Shift 连点不再丢 | ★ |
 | 21 | 受击反击 | 无 | `Components/Ai.cs:136 ReturnFire` | 被打不还手 | ★★ |
 | 22 | 移动步进阻挡校验 | `World.MovementEvents.cs:80-102` 只算位移 | `MovementExecution.cs:264-270` 每步查静态阻挡 | 新建建筑可被穿行 | ★★ |
 | 23 | 编队限速/等齐 | `Commands.cs:135-143` ≥2 单位就取 min | `CPrCluster.cs:1426` 编队时跳过共享限速 | 编队被拖到最慢兵速 | ★★ |
@@ -526,7 +526,7 @@ Launcher/
 | 25 | 7 个真缺口实现 | Acha（换型）、AUds（黑暗召唤）、AEpa（毒箭）、Aspb（技能书）、Aetl（常驻虚无）、ANme（流星雨）、Artn（返还资源） | ★★★ |
 | 26 | Btlf 通用限时生命 | 只有召唤物走 `SummonRemaining`，图腾/守卫类若不走 `SummonUnit` 就永不消失 | ★★ |
 | 27 | 自动施法节奏 | `World.Abilities.cs:248-271` 全局 0.5s 一轮最多一个；客户端每技能独立 deadline（`UnitAutoCastScheduler.cs:36-41`） | ★★ |
-| 28 | 攻速加性桶 | `World.Targeting.cs:163-170` 连乘且无 [0.2,5] 夹取；客户端 `NativeAttackSpeedFactor.cs:8-14` 单桶 + 夹取 | ★ |
+| 28 | ~~攻速加性桶~~ **已修** | `AttackCooldownOf` 改单桶 `1+全部加成`、夹 [0.2,5]（`c97fb3b`） | `NativeAttackSpeedFactor.cs:8-14` | ★ |
 
 ### 3.5 物品与商店
 
