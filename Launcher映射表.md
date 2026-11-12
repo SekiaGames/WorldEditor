@@ -26,7 +26,7 @@
 
 191 对里只有 4 个满足四条。其余 187 个卡在条件 1 或 2：职责相同，实现是重写的。
 
-照搬后保留客户端原命名空间（`OpenWC3`），项目根加 `GlobalUsings.cs` 写 `global using OpenWC3;`，Launcher 其余代码一行不用改。
+命名空间已按客户端分层统一（`OpenWC3` / `OpenWC3.Game` / `OpenWC3.Game.UI` / `OpenWC3.War3Formats`），照搬不再需要额外的 using 过渡层，覆盖即可用。
 
 ---
 
