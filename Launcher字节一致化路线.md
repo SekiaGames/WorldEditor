@@ -444,6 +444,20 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **计数口径需要更新**：早期统计用的是 191 对同路径文件（当时快照）。现在同名对照文件已经到 **210 对，其中字节一致 37 个**。两个口径的差异来自后来新增的镜像文件（`TargetRules`、`Effect`、`SpecialEffect`、`AbilityDisableType`、`ICastOrderTiming` 等）。后续统一报 210/37 这个口径。
 
+### 第二十三轮（`a4e9943`）
+
+**口径再调整**：允许「大部分一致」。只要行为过探针，文件与客户端有少量差异也算采纳，不再要求零差异才合。
+
+这轮真正的修复是 `Unit.FindBuff<T>`：客户端把 Buff 放进技能表（`Buff : Ability`），Launcher 的 `Buffs` 是另一个列表。原来只扫 `Buffs`，所以 `FindBuff<RuntimeSleepBuff>()` 恒为 null——这一条会让所有「按 Buff 类型查状态」的断言静默失效。
+
+同时入库 `NativeSpellTargetRules.cs` + `.Generated.cs`（65 + 80 行）与五个 `Misc` 配置旗标。
+
+| 指标 | 值 |
+|---|---:|
+| 同名对照 / 字节一致 | 212 / **39** |
+
+**休眠簇差一步**：Buff 挂上、禁止移动、时长都对，只剩「挨打立刻醒」不触发——客户端的唤醒走 Buff 自己的受击回调，不在 `Ability.OnDamaged` 这条派发链上。回退。
+
 ---
 
 ## 1. 六个杠杆
