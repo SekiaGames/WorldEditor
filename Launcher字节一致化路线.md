@@ -348,6 +348,26 @@
 
 **判断**：分类子系统本身是净收益（`Unit.Is(Classification)` 是客户端技能的通用判定，后面大量文件会用），但尸舱这条链要继续就得连生成管线一起改，属于下一层。本轮只保留分类，其余回退。
 
+### 第十六、十七轮（`c0f9542`、`0a49645`）
+
+**生成管线**：`World.Spawn` / `RemoveUnitSilent` / `ReleaseUnitSpatialOnDeath`、`UnitFactory.Create(objects,id,team,pos,facing)`、`Death.InitializeAsCorpse`/`SuspendDecay`/`ResumeDecay`、`Unit.CancelOrders`/`TeleportVersion`/`CorpseDecaySuspended`。
+
+**施法状态机**：`Ability.IsCasting`/`IsChanneling`/`CdRemaining`/`CancelCast`/`FinishChannel`，`World.ChannelingAbility`/`CancelChannel`/`FinishChannel`；`TryCast` 现在会包裹 `OnCast`，进入置位、非引导退出清除。
+
+**尸舱链回退**。`RuntimeMeatCargoAbilities` + `RuntimeExhumeAbility` + `RuntimeSpatialUnitQuery` 三个文件全部编译通过，但探针：
+
+```
+FAIL 装尸体施放成功    期望 1 实际 0
+FAIL 货舱里有一具尸体  期望 1 实际 0
+FAIL 尸体归到车名下    期望 1 实际 0
+```
+
+客户端的 `Store` 依赖 A 没有的尸体归属与空间释放时序。**编译通过只说明签名对上，不说明行为对上**——这条教训在第十二轮（`new` 隐藏导致虚派发失效）已经出现过一次。
+
+**筛选口径**（回答「Godot + 对战」）：纯对战逻辑、不依赖 Godot 节点与渲染层就搬；碰 Scene/Node/Texture 的不搬。所以搬进来的是分类掩码、光环基类、伤害包钩子、空间查询签名；排除的是特效渲染、UI、`StandalonePathing` 原生镜像。
+
+**下一层**：`Projectile`（382 行，弹道子系统）、`RuntimeSpatialUnitQuery`（卡尸舱）、`World.SharedSpellsQuery`（卡驱散/放逐）。
+
 ---
 
 ## 1. 六个杠杆
