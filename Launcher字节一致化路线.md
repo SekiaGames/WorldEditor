@@ -421,6 +421,23 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **这轮的方法论收获**：探针红不一定是技能写错了，先看探针调的是不是旧钩子。反馈那两条（烧蓝 200≠180、加伤 10≠30）全部由「探针直接调 `ModifyOutgoingAttack(float)`」引起，改成构造伤害包后一次通过。
 
+### 第二十一轮（`7608278` → `daae441`）
+
+一个轮次拿下四个簇，同路径字节一致 **14 → 18**。
+
+| 簇 | 需要的钩子/成员 |
+|---|---|
+| 反馈 `RuntimeFeedbackAbility` | 出伤双参派发（上一轮补） |
+| 法力护盾 `RuntimeManaShieldAbility` | `Buff.ApplyDuration(normal, hero)`、`SplitConfig`、`ignoreVisibility` |
+| 硬化皮肤 `RuntimeHardenedSkinAbility` | 入伤 `ref` 钩子派发、`World.HardenedSkinRng`、`Random.NextUnit` |
+| 相位转移 `RuntimePhaseShiftAbility` | `State.Channeling/Paused/Sleeping/Is(StateModType)`、`CheckTarget` 两个重载 |
+
+**这轮最关键的修复是入伤钩子的派发规则**。A 的 `(World, DamageData)` 版和客户端的 `(ref DamageData)` 版曾同时派发，导致荆棘反伤翻倍（330 → 320 实际伤害多出 10）。改成按 `OverridesIncomingWorldHook` 二选一：类型自己重写了 World 版就走 World 版，否则走 ref 版。基类的 World 版再委托给 ref 版，这样客户端只重写 ref 版也能生效。
+
+**规律已经很稳定**：一个簇的落地成本 ≈ 1 个「派发规则」+ 2-3 个「口径成员」。派发规则修一次能带多个簇，口径成员是逐个簇的事。
+
+**净化仍然卡住**，原因不变：A 的 `AddSlow` 阶数系统与客户端 `RuntimePurgeBuff` 并存，减速叠加出 0.4688（期望 0.95），驱散也走另一套开关。这是唯一需要先定「以哪套为准」的子系统。
+
 ---
 
 ## 1. 六个杠杆
