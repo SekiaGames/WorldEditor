@@ -488,14 +488,17 @@ Launcher/
 | 7 | 库存缺省 | `ItemCatalog.cs:98-99`：stockMax 缺省 0、regen 缺省 120 | `StockAndShops.cs:244,268-284`：缺省 1 / 缺省 0（0=不消耗） | 无该列的商品永久缺货 | ★ |
 | 8 | 起始资源判定 | `Lifecycle.cs:252` `FormatVersion < 25` | `Blizzard.j:7903` `VersionGet()`（运行版本） | RoC 格式图在 TFT 下多给 250 金 | ★ |
 
+> **P0 进度（2026-11-12，commit `7bf1b26`）**：#1/#2（表源改 TFT、矩阵随之回到 1.0/1.5/1.0/0.7）、#3（移速 150~400 夹取）、#4（骰子取值）、#5（物品三围 力=DataC/敏=DataA/智=DataB）已修并验证；#6（复活时间字段）、#7（库存缺省）、#8（起始资源判定）未做，归 P1。
+> 验证方式：`--combat-probe` 输出矩阵已变为 TFT 值（普通打中甲 1.50、穿刺打中甲 0.75），`--state-probe` 新增虚无两条断言全过；加速卷轴夹到 400、醉酒云雾减速夹在 150。
+
 **这一组的关键认知**：`--combat-probe` 的断言是按 Launcher 当前系数写的，改完 1/2 后断言会成片失败——那不是回归，是断言本身锁定了错值，必须同步改成客户端值。
 
 ### 3.2 战斗规则缺分支
 
 | # | 项 | Launcher | 客户端 | 影响 | 难度 |
 |---|---|---|---|---|---|
-| 9 | 虚无不免疫物理 | `World.DamageMembers.cs:190-264` 无该分支 | `Health.cs:196` 直接 0 伤；`Weapon.cs:138` 连目标都选不上 | 放逐只剩减速+增伤，失去物理免疫 | ★ |
-| 10 | 在建建筑护甲类型 | `DamageMembers.cs:176` 保留原 `DefenseType` | `Health.DamageScaling.cs:16-22` 换 `Unarmored` | 攻城打在建建筑差 50% | ★ |
+| 9 | ~~虚无不免疫物理~~ **已修** | `World.DamageMembers.cs:226` 补 `physical && Ethereal → 0` | `Health.cs:196` 直接 0 伤；`Weapon.cs:138` 连目标都选不上 | 放逐的物理免疫恢复（2026-11-12，commit `7bf1b26`） | ★ |
+| 10 | ~~在建建筑护甲类型~~ **误判，已实现** | `MakeAttackDamage` 里 `underConstruction ? DefenseType.Unarmored` 且 `ArmorFactor` 取 1 | `Health.DamageScaling.cs:16-22` | 无差异（此前审计读错行，2026-11-12 复核更正） | — |
 | 11 | 免伤分类口径 | `DamageMembers.cs:226` 只按 `DamageType==Normal` 判物理 | `Health.cs:183-192` 按位掩码 + `AttackType` 分类 | 攻城/英雄攻击配 Universal 时魔免判定错 | ★★ |
 | 12 | 死亡缠绕 | `Skills/DeathCoil.cs:49` 全额 + `Magic` | `RuntimeUndeadHeroAbilities.cs:42-44` `HealAmount/2` + `Death` | 伤害翻倍 | ★ |
 | 13 | 圣光术对敌方亡灵 | `Skills/HolyLight.cs:23` 只接受友军 | `Src/Skills/HolyLight.cs:34-52` 可打敌方亡灵 `DataA/2` | 不能净化敌方亡灵 | ★ |
@@ -609,6 +612,20 @@ Launcher/
 | P-1g | `Skills/` 按客户端拆成一技能一文件（220 类 → 对齐客户端 190 个文件） | 103 | 码表覆盖率不变 |
 | P-1h | 入库 `sync-check.command`：`diff -rq` 两侧同名文件，输出待跟进清单 | 1 | 人工确认输出 |
 
+> **进度**：P-1a~P-1g 已完成（commit `1e6e8e5`、`5ac1fbd`、`2032a5c`、`cfb4a3f`、`29095b1`、`33560c5`、`a5d6ac8`、`2b0bb02`）。
+> - P-1a：根目录 `src` 整体改名为 `Src`——macOS 默认大小写不敏感，`src/` 与 `Src/` 是同一路径，无法在其下新建 `Src`；整体改名后 `Src/Abilities`、`Src/Components`、`Src/Units`、`Src/Items` 直接落到目标位置。286 个文件被 git 识别为 rename，`git log --follow` 可跨改名追踪；`Main.tscn` 脚本路径同步。
+> - P-1b：`Src/Core` 去子目录平铺（Combat 8 个 + SpellTargets），`AbilityTargetMode` 归 `Src/Abilities`；Formats 按层归位：Mpq/Slk/Text→`GameCore/L1_Adapter/Formats`，W3x 解析件→`L3 Maps`，`W3xObjectData`→`Configuration`，`MapDocument`→`Platform/Godot/Extensions`。
+> - P-1c：`Simulation/Configuration` 12 个文件→`GameCore/L3_Simulation/Simulation/Configuration`；`GroupFormation`→`Src/Core/Pathing/Group`、`PathGrid`→`Src/Core/Pathing/Search`；Gmap/AiTactics→`Platform/Godot/Extensions`。
+> - P-1d：Environment/Presentation/Audio/UI/Camera/Scenes/Diagnostics→`GameCore/L4_Composition/Game`；MapBrowser→`L2_Core`；App/Assets→`Platform/Godot`。
+> - P-1e：只拆了 `World.Cargo` → `Src/Units/CargoTransport.cs`（类名、路径均与客户端一致，World 用 lazy `Cargo` 属性持有，9 处调用点改为 `world.Cargo.Xxx`）。**其余 30 个分册暂停**，原因见下方"为什么 P-1e 不能机械推进"。
+> - P-1f：13 个文件与类改名对齐客户端，493 处引用同步替换；`RallyPointDisplay` 归 `Rendering`。
+> - P-1g：`Src/Skills` 的 103 个聚合文件按类型拆成 236 个"一类型一文件"，文件名用客户端名；其中 128 个 `Runtime*Ability` 移入 `GameCore/L3_Simulation/Simulation/Configuration`（客户端的实际位置），9 个留在 `Src/Skills`，99 个客户端无同名的辅助类留 `Src/Skills`。随后 176 个类改名为客户端名（739 处引用替换）；7 个类因与成员/方法同名（`Heal`/`Root`/`Sleep`/`Silence`/`Mine`/`CloudOfFog`/`ParasiteBuff`）保留旧名，文件名仍对齐。
+> - **P-1f 遗留的语义差异（搬运前必须处理）**：`DamageData` 在客户端是 `struct`（值语义，`DamageData.cs:5`），Launcher 仍是 `sealed class`（引用语义）；`Weapon` 客户端是 `sealed partial class`、Launcher 是 `sealed class`（引用语义一致，仅缺 partial）。做 P0-3/P0-11 搬伤害管线时，必须先把 `DamageData` 改成 `readonly struct`，否则 `ApplyIncomingDamageBuckets` 那类"改副本"的写法会失效。
+> - **同路径同名文件：191 / 419（45%）**（P-1a 前是 0）。剩余 228 个构成：客户端无同名文件 162（Skills 辅助类与原创件）、`Src/World` 30（P-1e 暂停）、Diagnostics 23、`Platform/Godot` 11、其余 2 个路径待定。
+> 副作用：仓库 `core.ignorecase` 已设为 `false`（否则 git 不记录大小写改名）。若之后新增仅大小写不同的文件，需要留意。
+
+> **为什么 P-1e 不能机械推进**：31 个 `World.*.cs` 分册里，只有 `World.Cargo` 对应客户端的独立类（`Src/Units/CargoTransport.cs`）。其余对应的是客户端的**技能类**（`RuntimeRepairAbility`、`RuntimeBlightGrowthAbility`）或**组件类**（`Health`、`OrderQueue`、`WeaponSystem`），而 Launcher 把它们写成 `World` 的方法。更麻烦的是分册边界与客户端不一致，例如 `World.Rally.cs` 里同时装着工人订单（`SetBuild`/`SetChop`/`SetGather`，客户端在 `JassGameNatives.Harvest.cs`）和集结点（`SetRally`/`SendToRally`，客户端在 `CAbilityRally.cs`）。机械拆分会制造出客户端并不存在的类，反而降低可对照性。**剩余 30 个属于"组件化重构"，需要重新设计类边界并改调用链，建议单独立项，不与本轮结构对齐混做。**
+
 > **P-1 与 P0 的穿插顺序**：先 P-1a~P-1d（纯移动，不改内容），再 P0（改数值），最后 P-1e/P-1f（拆类与改 namespace）。理由：P0 改的是内容，如果同时移动文件，diff 会呈现成"整文件重写"，review 时看不出真正的逻辑改动。
 > P-1 全部完成后，第 2 章的映射表即可废弃——同路径即同源。
 
@@ -625,6 +642,8 @@ Launcher/
 | P0-7 | 修正探针断言 | `Diagnostics/CombatProbe*.cs` 里所有硬编码期望值 | 探针全绿，且数值与客户端一致 |
 
 > P0-1 与 P0-7 必须同批改，否则构建后探针会大面积报红，容易被误判成"改坏了"。
+> **完成情况（commit `7bf1b26`）**：P0-1、P0-2、P0-3、P0-5、P0-6、P0-7 已完成并验证。**P0-4 是误判**——`MakeAttackDamage` 里早已有 `underConstruction ? DefenseType.Unarmored`，本次复核确认无需改动。
+> 实证：`bgst`（+6 力量腰带）的 `AIab` 数据是 `DataA=0, DataB=0, DataC=6`，改前按 A 取力量会得到 +0 力量、+6 智力；改后 +6 力量正确。
 
 #### P1：对战规则对齐（2-3 天）
 
