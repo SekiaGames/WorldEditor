@@ -275,6 +275,18 @@
 
 要不要继续扫这条尾巴，取决于目标——如果目标是字节一致数量，扫完大约能到 45-50；如果要到 128，必须换 `Ability` 基类本体。
 
+### 第十二轮（`dcae267`、`f9b52f8`）
+
+扫长尾，同时修掉一个真 bug。
+
+**真 bug**：`Buff.ModifyOutgoingDamage` 之前是 `new virtual`，而 Buff 实例现在存放在 `Unit.Abilities` 里（静态类型 `Ability`）。用 `new` 隐藏基类成员意味着**虚派发会走到 `Ability` 的空实现**，Buff 的出伤加成永远不生效。改成 `override` 才通。这类问题编译器不报错，只有探针或实测能发现。
+
+补齐的成员：`Ability` 的 `CheckBeforeQueue`×2 / `IncomingDamagePriority` / `CastOrderId`，`SpawnSpecialArtsOnCast` 与 `SpawnTargetArtsOnCast` 从方法改成 `protected virtual bool` 属性（客户端是属性），`ModifyOutgoingDamage` 改 `void` 并加 `(Unit, ref)` 重载；`Buff` 的 `TimedLife`/`ShowsDurationBar`；`Unit` 的 `Hidden`/`MagicImmune`/`Ethereal`/`Snared`/`Team`/`TargetType`/`AnimationProperties`；`World.AreEnemies`。
+
+**长尾的实测成本**：修完这批，`RuntimeDefendAbility` 仍差 3 个成员（`DamageData.CannotMiss`、`Unit.AnimationRequestVersion`、`World.Rng`），`RuntimeFeedbackAbility` 差 `Classification`，`RuntimeCleavingAttackAbility` 差 `TargetRules`，`RuntimeInfernoAbility` 差 `SplitConfig`。
+
+`Classification` 和 `TargetRules` 是客户端的分类子系统（`Unit.Is(Classification)`、`Unit.UsesHeroSpellRules`、`World.SharedSpellsQuery`），不是单个成员。也就是说技能文件的最后一公里分两段：**前段是零散成员（每文件 2-3 个），后段是分类子系统**。
+
 ---
 
 ## 1. 六个杠杆
