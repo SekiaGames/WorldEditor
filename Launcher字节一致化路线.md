@@ -332,6 +332,22 @@
 
 四个方向，每个都要动 A 的核心类型。**到这里可以下一个明确的判断**：剩下的增量不再是"补接口"，而是"移植子系统"，每个子系统 3-5 轮起步，且都要改 A 的既有实现。
 
+### 第十五轮（`5bf3343`）
+
+分类子系统落地。
+
+| 项 | 内容 |
+|---|---|
+| `Classification` | 客户端 15 位分类掩码（Peon/Mechanical/Hero/Ancient/Organic/Undead/Giant/Summoned/Sapper/TownHall/Tree/Ward/StandOn/Neutral/Tauren） |
+| 物编 `type` 列 | `UnitFactory` 现在解析 SLK 的 `type` 列（`mechanical`、`undead,Mechanical`、`TownHall,Ancient`…），存进 `UnitType.Classifications` |
+| `Unit.Is(Classification)` | 物编位 + 英雄/有机兜底推断 |
+| `Death` 门面 | `IsCorpse`/`IsDead`/`CorpseSecondsLeft` |
+| 其它 | `UnitFactory.Create(type, player)`、`PlayerId` 可写、`Ability.IsTechTreeLocked`、`AbilityContainer.Get<T>()` |
+
+**试了尸体货舱那条链，卡在更底下**：`RuntimeMeatCargoAbilities` 编译过后，A 的 `RuntimeExhumeAbility` 因为同名类解析到客户端版本而崩，改用它又需要 `UnitFactory.Create` 5 参重载、`World.Spawn`、`Death.InitializeAsCorpse`。链条是 掘尸 → 尸舱 → 分类 → 生成管线，每一环都通一点又露一点。
+
+**判断**：分类子系统本身是净收益（`Unit.Is(Classification)` 是客户端技能的通用判定，后面大量文件会用），但尸舱这条链要继续就得连生成管线一起改，属于下一层。本轮只保留分类，其余回退。
+
 ---
 
 ## 1. 六个杠杆
