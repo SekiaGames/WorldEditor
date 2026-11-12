@@ -524,6 +524,24 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **剩下的同类项都已经不是「类型」而是「子系统」**：`ObjectDataBuff`（配置装载）、`ChainLightningBeamEffect`（特效管线）、`AbilityTypeData`（自定义对象数据）、`OrderQueue`（指令队列）、`COrder`（指令基类）。按类型搬进不去了。
 
+### 第二十八轮（`4d40d9e`、`b3e9a3b`）
+
+弹道特效管线入库，一次解开三个技能。同路径一致 **46 → 51**。
+
+| 入库 | 行数 | 解锁 |
+|---|---:|---|
+| `AbilityMissileEffect` | 119 | 弹道基类 |
+| `ChainLightningEffect` | 172 | 闪电攻击、叉状闪电 |
+| `RuntimeLightningAttackAbility` | — | 闪电攻击 |
+| `RuntimeForkedLightningAbility` | — | 叉状闪电 |
+| `RuntimeLiquidFireAbility` | — | 液态火 |
+
+配套两个小件：`Unit.ProjectileImpactZ`（可空，落点默认 60）、`World.RentEnemiesInRange/ReturnEnemiesInRange`（A 侧没有对象池，直接返回列表）。
+
+**扫描：零错误 23 → 32，单错 23。**
+
+单错文件里六个「只差工厂注册」的重试结果：液态火过，醉拳、隐身、净化、火焰雨、掘尸探针红。火焰雨失败点集中在「进入引导」——客户端引导走 `ChanneledAbility`，A 的 `BeginChannel` 是另一套签名，这属于引导子系统，不是补成员能解决的。
+
 ---
 
 ## 1. 六个杠杆
