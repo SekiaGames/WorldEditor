@@ -223,6 +223,33 @@
 
 **命令光环是最后一个，回退了。** 它实现 `IAttackDamageStatModifier.ModifyOutgoingDamage(ref DamageData)`，但 A 的出伤钩子是 `float ApplyAttackModifiers(Unit, Unit, float)`，只传数值不传伤害包。要接上得把出伤管线从 `float` 改成 `DamageData`，牵动致命一击、重击、溅射几个消费点，属于伤害管线的整体改造，留作单独一轮。
 
+### 第十轮（`d409535`）
+
+出伤管线打通，命令光环迁完，**9 个光环全部走客户端模型**。
+
+- `ApplyDamagePacketModifiers`：普攻包生成后遍历攻击方技能，先跑 `IAttackDamageStatModifier`，再跑 `Ability.ModifyOutgoingDamage(ref DamageData)`。
+- 幻象伤害系数从「改 raw」改成「改伤害包」，`Raw` 与 `Amount` 同步。
+
+| 指标 | 第九轮 | 第十轮 |
+|---|---|---|
+| 同路径字节一致 | 13 | **14** |
+| 191 对中编译可换 | 9 | **18** |
+
+（编译可换 18 = 9 个光环 + 5 个纯数据文件 + 4 个原本就一致的。）
+
+**剩余单点缺口重新统计后，形状变了**：不再是"缺 Ability 虚成员"，而是
+
+| 缺口 | 文件数 |
+|---|---|
+| `Effect` 类型 | 4 |
+| `SpecialEffect` 类型 | 2 |
+| `Hero` 类型 | 1 |
+| 各类 `ModifyOutgoingDamage(Unit, ref)` / `CheckBeforeQueue` / `TimedLife` 等零星重写点 | 各 1 |
+
+前三个是表现层类型——技能要放特效就得有 `Effect` 对象。A 侧现在只有 `SpecialEffectApplication` 这种场景节点包装，没有客户端的 `Effect`/`SpecialEffect` 抽象。这又是一层"表现层抽象"，和当初 L4 那 32 个文件同一个原因。
+
+也就是说：**技能文件的最后一公里不是逻辑，是特效**。要么给 A 补一层 `Effect` 门面（把 SpecialEffectApplication 包进去），要么这些技能就一直停在 2 条错误上。
+
 ---
 
 ## 1. 六个杠杆
