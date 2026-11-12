@@ -458,6 +458,27 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **休眠簇差一步**：Buff 挂上、禁止移动、时长都对，只剩「挨打立刻醒」不触发——客户端的唤醒走 Buff 自己的受击回调，不在 `Ability.OnDamaged` 这条派发链上。回退。
 
+### 第二十四轮（`e077437`、`f76e1e2`、`3df9688`）
+
+不再按簇一个个试，改成两次全量扫描之间补「按出现频次排序」的缺口。
+
+| 补的东西 | 卡住的文件数 |
+|---|---:|
+| `AddSpecialEffect(model, pos, lifeSpan, scale, height)` + `AddSpecialEffectTarget` | 11 |
+| `DamageData.CannotMiss` | 6 |
+| `CantPathSearchPoint.NativeAdd/NativeSubtract/NativeDivide` | 7 |
+| `Ability.FinishChannel(bool interrupted)` | 4 |
+| `Unit.TypeLevel`、`Death.RevivalForbidden`、`Unit.Flags`+`UnitFlags` | 6 |
+| `State.Add/Remove(StateModType)`、`Stats.AttackType` | 3 |
+
+**扫描结果**：零错误文件 18 → 23，只有一个错误的文件 28 个。这 28 个已经**没有共性**——每台撞的是不同类型（`Hero`、`ObjectDataBuff`、`ChainLightningBeamEffect`、`SpellLightningVisuals`、`PlayerReveal`、`W3mPathing`），或者枚举口径（`StateModType`/`AttackType`）。
+
+**这说明「按频次补」的路走到头了**：最高的单点只剩 2 个文件，补一个成员换一个文件，性价比归零。
+
+本轮落地 `RuntimeInvulnerableAbility`（同路径一致 39 → 40）。顺劈（`CleavingAttack`）编译通过但溅射算出 420 而 A 侧 390，差一个目标，回退。
+
+**下一层只能按类型搬**：`Hero`（439 行）、`ObjectDataBuff`+`RuntimeObjectNumbers`+`RuntimeConfigCache`（三层）、`SpellLightningVisuals`。每个都是独立工程。
+
 ---
 
 ## 1. 六个杠杆
