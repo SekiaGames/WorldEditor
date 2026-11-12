@@ -206,6 +206,23 @@
 
 倾向第一种。数据层一旦解析对，`CanBeTargetedBy` 这套判定才算真正生效，后面 128 个技能文件里的目标筛选也能跟着对。
 
+### 第九轮（`77f7535` → `8eb667a`）
+
+光环簇收尾：**9 个光环里 8 个已迁移**，同路径字节一致 **11 → 13**。
+
+| 改动 | 说明 |
+|---|---|
+| `AbilityType.TargetRules` | `AbilityCatalog` 保存 `targs1` 原始串，`AbilityTypeObjectData` 暴露 `targs/targs1` |
+| `DamageData` 扩字段 | `BonusAmount`/`DamageMultiplier`/`IsRanged`，结算前按 `(Amount+Bonus)*Multiplier` 归一 |
+| ref 版入伤钩子 | `ApplyIncomingModifiers` 除 `(World, DamageData)` 外再调 `ModifyIncomingDamage(ref data)`，客户端 Buff 的钩子这才真正生效 |
+| `Unit.TakeDamage` / `SimulationId`、`Weapon.WeaponType`、`World.AreAllied(Unit,Unit)` | 客户端代码用到的零散成员 |
+
+**缓慢光环的根因找到了**：`targs1` 在 SLK 里是 `air,ground,enemy,vuln,invu`，A 的 `AbilityCatalog` 解析并存下了 `SpellTargets`，但 `AbilityTypeObjectData` 没有把这一列暴露给 `GetString("targs1")`。客户端 `ParseTargets` 拿到空串，掩码落到默认 `Self`，敌人永远拿不到 Buff。补上暴露后一次通过。
+
+这说明一件事：**判定逻辑写对了，输入是空的，等于没写。** 之前几轮修的 `CanBeTargetedBy`、`ConfiguredTargets` 都卡在同一个地方——数据没接到。
+
+**命令光环是最后一个，回退了。** 它实现 `IAttackDamageStatModifier.ModifyOutgoingDamage(ref DamageData)`，但 A 的出伤钩子是 `float ApplyAttackModifiers(Unit, Unit, float)`，只传数值不传伤害包。要接上得把出伤管线从 `float` 改成 `DamageData`，牵动致命一击、重击、溅射几个消费点，属于伤害管线的整体改造，留作单独一轮。
+
 ---
 
 ## 1. 六个杠杆
