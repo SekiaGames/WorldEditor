@@ -368,6 +368,16 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **下一层**：`Projectile`（382 行，弹道子系统）、`RuntimeSpatialUnitQuery`（卡尸舱）、`World.SharedSpellsQuery`（卡驱散/放逐）。
 
+### 第十八轮（`e6d5223`）
+
+试了弹道子系统，结论是**不能直接接**。
+
+`Projectile.cs`（382 行）拷进来后，靠补 `AttackMissileProfile`、`CaptureMissileWeapon`、`Unit.FlyHeight`/`ProjectileLaunchZ`、`Stats.TechDamageBonus`、`World.Rng` 一路啃到只剩 3 个成员（`Health.RollEvasion`、`Weapon.Kind`、`Missgame.MissDamageReduction`）。
+
+但即使全部补齐，它也是 A 的 `WeaponSystem.ResolveHit` 的**平行实现**：两套命中路径，接进去只有两种结果——要么成死代码，要么替换 A 的命中路径，后者要重测所有攻击相关断言（单挑时长、溅射、闪避、弹道延迟）。
+
+因此只保留那批口径成员，`Projectile.cs` 本体没接。这也修正了我上一轮的判断：**"382 行的子系统"不是搬运量的问题，是它会和 A 已有实现打架。**
+
 ---
 
 ## 1. 六个杠杆
