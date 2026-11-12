@@ -306,6 +306,32 @@
 
 这一轮没有新增字节一致文件（仍是 14），但把下一层的形状量出来了：空间查询、分类系统、订单延续、施法状态机——四套子系统，任意一套补齐都能解锁一批技能，缺一套就卡住一批。
 
+### 第十四轮（`c9ed964`、`a997dd4`）
+
+按上轮判断做空间查询，结果又把下一层挖出来了。
+
+落地的底座：
+
+| 项 | 内容 |
+|---|---|
+| 空间查询 | `RentUnitList`/`ReturnUnitList`（池，支持嵌套）、`CollectNearbyUnitsInWorldOrder`（按 `SimulationId` 排序）、`SortUnitsBySimulationId`、`MaximumCollisionRadiusForQuery` |
+| 特效表 | `World.Effects` + `AddEffect`/`AddSpecialEffect` + `TickEffects`（接进 `World.Tick`） |
+| 单位 | `CollisionSize`（建筑取足迹半径）、`GetAbility(id)`、泛型 `GetAbility<T>` |
+| 能力 | `Corpses`、`AutoCastPreemptsOrders`、`CanAutoDispelBy`、`EffectEventBeforePayment` 改 protected |
+
+**顺手修了一个自己埋的坑**：`Buff.CanAutoDispelBy` 在更早的批量编辑里被覆盖掉了，`grep` 才发现。这类"以为是加上了"的情况，只有编译到对应文件才暴露。
+
+**再试一轮，缺口全指向同一个地方**：
+
+| 文件 | 还差 | 归属 |
+|---|---|---|
+| `RuntimeBanishAbility` | `World.SharedSpellsQuery` | 分类/共享法术查询 |
+| `RuntimeIncinerateAbility` | `AutoCastActive`、`CdRemaining`、`RuntimeSpatialUnitQuery` | 施法状态机 + 空间查询类 |
+| `RuntimeAlternateFormAbility` | `Unit.SelectWeapon` 等 90 条 | 武器切换 |
+| `RuntimeBlightGrowthAbility` | `World.Terrain.SetBlightArea` | 地形层 |
+
+四个方向，每个都要动 A 的核心类型。**到这里可以下一个明确的判断**：剩下的增量不再是"补接口"，而是"移植子系统"，每个子系统 3-5 轮起步，且都要改 A 的既有实现。
+
 ---
 
 ## 1. 六个杠杆
