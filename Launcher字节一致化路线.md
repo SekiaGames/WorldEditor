@@ -378,6 +378,34 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 因此只保留那批口径成员，`Projectile.cs` 本体没接。这也修正了我上一轮的判断：**"382 行的子系统"不是搬运量的问题，是它会和 A 已有实现打架。**
 
+### 第十九轮（`8382b92`）
+
+按簇迁移的第一轮，结果是**基础设施到位、簇本身没落地**。
+
+**按成员清单批量对齐**（不再逐文件补）：以客户端 `Ability.cs` 的 170 个成员为基准，脚本算出 79 个缺失，按客户端签名生成实现（属性给默认值、方法给空体或 `default`），另补 `AbilityDisableType`、`EventTargetKind` 两个枚举。`Ability` 成员数 152 → 231。效果：`≤2 错误` 的文件从 45 降到 25（全部恰好 1 个），但零错误线没动。
+
+**最后那 1 个错误的性质**：几乎都是跨文件类型（`ObjectDataBuff`、`RuntimePurgeBuff`、`Hero`、`Identity`）或枚举口径不同（`StateModType` vs `StateMod`）。单文件替换有天然上限。
+
+**转而按簇搬，先把基础设施补齐**：
+
+| 新增 | 说明 |
+|---|---|
+| `Src/Core/TargetRules.cs` | 照搬客户端目标规则归一化，之前卡在 `Unit.Is`/`Classification`/`SharedSpellsQuery`，这轮补齐后编译通过 |
+| `Unit.Identity` | `Name`/`Team`/`TargetType`/`Classifications`/`Is` |
+| `World.SharedSpellsQuery` | `Func<Unit,Unit,bool>`，同队共享判定 |
+| `World.MovementBatch` | `Cancel(Unit, object)` 门面 |
+| `Unit.Untargetable`/`UsesHeroSpellRules`/`Invulnerable`/`CurrentTarget()`/`Classifications` | 客户端直接读的字段 |
+| `RuntimeSpatialUnitQuery.cs`、`RuntimeMeatCargoAbilities.cs` | 作为可选类型引入（工厂仍指向 A 的实现，尸舱探针不受影响） |
+
+**试了两个簇，都回退了**：
+
+| 簇 | 编译 | 探针 |
+|---|---|---|
+| 净化（`RuntimePurgeAbility` + `RuntimePurgeBuff`） | 通过 | 5 条红：施放失败、召唤物伤害 2000≠1600、减速阶数未生效 |
+| 反馈（`RuntimeFeedbackAbility`） | 通过 | 2 条红：烧蓝 200≠180、加伤 10≠30 |
+
+**这说明“编译通过”和“行为一致”之间还隔着数据口径**：客户端技能读 `ObjectData` 的 `DataA/B/C`，A 的 `AbilityTypeObjectData` 只暴露了部分列；读不到就走默认值，行为就偏了。下一轮该先核对 `GetLevelFloat` 这一层，而不是急着搬第三个簇。
+
 ---
 
 ## 1. 六个杠杆
