@@ -69,6 +69,26 @@
 
 ---
 
+### 第三轮（`0a6dd1c` → `6a74247`）
+
+补的东西：`World.Units` 换成 `UnitList`（入表即打 `unit.World`，341 处调用零改动）、`Unit.CanBeTargetedBy` 之外的 `Pos/Life/Health` 门面收尾、照搬 `AttackLaunchContext.cs`（含 `IAttackLaunchModifier`/`IAttackImpactPayload`）、照搬 `WeaponSound`/`MissileKind`/`WeaponType`、`Buff.Name` 改虚、Buff 与 Ability 的长尾钩子（`OnDeath`/`ModifyOutgoingDamage`/`ExpirationRunsWhilePaused`/`BlocksWebAutoCast`/`SpawnSpecialArtsOnCast`/`SpawnTargetArtsOnCast`）。
+
+| 指标 | 第二轮后 | 第三轮后 |
+|---|---|---|
+| 191 对中字节一致 | 5 | 5 |
+| 镜像文件总数 | 7 | **11** |
+| 191 对中编译可换 | 9 | **9**（没动） |
+| 只剩 1 条错误的文件 | 38 | 35 |
+| 编译错误总数 | 6,290 | 8,272 |
+
+**这一轮是负收益，值得写清楚。** 三个数往三个方向走：镜像文件 +4（都是新增的无依赖文件）、编译可换 0 增、错误总数 +2,000。原因是每补一个类型，被它挡住的文件就往下走一层，暴露出更细的成员错误；错误总数随进展上升，跟收敛无关。
+
+**长尾补齐到此为止。** 现在 35 个文件各差 1 条，但差的是 35 个不同成员：`Effect` 类型（4 个）、`Hero` 组件、`BuffTypeData`、以及二十来个只有单个技能才用到的 `override`。补完这 35 个，还有下一层（`Owner.Abilities.*`、`World.Cast`、美术字段）。这条路的天花板不是 159，是"永远差一层"。
+
+要么按簇换（光环 9 个、攻击管线 16 个，各簇自带基类和一整套断言），要么直接换基类（阶段 5，99 个技能同时迁移）。单点补虚成员这条路，收益已经归零。
+
+---
+
 ## 1. 六个杠杆
 
 按"改一处能解锁多少文件"排序。数字是**涉及该符号的文件数**，不是错误条数。
