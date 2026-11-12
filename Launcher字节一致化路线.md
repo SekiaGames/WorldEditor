@@ -138,6 +138,30 @@
 
 这属于引擎级迁移：要把 `RefreshAuras` 与它的 6 个消费点（护甲汇总、移速、攻速、回血、回蓝、视野）一起换成 Buff 模型，并把探针断言从 `AuraArmor` 改成读实际效果。两个基类文件已回退，等下轮连引擎一起换。
 
+### 第六轮（`6be9b6b`）
+
+光环引擎迁移的第一步：**两个光环真的跑在客户端模型上了**，而且和 A 的旧引擎共存。
+
+落地内容：
+
+| 项 | 说明 |
+|---|---|
+| 照搬 6 个文件 | `AuraAbility.cs`、`AuraBuff.cs`、`DevotionAura.cs`、`DevotionAuraBuff.cs`、`EnduranceAura.cs`、`EnduranceAuraBuff.cs` |
+| `Buff.Source` 拆分 | 技能来源改叫 `SourceAbility`（客户端语义），施法者用 `Caster`；A 侧 18 个赋值点同步迁移 |
+| `BuffTypeData` 桩 | `w3h` 还没解析，`War3ObjectData.GetBuff` 先返回 null，走 `BindObjectData` 分支 |
+| `GiveAbility` 绑数据 | 创建技能时挂 `AbilityTypeObjectData`，客户端技能类读 `ObjectData` 才有值（这条之前一直是空的） |
+| 非叠加护甲 | `Stats.AddNonStack` → `NonStackArmor` → 计入伤害结算 |
+| 探针迁移 | 光环断言从「调 `RefreshAuras` 读 `AuraArmor`」改成「调 `TickAbilities` 读 `ArmorOf`/`SpeedOf`/`NonStackArmor`」 |
+
+结果：同路径字节一致 **5 → 7**（`DevotionAura.cs`、`EnduranceAura.cs`），镜像文件总数 13 → 18。构建 0 错 0 警告，两条探针全过（专注光环护甲 1.5、耐久光环 297 移速、1.2857 攻速都对）。
+
+**关键发现：`GiveAbility` 从来没绑过对象数据。** 之前所有客户端技能类的 `ObjectData` 都是 null，所以 `ReadFloat(ObjectData,"DataA",level,0)` 一律返回 0——这也是为什么很多文件"编译过了但跑起来没效果"。补上绑定之后，客户端技能的数值读取才算真正通。
+
+**还剩 5 个光环没搬**：`RuntimeBrillianceAuraAbility`、`RuntimeCommandAuraAbility`、`RuntimeLifeRegenerationAuraAbility`、`RuntimeNeutralRegenAbility`、`RuntimeSlowAuraAbility`、`RuntimeThornsAuraAbility`、`RuntimeUnholyAuraAbility`。卡点分两类：
+
+- 构造签名 `(War3ObjectData objects)`：工厂目前只 `new X()`，需要把 `War3ObjectData` 实例喂进去（客户端是特化流水线，见阶段 4）。
+- `DamageData.BonusAmount/DamageMultiplier/IsRanged`：命令光环、荆棘光环要改出伤，需要把伤害管线扩到客户端形状。
+
 ---
 
 ## 1. 六个杠杆

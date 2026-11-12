@@ -67,9 +67,11 @@
 | `Src/Abilities/AbilityTargetMode.cs` | 13 | 客户端 6 种目标形态（含 `Destructable`）。Launcher 原为 3 值，数值 0/1/2 与原实现一致 |
 | `Src/Core/Vec2.cs` | 21 | 新增文件，客户端没有同路径对应（Launcher 原先只有 Godot `Vector3`） |
 | `Src/Abilities/IRuntimeObjectData.cs` | 15 | 新增文件，能力层对象数据的读取接口 |
+| `Src/Skills/DevotionAura.cs` | 43 | 走客户端 AuraAbility 模型，授予 DevotionAuraBuff |
+| `Src/Skills/EnduranceAura.cs` | 71 | 同上，耐久光环 |
 | `Src/Core/TargetFlags.cs` | 26 | 客户端的 31 位目标掩码。Launcher 原有的 `TargetKind`/`TargetRelation` 拆到 `Src/Core/TargetKind.cs` |
 
-前 5 个是同路径覆盖，后 2 个是新增镜像文件。全部 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
+前 7 个是同路径覆盖，后 2 个是新增镜像文件。全部 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
 
 > 191 对里编译可通过的现在是 9 个（多 `RuntimeResistantSkin`）（多 `RuntimeImpalingBolt`、`RuntimeStormHammers`、`RuntimeUltravision`），但这 3 个换过去会丢行为，没有采用，原因见路线文档 §0.5。
 
