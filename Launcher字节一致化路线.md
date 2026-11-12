@@ -287,6 +287,25 @@
 
 `Classification` 和 `TargetRules` 是客户端的分类子系统（`Unit.Is(Classification)`、`Unit.UsesHeroSpellRules`、`World.SharedSpellsQuery`），不是单个成员。也就是说技能文件的最后一公里分两段：**前段是零散成员（每文件 2-3 个），后段是分类子系统**。
 
+### 第十三轮（`34ba2ef`）
+
+又扫了一轮长尾，结论比上一轮更明确：**尾巴不是散点，是子系统**。
+
+补的成员：`Ability` 的 `TriggersSphereOnCast`/`RepeatsChannelAnimation`/`EffectEventBeforePayment`/`ObjectDataArtLifeSpan`/`ResolveCastApproachTarget`/`CheckCanUse(Unit,Vec2,int)`/`OnSetUnitType`/`ApplyIncomingDamage`/`OnOwnerActionStarted`，`Buff.Permanent` 改可写，`World.TickSeconds` 改 `const`（客户端按类型名静态引用）、`ScriptRandom`，`Unit.TypeId`，`War3GameplayConfig.CanDeactivateDivineShield`，外加照搬 8 行的 `ICastOrderContinuation`。
+
+修完再试，**每个文件都换了一个新的缺口，而且是子系统级的**：
+
+| 文件 | 引入的依赖 | 依赖本身要什么 |
+|---|---|---|
+| `RuntimeClusterRocketsAbility` | `RuntimeSpatialUnitQuery` + `StunBuff` | 空间查询子系统（`CollectNearbyUnitsInWorldOrder`/`RentUnitList`/`MaximumCollisionRadiusForQuery`/`Unit.CollisionSize`） |
+| `RuntimeCannibalizeAbility` | 同上 | 同上 |
+| `RuntimeCoupleAbility` | `ICastOrderContinuation` → `Unit.TypeId` → 往下还有 | 订单延续管线 |
+| `RuntimeDivineShieldAbility` | 工厂带参构造 | 已解决，剩 `CanDeactivateDivineShield` |
+
+试过把 `RuntimeSpatialUnitQuery`（61 行）和 `StunBuff`（43 行）直接拷进来，立刻又拉出 6 个 `World`/`Unit` 的新成员。**每个"小文件"背后都是一个子系统**。
+
+这一轮没有新增字节一致文件（仍是 14），但把下一层的形状量出来了：空间查询、分类系统、订单延续、施法状态机——四套子系统，任意一套补齐都能解锁一批技能，缺一套就卡住一批。
+
 ---
 
 ## 1. 六个杠杆
