@@ -162,6 +162,30 @@
 - 构造签名 `(War3ObjectData objects)`：工厂目前只 `new X()`，需要把 `War3ObjectData` 实例喂进去（客户端是特化流水线，见阶段 4）。
 - `DamageData.BonusAmount/DamageMultiplier/IsRanged`：命令光环、荆棘光环要改出伤，需要把伤害管线扩到客户端形状。
 
+### 第七轮（`6bf1549`）
+
+工厂不再只会 `new X()`。
+
+| 改动 | 说明 |
+|---|---|
+| `RuntimeAbilityFactory.WithObjects<T>()` | 有 `(War3ObjectData)` 构造就用，没有退回无参；14 个注册项改用它 |
+| `RuntimeObjects` | 全局物编实例位（`w3h` 未解析前为 null，客户端代码用 `objects?.` 兜住） |
+| `GiveAbility` 调 `OnLevelUp()` | 客户端技能在 `OnLevelUp` 里算派生数值（移速系数、半径、BuffID），此前只有 `LearnAbility` 会调，导致 `GiveAbility` 出来的技能数值全是 0 |
+| 照搬 `RuntimeUnholyAuraAbility.cs` | 邪恶光环的移速与回血走 Buff，探针 3 条断言全过 |
+| `StandalonePathing.Sim.CantPathSearchPoint.NativeMultiply` | 客户端浮点乘法的数值替身，只为实现编译与数值语义 |
+
+同路径字节一致 **7 → 8**。
+
+**这一轮也暴露了引擎差异的完整清单。** 另外四个光环（辉煌、缓慢、再生、中立恢复）编译能过、构造也能过，但探针 4 条断言直接红，原因不是代码错，是**断言读的是旧引擎字段**：
+
+| 断言 | 读的旧字段 | 新模型下的对应物 |
+|---|---|---|
+| 辉煌光环每秒 0.75 法力 | `unit.AuraManaRegenPerSecond` | 光环 Buff 加到 `unit.ManaRegen` |
+| 缓慢光环把敌人减速 | `unit.Slowed` | Buff 扣 `Stats.SpeedBonus` |
+| 再生光环百分比=DataA | `unit.AuraHpRegenPct` | Buff 加到 `AlwaysLifeRegenBonus`（或按最大生命折算） |
+
+把这四条断言改成读实际效果就能过，但改断言等于**重写验收口径**，需要确认新口径与原版一致（比如缓慢到底该不该置 `Slowed`）。这属于下一轮的活，已回退，本轮只保留验证通过的邪恶光环。
+
 ---
 
 ## 1. 六个杠杆
