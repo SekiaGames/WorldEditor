@@ -186,6 +186,26 @@
 
 把这四条断言改成读实际效果就能过，但改断言等于**重写验收口径**，需要确认新口径与原版一致（比如缓慢到底该不该置 `Slowed`）。这属于下一轮的活，已回退，本轮只保留验证通过的邪恶光环。
 
+### 第八轮（`57d9d9f`）
+
+先定验收口径，再改实现：**光环效果只看实际数值，不看内部字段**。
+
+| 断言 | 旧读法 | 新读法 |
+|---|---|---|
+| 辉煌光环 +0.75 法力/秒 | `unit.AuraManaRegenPerSecond` | `unit.ManaRegen - Type.ManaRegen` |
+| 再生光环 =DataA | `unit.AuraHpRegenPct` | `unit.AlwaysLifeRegenBonus / unit.MaxHp` |
+| 再生光环按最大生命回血 | 同上 | `Type.RegenHp + AlwaysLifeRegenBonus` × 1s |
+
+改完口径，辉煌、再生、中立恢复三个光环一次过，同路径字节一致 **8 → 11**。
+
+**缓慢光环回退，原因值得记。** 它的目标掩码来自物编 `targs`，客户端 `ParseTargets` 能解析出 `Enemy`；A 的 `AbilityCatalog` 只读了 `SpellTargets` 的一部分，拿不到 `Enemy`，于是 `_allowedTargets` 落到默认 `Self`，敌人永远拿不到 Buff，探针读到的移速不变。
+
+两条修法都要改行为：
+- 补 `AbilityCatalog` 的 `targs` 解析（数据层，改动小但影响面广，所有技能的目标掩码都会变准）；
+- 给 `AffectsAllies` 兜底（逻辑层，一行，但和客户端语义不一致）。
+
+倾向第一种。数据层一旦解析对，`CanBeTargetedBy` 这套判定才算真正生效，后面 128 个技能文件里的目标筛选也能跟着对。
+
 ---
 
 ## 1. 六个杠杆

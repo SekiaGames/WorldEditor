@@ -70,9 +70,12 @@
 | `Src/Skills/DevotionAura.cs` | 43 | 走客户端 AuraAbility 模型，授予 DevotionAuraBuff |
 | `Src/Skills/EnduranceAura.cs` | 71 | 同上，耐久光环 |
 | `GameCore/.../Configuration/RuntimeUnholyAuraAbility.cs` | 118 | 邪恶光环，移速+回血走 AuraBuff |
+| `GameCore/.../Configuration/RuntimeBrillianceAuraAbility.cs` | 158 | 辉煌光环，回蓝走 AuraBuff |
+| `GameCore/.../Configuration/RuntimeLifeRegenerationAuraAbility.cs` | 145 | 再生光环，回血走 AuraBuff |
+| `GameCore/.../Configuration/RuntimeNeutralRegenAbility.cs` | 128 | 中立恢复，与再生光环同一实现 |
 | `Src/Core/TargetFlags.cs` | 26 | 客户端的 31 位目标掩码。Launcher 原有的 `TargetKind`/`TargetRelation` 拆到 `Src/Core/TargetKind.cs` |
 
-前 8 个是同路径覆盖，后 2 个是新增镜像文件。全部 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
+前 11 个是同路径覆盖，后 2 个是新增镜像文件。全部 `cmp` 返回 0；`--state-probe` 与 `--combat-probe` 均通过。
 
 > 191 对里编译可通过的现在是 9 个（多 `RuntimeResistantSkin`）（多 `RuntimeImpalingBolt`、`RuntimeStormHammers`、`RuntimeUltravision`），但这 3 个换过去会丢行为，没有采用，原因见路线文档 §0.5。
 
