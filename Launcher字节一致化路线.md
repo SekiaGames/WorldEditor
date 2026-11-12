@@ -107,6 +107,37 @@
 
 **结论更新**：光环簇的真实前置不是两个基类，是**配置层实例化**。这道墙不拆，客户端技能代码里的 `Owner.World?.GameplayConfig` 一律编不过——它是 182 个技能文件里的高频写法。
 
+### 第五轮（`acdc99d`）
+
+上一轮点名的墙——配置层静态——拆了。
+
+| 改动 | 规模 |
+|---|---|
+| `War3GameplayConfig` 由 `static class` 改成 `sealed class` + `Default` 单例 | 153 行，31 处调用点 |
+| `World.GameplayConfig` | 1 行，客户端 `Owner.World?.GameplayConfig` 从此可解析 |
+| 7 个光环授予旗标（`PolymorphedUnitsBestowAuras` 等） | 值取自 `Units/MiscGame.txt` |
+| `Unit.Stats` 门面（`AddNonStack`/`RemoveNonStack` + 移速/攻速/伤害加成） | 非叠加护甲已计入伤害结算 |
+| `Unit.MovementType`/`Invisible`、`Ability.ConfiguredTargets`/`HasConfiguredTargets`/`IsRuntimeLocked` | — |
+
+做到这里，客户端的 `AuraAbility.cs` + `AuraBuff.cs` 能原样编译了。但把它们接进游戏时，**探针 4 项直接红**：
+
+```
+[校验] FAIL 光环 +1.5 护甲     期望 1.5000 实际 0.0000
+[校验] FAIL 护甲汇总带上光环   期望 3.5000 实际 2.0000
+[校验] FAIL 耐久光环 +10% 移速 期望 297.0000 实际 270.0000
+[校验] FAIL 耐久光环 +5% 攻速  期望 1.2857 实际 1.3500
+```
+
+原因是两套光环引擎的观测口径不同：
+
+| | Launcher | 客户端 |
+|---|---|---|
+| 触发 | `World.RefreshAuras()` 每 tick 全量重算 | 光环技能自己 `OnTick` 每 2s 扫描并**授予 Buff** |
+| 载体 | `AuraBonus` 数值合并到 `unit.AuraArmor`/`AuraAttackSpeedPct` | 独立 `AuraBuff` 实例，离场 2s 衰减 |
+| 探针断言 | 读 `friend.AuraArmor` | 该字段恒 0 |
+
+这属于引擎级迁移：要把 `RefreshAuras` 与它的 6 个消费点（护甲汇总、移速、攻速、回血、回蓝、视野）一起换成 Buff 模型，并把探针断言从 `AuraArmor` 改成读实际效果。两个基类文件已回退，等下轮连引擎一起换。
+
 ---
 
 ## 1. 六个杠杆
