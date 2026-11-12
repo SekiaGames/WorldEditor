@@ -52,6 +52,21 @@
 
 下一批要动的是 `Unit` 侧：CS1061 从 282 涨到 476，主要是 `Owner.Health`（客户端把伤害/治疗/闪避做成组件，Launcher 是字段 + World 方法）。补 `Health` 门面之前，182 个技能文件里绝大多数连编译都过不去。
 
+### 第二轮（`bc4a744`）
+
+补 `Unit.Pos`(Vec2)/`Life`/`MaxLife`/`PlayerId`/`Removed`、`Health` 门面、`AbilityContainer`（`Items`/`Get`/`OfType`/`Contains`/`Snapshot`），`Unit.Abilities` 从 `List<Ability>` 换成容器但 58 处调用零改动；`TargetKind`/`TargetRelation` 拆到独立文件，`TargetFlags.cs` 整份照搬。
+
+| 指标 | 第一轮后 | 第二轮后 |
+|---|---|---|
+| 191 对中字节一致 | 4 | **5**（多 `TargetFlags`） |
+| 镜像文件总数 | 6 | **7**（+`TargetFlags`） |
+| 191 对中编译可换 | 7 | **9** |
+| 编译错误总数 | 6,416 | 6,290 |
+
+注意错误总数没怎么动：类型补上以后，原先被 `CS0246` 挡住的文件继续往下走，暴露出成员级错误——`CS1061` 从 464 涨到 658，`CS0103` 从 554 涨到 608。**错误总数不是收敛指标**，看「编译可换」和「字节一致」两个数。
+
+新进可编译的 4 个（`ImpalingBolt`/`StormHammers`/`Ultravision`/`ResistantSkin`）依然全部是行为有缺口的：`ResistantSkin` 客户端版本只剩 `ProvidesResistantSkin` 标记，Launcher 那版靠 `DebuffDurationScale=>0.5` 提供抗性皮肤效果，探针里就有「抗性皮肤缩放 0.5」这条断言。
+
 ---
 
 ## 1. 六个杠杆
