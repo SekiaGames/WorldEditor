@@ -542,6 +542,22 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 单错文件里六个「只差工厂注册」的重试结果：液态火过，醉拳、隐身、净化、火焰雨、掘尸探针红。火焰雨失败点集中在「进入引导」——客户端引导走 `ChanneledAbility`，A 的 `BeginChannel` 是另一套签名，这属于引导子系统，不是补成员能解决的。
 
+### 第二十九轮（`b9d92b5`）
+
+动引导子系统，修了两个真 bug，但火焰雨本身没落地。
+
+**Bug 1：施放后自己把自己的引导打断**
+
+`TryCast` 结尾有一句「施放别的技能会打断进行中的引导」：`if (!ability.IsChanneled) InterruptChannel(caster)`。客户端技能不设 `IsChanneled`，所以刚 `BeginChannel` 建好的引导立刻被打掉——表现为「进入引导 期望 1 实际 0」。改成同时放行 `ExpectedChannelDuration > 0` 的技能。
+
+**Bug 2：Buff 不参与世界 tick**
+
+`TickAbilities` 里 `if (!kept.Learned) continue;`。Buff 挂在技能表里没有等级，于是 Buff 的 `OnTick` 永远不跑。这是第二轮同类问题（第一轮是入伤修正），根子都是「Buff 塞进技能表后没跟 A 的技能生命周期对齐」。
+
+配套：`TryCast` 在客户端技能声明 `ExpectedChannelDuration > 0` 时自动 `BeginChannel`，`Ability.ChannelInterval` 默认 0。
+
+**火焰雨仍红**：进入引导了（`cnt=1`），但第一波伤害 0、「挂上灼烧」也 0。探针遍历的是 `footman.Buffs`，客户端 Buff 在技能表里；伤害那一条还得看效果对象在 `TickEffects` 里有没有真正推进。
+
 ---
 
 ## 1. 六个杠杆
