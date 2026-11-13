@@ -252,9 +252,19 @@ Launcher（Godot 4.7.2 / net8.0）
 | .glb | 3,264 | 网格 |
 | .wav / .mp3 | 6,357 | 音频 |
 
-已搬出 pck：`Tables/*.json`（63 个）与 `Texts/*.json`，两者都转成 C#，`extract.command` 不再生成它们，打包前还会把旧目录删掉。`.fdf`（84 个）仍留在 pck，等 P4 界面重写时再转。
+pck 里现在只有美术：模型、材质、贴图、音频、shader。下面这些全部转成 C#，打包前从 `extract/` 清掉：
 
-`*.wc3.json`（3,264 个）Launcher 不需要。它的内容是动画序列表、包围盒与 `boundsRadius`，而转换后的模型场景已经自带这些：序列在 `*.anim.tres`（`AnimationLibrary`，键就是 MDX 原名 `Stand - 1`、`Attack - 1`、`Walk`），附着点在 `BoneAttachment3D` 节点（`attach_Weapon_Ref` 这类），包围盒 Godot 能直接从网格算。
+| 内容 | 数量 | 生成位置 |
+|---|---:|---|
+| slk 表 | 63 | `Generated/Tables/` |
+| txt 文本 | 159 | `Generated/Texts/` |
+| fdf 界面定义 | 86 | `Generated/Fdf/` |
+| DNC 光照曲线 | 6 组 | `Generated/Lighting/` |
+| `*.wc3.json` | 0（停发） | — |
+
+`.fdf` 此前并不在 pck 里：`FdfSource` 一直回落到 `test/war3-unpack`，那是开发机路径，打包后读不到。转 C# 之后这条依赖没有了。
+
+`*.wc3.json`（3,264 个）不再生成，`extract/` 里已清理干净。Launcher 不需要它。它的内容是动画序列表、包围盒与 `boundsRadius`，而转换后的模型场景已经自带这些：序列在 `*.anim.tres`（`AnimationLibrary`，键就是 MDX 原名 `Stand - 1`、`Attack - 1`、`Walk`），附着点在 `BoneAttachment3D` 节点（`attach_Weapon_Ref` 这类），包围盒 Godot 能直接从网格算。
 
 它还剩一个消费者：Wiki 的 `Data.cs:881`（`Wc3JsonFor` → `MaterialDetailAlpha`，第二层材质的细节透明）。文件缺失时返回 null，调用点降级跳过，不会崩。所以是否停发取决于 Wiki：保留这个效果就继续生成但不进 pck，放弃就整体停发。
 
@@ -355,24 +365,23 @@ internal static class UnitsUnitData
 
 **一个必须显式处理的默认值**：`War3ResourceManager` 用「War3x.mpq 是否存在」判定版本，没有游戏档案时会把 `Edition` 落成 RoC，平衡表与行为都会跟着变。Launcher 构造时显式传 `War3GameEdition.TheFrozenThrone`，`LoadGenerated` 与地图读取用同一个值。
 
-### 4.6 光照这类烘焙配置
+### 4.6 光照曲线
 
-`Extract/assets/common/lighting/dnc.json` 是从游戏 `Environment\DNC` 烘焙出来的 24 小时曲线，每个环境一套，每 0.5 小时一个 keyframe，含太阳方向、太阳色、强度、环境色、雾色。它现在只被 Wiki 读取，Launcher 完全没有光照。
+`Environment\DNC` 里每个环境一对 mdx（`*Terrain` / `*Unit`），`LightingExportCli` 按 0.5 小时采样 49 帧，得到太阳方向、太阳色、强度、环境色、环境强度。以前写成 `assets/common/lighting/dnc.json`，现在直接生成 C#：
 
-按「配置走 C#」这条，`LightingExportCli` 在写 json 的同时生成 `Lighting.g.cs`：
-
-```csharp
-static class LightingTable
-{
-    // family \t 0,-0.675456,-0.405856,0.615662,0.235294,0.4,0.6,1.3,...（时间,方向xyz,太阳色,强度,环境色）
-    internal static readonly string[] Terrain = { "DNCLordaeron\t0,..." };
-    internal static readonly string[] Unit = { "DNCLordaeron\t0,..." };
-}
+```
+Launcher/Generated/Lighting.g.cs         DayNightKey 与 6 组环境的索引
+Launcher/Generated/Lighting/DNCLordaeron.g.cs    Terrain / Unit 两个数组
 ```
 
-`View/Lighting` 按当前时间插值 keyframe，写入 `WorldEnvironment` 与方向光。
+单个 keyframe 是命名记录，不是位置无关的浮点数组：
 
-Launcher 只吃 `Lighting.g.cs`，不读 json。json 留给 Wiki（`Wiki/src/Lighting.cs:15` 读它）；Wiki 迁到同一份生成的 C# 之后，`assets/common/lighting/dnc.json` 与 `assets/common` 目录一起删除。两边由同一个解析器产出，迁移期间不会漂。
+```csharp
+new(6f, -0.675456f, -0.405856f, 0.615662f, 1f, 1f, 1f, 1.3f, 1f, 0.87782f, 0.830782f, 0.3f)
+//  Hour  DirX DirY DirZ  SunR SunG SunB SunIntensity  AmbR AmbG AmbB AmbIntensity
+```
+
+`assets/common/lighting/dnc.json` 已删除，`assets/common` 目录随之消失。Launcher 侧暂时没有消费者，P2 写 `View/` 光照时直接读 `DayNight.Environments`，按当前时刻在相邻两个 keyframe 之间插值。
 
 ### 4.7 资源路径映射
 
@@ -493,20 +502,19 @@ worldZ =  mapY - terrain.OffsetY
 
 | 任务 | 内容 |
 |---|---|
-| P0.1 | Extract 增 `--table-codegen` / `--text-codegen`，一表一文件输出到 `Launcher/Generated/` |
-| P0.2 | Launcher 侧 `War3SlkReader` 走 `SlkTables.All`，新增 `GeneratedTexts`，五处文本读取切换 |
-| P0.3 | `extract.command` 第 8 步生成两份 C# |
-| P0.4 | 真机跑一局，确认无 `[TABLE]`/`[TEXT]` 缺失告警 |
-| P0.5 | 资源整理：`wc3.json` 不进 pck（是否停发看 Wiki），`assets/common` 随光照转 C# 后删除 |
+| P0.1 | Extract 增 `--table-codegen` / `--text-codegen`，一表一文件输出到 `Launcher/Generated/` | 完成 |
+| P0.2 | Launcher 侧 `War3SlkReader` 走 `SlkTables.All`，新增 `GeneratedTexts`，七处文本读取切换 | 完成 |
+| P0.3 | `--fdf-codegen`：86 个 fdf 一文件一 `.g.cs`，`FdfSource` 改读生成表 | 完成 |
+| P0.4 | `--lighting-codegen`：6 组 DNC 曲线生成 `DayNight`，删除 `assets/common` | 完成 |
+| P0.5 | 停发 `*.wc3.json`，`extract/` 清空 json，重打包 | 完成 |
+| P0.6 | 真机跑一局，确认无 `[TABLE]`/`[TEXT]`/`[FDF]` 缺失告警 | 完成 |
 
 验收：
 
-- 生成 63 张表与旧 json 名称集合零差异，文本表名覆盖 `TechTree`/`AbilityCatalog` 引用的全部名字
-- pck 里不再有 `extract/Tables/` 与 `extract/Texts/` 路径，真机整局无 `[TABLE]`/`[TEXT]` 告警
-- 真机跑一局：单位、建筑、施法、寻路、音频、迷雾全部正常，无表/文本缺失告警
-- Launcher 全量重建约 2 s
-
-回退：codegen 是增量工具，不改变 Extract 现有产物。
+- slk/text 生成结果与旧 json 逐项一致；fdf 生成文本与解包文件逐字节相同（86/86）
+- 光照数值与旧 json 最大误差 < 1e-4（6 组 × 2 数组 × 49 帧）
+- pck 里不再有 `extract/Tables/`、`extract/Texts/`、`*.wc3.json`、`dnc.json`
+- 真机整局：单位、装饰物、施法、音频、迷雾、界面正常
 
 ### P1 逻辑同源
 
