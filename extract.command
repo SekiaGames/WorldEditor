@@ -85,7 +85,12 @@ if ! "$GODOT" --headless --quiet --path "$PROJECT" --import; then
 	"$GODOT" --headless --quiet --path "$PROJECT" --import
 fi
 
-printf '\n[8/8] pack %s\n' "$PACK"
+printf '\n[8/9] tables and texts to C#\n'
+mkdir -p "$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
+
+printf '\n[9/9] pack %s\n' "$PACK"
 rm -f "$PACK"
 "$GODOT" --headless --quiet --path "$PROJECT" --export-pack "extract.pck" "$PACK"
 
