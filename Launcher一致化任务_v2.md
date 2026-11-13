@@ -187,7 +187,7 @@ Launcher（Godot 4.7.2 / net8.0）
 |---|---|---|
 | 1 | `Launcher.csproj` 内联 Client 与 War3Net 的源码；删自有 `Src/`、`GameCore/L1` `L2` `L3`，`GameCore/L4` 移出编译 | 编译绿。Launcher 只剩入口与平台壳，无画面 |
 | 2 | 抹平三个已知坑（见下） | 编译绿，错误数归零 |
-| 3 | 把 `DataProbe`、`DataCodegen` 改成 Launcher 的两个命令行模式，删掉两个工具工程与 `Extract/tools` | 数据生成与校验回到单程序集内 |
+| 3 | 表与文本由 Extract 生成 C# 到 `Launcher/Generated/`（已完成，见 §4.3） | Launcher 的表格数据源不再来自 pck |
 | 4 | 接 `GameSession` + JASS，跑通 `--state-digest` | P1 达标，逻辑层可用（headless） |
 | 5 | 按 §5.4 清单新写 `View/`：地形 → 装饰物 → 相机 → 单位 → 特效 → 界面 → 音频 | 每完成一项关掉对应清单项 |
 
@@ -260,107 +260,86 @@ Launcher（Godot 4.7.2 / net8.0）
 
 **资源目录整理**：`assets/common/mesh/particle_quad.tres` 已移到 `assets/mesh/particle_quad.tres`，生成器常量与 3,682 个生成场景的引用同步改完。`assets/common/lighting/dnc.json` 在 §4.6 转成 C# 之后，整个 `assets/common` 目录即可删除。
 
-### 4.3 表格怎么变成 C#
+### 4.3 表格与文本怎么变成 C#
 
-**生成器位置**：`Launcher` 的 `--data-codegen` 模式，代码在 `Client/Data/DataCodegen.cs`，由 `LauncherApp` 解析参数后调用。
+**生成器位置**：`Extract`，命令 `--table-codegen=<目录>` 与 `--text-codegen=<目录>`，实现是 `ConvertCli.ExportTableCode` / `ExportTextCode`。
 
-**为什么在 Launcher 而不是 Extract**：内联之后客户端源码就在 Launcher 程序集里，`War3ObjectData.Load` 可以直接调，不需要引用任何外部工程。Extract 是 net8 的 Godot 工程，引用不了 net11 的客户端，把生成器放进去只能再开子工程——与单程序集约束冲突。生成期才需要安装目录，运行期不需要。
+**为什么在 Extract**：Extract 已经在做 slk/txt 解析（`--table-export` 产出的就是 pck 里那批 json），生成 C# 只是把同一个解析结果换一种落盘格式。它不需要任何客户端源码。
+
+早先试过在 Extract 里编客户端 16 万行、跑完整条合并链、产出"成品表"，那条路要 include 995 个客户端文件，删掉 `Src/` 会缺 8,704 个类型。收益是启动零解析，代价是 Extract 变成客户端的第二个副本，放弃。
 
 **流程**：
 
 ```
-1. Load(安装目录)                       ← 客户端自己的代码，整条链跑完
-2. 遍历 Units / Abilities / Buffs / Items / Destructables / Upgrades
-3. 每个对象输出：rawcode、BaseId、Fields、LevelFields
-4. 写 Client/Data/Generated/*.g.cs
-5. 计算规范化哈希，写进 Generated/DataDigest.g.cs
+1. 枚举解包目录里的 *.slk / *.txt
+2. 解析出 columns + rows（slk）或 key + value 对（txt）
+3. 一个表一个 .g.cs，另生成一份纯名称索引
+4. 输出到 Launcher/Generated/
 ```
 
-**生成格式**（一行一个对象，字段用 `\t` 分隔，避免 81 万个字段各占一行）：
+**产物结构**：
+
+```
+Launcher/Generated/
+    SlkTables.g.cs        63 条名称映射
+    Tables/               63 个 .g.cs
+    TextTables.g.cs       159 条名称映射
+    Texts/                159 个 .g.cs
+```
+
+单表文件：
 
 ```csharp
-namespace OpenWC3.Game.Generated;
+namespace OpenWC3.Game.Generated.Tables;
 
-static class UnitsTable
+internal static class UnitsUnitData
 {
-    // rawcode \t field=value \t field=value ...
-    internal static readonly string[] Rows =
-    {
-        "hfoo\tName=步兵\thp=420\t...
-    };
+    internal static readonly string[] Columns = { "unitID", ... };
+    internal static readonly string[] Rows = { "hfoo\t...", ... };   // 单元格用 \t 分隔
 }
 ```
 
-分级字段写成 `DataA1=1.5` 这种列名形式，装载时交给客户端现成的 `SetField` 处理列名到 `(Field, Level, Pointer)` 的映射，避免自己实现一套解析。
+索引只存 `名称 → (Columns, Rows)`，不含数据。文本表同理，字段是 `Keys` / `Values`。
 
-**装载**：`Client/Data/Generated/War3ObjectData.Generated.cs`
+**运行期装载**：
 
-```csharp
-public sealed partial class War3ObjectData
-{
-    public static War3ObjectData LoadGenerated(string war3Dir, string mapPath)
-    {
-        var data = new War3ObjectData();
-        data.ApplyUnitRows(UnitsTable.Rows);                 // 内部：GetOrCreate + SetField
-        data.ApplyTypedRows(_abilities,     AbilitiesTable.Rows);
-        data.ApplyTypedRows(_buffs,         BuffsTable.Rows);
-        data.ApplyTypedRows(_items,         ItemsTable.Rows);
-        data.ApplyTypedRows(_destructables, DestructablesTable.Rows);
-        data.ApplyTypedRows(_upgrades,      UpgradesTable.Rows);
-        using var resources = new War3ResourceManager(war3Dir, mapPath,
-            edition: War3GameEdition.TheFrozenThrone);
-        data.MergeMapObjectData(war3Dir, mapPath, resources: resources);
-        data.CloseStockResearchLists();
-        return data;
-    }
-}
-```
+- `War3SlkReader.Load` 先查 `SlkTables.All`，未命中回落原来的 `res://extract/Tables/*.json`
+- `GeneratedTexts.Get(name)` 把 `Keys`/`Values` 组装成 `{"keys": {...}}` 的 Godot 字典，`MiscRules`、`ItemCatalog`、`TechTree`、`AbilityCatalog`、`TerrainTextureLoader` 五处从 `Assets.ReadJson` 切过来，循环体一行没动
 
-`ApplyUnitRows` / `ApplyTypedRows` 是 Launcher 侧新增的两个私有方法，逐行 `SetField` 写入。用到的都是类内现成成员：`GetOrCreate`、`_abilities` 等字典、`War3TypeData.SetField`（`internal`）、`MergeMapObjectData`（private）。partial 文件在同一程序集内，访问没有问题。
+**收益**：表与文本不再来自 pck；一个表一个文件，改哪张看哪张；Extract 保持单工程、不含客户端代码。
 
-`War3ObjectData` 的声明加 `partial`，是附录 A 的第 3 处补丁。
+**实测**（2026-11-13，War3 1.27a）：
 
-**体积与预算**（估自 Extract 现有 json：63 张表、22,751 行、810,794 单元格）：
+| 项 | 值 |
+|---|---:|
+| slk 表 | 63 个文件，22,751 行，4.6 MB |
+| txt 文本 | 159 个文件，58,721 条，4.8 MB |
+| Launcher 全量重建 | 约 2 s |
+| 真机验证 | 整局对战跑通，无 `[TABLE]`/`[TEXT]` 告警 |
 
-| 项 | 预算 |
+**正确性检查**：表名集合与 pck 里 63 个 json 逐一比对，文本表名与 `TechTree`/`AbilityCatalog` 引用的名单逐一比对，都为零缺失。剩下靠真机跑一局看有没有 `[TABLE] 找不到`、`[TEXT] 找不到` 的告警。
+
+### 4.4 文本表
+
+`*.txt` 走同一条路：一个文件一个 `.g.cs`，`Keys` / `Values` 两个数组。运行期由 `GeneratedTexts.Get(name)` 组装成 `{"keys": {...}}` 的 Godot 字典，调用方拿到的东西与原来 `Assets.ReadJson` 完全一样。
+
+已切过来的五处：
+
+| 位置 | 表 |
 |---|---|
-| 生成源码总量 | ≤ 6 MB |
-| 文件数 | 每表一个，约 15 个 |
-| 增量编译时间 | ≤ 30 s |
-| 启动装载 | ≤ 50 ms |
+| `MiscRules` | UnitsMiscGame |
+| `ItemCatalog` | UnitsItemStrings |
+| `TechTree` | 六族 UnitFunc / UnitStrings / UpgradeFunc / UpgradeStrings |
+| `AbilityCatalog` | 能力文本若干 |
+| `TerrainTextureLoader` | UIWorldEditData |
 
-超预算的处置顺序：先按表拆文件，再把单表按首字母分片，最后才考虑紧凑编码。
+尚未迁移：
 
-**正确性门禁**：生成器 dump 时算一份 `sha256`（按 rawcode 排序，字段名排序，值原样，`LevelFields` 一并纳入），Launcher 的 `--data-probe` 装载后再算一次，两边必须相等。这条把「生成是否等价」变成机器可判，不靠人盯。
-
-### 4.4 文本配置怎么走 C#
-
-文本类配置保持客户端原有的解析与合并逻辑，只换来源。
-
-**接口**：`War3ResourceManager` 加一个文件源回退（附录 A4）：
-
-```csharp
-public interface IWarcraftFileSource
-{
-    bool Exists(string path);
-    bool TryReadBytes(string path, out byte[] bytes);
-    bool TryReadText(string path, out string text);
-}
-```
-
-查档案失败时问它。这个回退挂成静态（启动时设一次），`War3GameplayConfig.Load`、`JassRuntimeHost`、地图读取各自构造的 `War3ResourceManager` 都会自动吃到，不必逐个传参。Launcher 的实现直接返回生成的 C# 常量：
-
-| 文件 | 生成物 |
-|---|---|
-| `Units\MiscData.txt`、`MiscGame.txt`、`MetaHero.txt`、`UI\MiscData.txt` | `MiscTexts.g.cs` |
-| `Units\UnitMetaData.slk`、`AbilityMetaData.slk`、`ItemMetaData.slk` | `MetaTables.g.cs` |
-| `Scripts\common.j`、`Scripts\Blizzard.j` | `JassScripts.g.cs` |
-| `scripts\common.ai`、`human.ai`、`orc.ai`、`undead.ai`、`nightelf.ai`、`campaign.ai` | `AiScripts.g.cs` |
-| 84 个 `.fdf` | `FdfSources.g.cs`（P4 用） |
-
-JASS 源码必须按字节保真（客户端注释里写明了：有地图把一个汉字的每个字节拆进独立字符串字面量）。生成时用 `\uXXXX` 转义或可空字节映射，加载后仍是同一串字节。
-
-**地图覆盖优先**：`war3mapMisc.txt`、`war3mapSkin.txt` 在地图包里，仍由地图档案读到，回退源不参与，保证地图配置优先于生成默认值。
+| 内容 | 现在从哪来 | 计划 |
+|---|---|---|
+| `Scripts\*.j`、`*.ai` | Launcher 目前没有 JASS 运行时 | P1 接 JASS 时再生成 |
+| 84 个 `.fdf` | pck | P4 界面重写时再生成 |
+| 地图自带文本（wts、war3mapMisc.txt） | 地图包 | 永远运行时读 |
 
 ### 4.5 地图数据
 
@@ -508,25 +487,17 @@ worldZ =  mapY - terrain.OffsetY
 
 | 任务 | 内容 |
 |---|---|
-| P0.1 | 建 `Client/` `View/` 三工程，接同步脚本 |
-| P0.2 | net8 兼容：A1、A2 两处源码 + A5 工程标签 + 包引用 |
-| P0.3 | `Extract/tools/DataCodegen`：net11 控制台，引用客户端工程，跑 `War3ObjectData.Load`，导出成品表为 C# |
-| P0.4 | 生成 `MiscTexts` / `MetaTables` / `JassScripts` / `AiScripts` |
-| P0.5 | `IWarcraftFileSource` 回退 + Launcher 实现（读生成常量） |
-| P0.6 | `War3ObjectData` 加 `partial`，写 `LoadGenerated` |
-| P0.7 | `--data-probe`：打印六组计数 + 数据哈希；`--asset-probe` 清点美术缺件 |
-| P0.8 | 资源整理：`wc3.json` 不进 pck（是否停发看 Wiki），`assets/common` 随光照转 C# 后删除 |
-| P0.9 | 单程序集合并：内联 Client 与 War3Net、删自有模拟层、L4 移出编译（§3.5 第 1、2 步） |
-| P0.10 | 把 `--data-probe` 与 `--data-codegen` 收进 Launcher，删除 DataProbe / DataCodegen 两个工具工程与 `Extract/tools`（§3.5 第 3 步） |
+| P0.1 | Extract 增 `--table-codegen` / `--text-codegen`，一表一文件输出到 `Launcher/Generated/` |
+| P0.2 | Launcher 侧 `War3SlkReader` 走 `SlkTables.All`，新增 `GeneratedTexts`，五处文本读取切换 |
+| P0.3 | `extract.command` 第 8 步生成两份 C# |
+| P0.4 | 真机跑一局，确认无 `[TABLE]`/`[TEXT]` 缺失告警 |
+| P0.5 | 资源整理：`wc3.json` 不进 pck（是否停发看 Wiki），`assets/common` 随光照转 C# 后删除 |
 
 验收：
 
-- `--data-probe` 的 `unit/ability/buff/item/destructable/upgrade` 六组计数与客户端 Debug 构建打印的 `全量物编: …`（`War3ObjectData.cs:79-81`）逐项相等
-- `--data-probe` 算出的哈希与 `data-codegen` 写进 `DataDigest.g.cs` 的值相等
-- `--asset-probe` 缺件为零
-- 生成源码 ≤ 6 MB，增量编译 ≤ 30 s
-
-进展（2026-11-13）：P0.1 至 P0.7 已完成。Client 995 个文件在 net8 编译通过，生成表 5.4 MB、文本源 1.5 MB，`--data-probe` 与客户端 `War3ObjectData.Load` 的规范化哈希在 5 张对战图上完全一致。
+- 表名集合与 pck 里 63 个 json 完全一致，文本表名覆盖 `TechTree`/`AbilityCatalog` 引用的全部名字
+- 真机跑一局：单位、建筑、施法、寻路、音频、迷雾全部正常，无表/文本缺失告警
+- Launcher 全量重建约 2 s
 
 回退：codegen 是增量工具，不改变 Extract 现有产物。
 
@@ -726,7 +697,7 @@ tools/shot-compare.sh <map.w3x> <镜头预设> <tick>
 | 阶段 | 同源文件数 | 数据哈希 | digest 一致 tick | 截图 SSIM | 清单关闭 |
 |---|---:|---|---:|---:|---:|
 | 起点 | 112 / 262 同路径 | — | — | — | 0 / 20 |
-| P0 数据通路 | Client/ 995 个文件搬入 | 5 张对战图一致（53d620…） | — | — | 0 / 20 |
+| P0 数据源 | 63 表 + 159 文本转 C# | 真机整局无缺失 | — | — | 0 / 20 |
 | | | | | | |
 
 辅助指标：
@@ -743,16 +714,19 @@ tools/shot-compare.sh <map.w3x> <镜头预设> <tick>
 
 ## 附录 A：客户端源码补丁清单
 
-| # | 文件 | 改动 | 原因 | 影响 |
-|---|---|---|---|---|
-| A1 | `L3_Simulation/…/Jass/JassGameNatives.Models.cs:222` | `dict.Capacity` → `dict.EnsureCapacity(n)` | `Dictionary.Capacity` 是 net9 API | 无 |
-| A2 | `L1_Adapter/Formats/Jass/JassAotCompiler.cs:126` | net8 下条件编译掉 `PersistedAssemblyBuilder` 分支 | net9 API，AOT 属可选优化 | 加载期不预编译，退回解释执行 |
-| A3 | `L3_Simulation/…/Configuration/War3ObjectData.cs:13` | `sealed class` → `sealed partial class` | 让 Launcher 补 `LoadGenerated` | 无 |
-| A4 | `Src/Resources/War3ResourceManager.cs` | 加 `IWarcraftFileSource` 回退（约 15 行） | 让生成常量充当游戏档案 | 无 |
-| A5 | `L0_Foundation/ThirdParty/War3Net/*.csproj` | TFM net9.0 → net8.0；`War3Net.IO.Mpq` 补 `War3Net.Common` 直接引用 | 工程标签 | 无 |
-| A6 | `Src/Diagnostics/FdfParserTest.cs` | 不搬 | 引用界面类型 | 无 |
+当前两个工程都没有客户端源码：Extract 自带 slk/txt 解析器，Launcher 保持自己的实现。**这张表当前为空**，等 P1 把客户端源码内联进 Launcher 时才需要。
 
-同步脚本每次同步后跑一遍 net8 编译，报错即定位。
+届时已知的补丁（都已实测过）：
+
+| # | 文件 | 改动 | 原因 |
+|---|---|---|---|
+| A1 | `JassGameNatives.Models.cs:222` | `dict.Capacity` → `dict.EnsureCapacity(n)` | `Dictionary.Capacity` 是 net9 API |
+| A2 | `Formats/Jass/JassAotCompiler.cs:126` | net8 下条件编译掉 `PersistedAssemblyBuilder` 分支 | net9 API，AOT 属可选优化 |
+| A3 | `War3ObjectData.cs:13` | `sealed class` → `sealed partial class` | 让 Launcher 补装载入口 |
+| A4 | `War3Net/*.csproj` | TFM net9.0 → net8.0 | 工程标签 |
+| A5 | `Src/Diagnostics/FdfParserTest.cs` | 不搬 | 引用界面类型 |
+
+内联时另有两个坑：War3Net.Common 的 `global using System.Drawing;` 会让 `Image`/`Color` 与 Godot 撞（82 处）；War3Net 的 `obj/**` 若被 glob 扫进来会报 106 处重复程序集特性。
 
 ## 附录 B：模块对照
 
