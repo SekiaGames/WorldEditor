@@ -173,6 +173,21 @@ Launcher 的 `AiDifficulty` 0..2 映射：普通 1；疯狂 2；彻底疯狂 2 �
 | 9 | 阶段文字写进 `LoadingBarText`，18 号，超长逐级降到 10，居中于进度条 |
 | 10 | `LoadingMeleePanel` 整体隐藏，`MinimapImage` 与槽位文字因此都不显示 |
 
+**加载顺序**：客户端在 `LoadMap` 里同步跑完整条链路，每个阶段 `loading.Report(p, stage)` 并当场交换一帧；`_scenes.Load(...)` 之后才 `Report(1f, "进入游戏")` 并 dispose，世界从下一帧才开始 tick。
+
+Launcher 照这个顺序拆开：
+
+| 项 | 做法 |
+|---|---|
+| 阶段 | `Setup` 拆成 `SetupSteps`，每完成一段 `await Loading(p, stage)`，即 `SetProgress` 后让出一帧 |
+| 阶段值 | 与客户端同口径：.10 解析地形 / .22 地形纹理 / .34 地形水面光照 / .45 模型资源 / .66 预摆单位 / .80 寻路 / .90 预热 / .98 镜头与界面 / 1.0 进入游戏 |
+| 冻结 | `_Process`、`_PhysicsProcess` 在加载屏 `Finished` 之前直接 return，`_PhysicsProcess` 里的 `World.Advance` 因此不会推进 |
+| 音频 | 音乐从 `_Ready` 改到加载结束后的 `StartPendingMusic`；环境音与单位语音走 `_Process`，同样被冻结挡住 |
+| 收尾 | `Finish()` 置 100%，最短显示 1.2 s，淡出 0.5 s；淡出前先等三帧世界画面，避开首帧全黑 |
+| 后续 | 加载完成后触发 `Loaded`，镜头预设与各调试入口挂在该事件上 |
+
+原来的实现是「先把世界建完，再播 2.2 秒假进度」，所以进度条还没走完地图音乐已经响了。
+
 **背景几何**：`Load-Multiplayer-*.mdx` 是 4 个面，但不是四个等分象限。按顶点坐标归一化后是 2 列 × 2 行不等高：上带 `y 0.2..0.6` 占 2/3 屏高（两张 512×512），下带 `y 0..0.2` 占 1/3（两张 512×256）。四张贴图在设计单位下正好 1:1。Launcher 直绘这四张贴图，不用模型。
 
 左中那个带框的空白不是缺缩略图，是 `Loading-TopLeft.png` 画面里自带的取景框。缩略图挂在 `MinimapImage` 下，而它属于 `LoadingMeleePanel`，客户端把它 `Visible=false` 了。
