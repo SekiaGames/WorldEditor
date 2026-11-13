@@ -719,6 +719,23 @@ if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
 
 **结论**：继续按文件逐个试的收益已经接近零。剩下的是约 150 个文件的整块迁移，按子系统切更合理。
 
+### 第三十八轮（`37de543`）
+
+按计划先做净化链这个「子系统样板」，结果发现一个更底层的问题。
+
+**`Classifications` 只读静态 flag**
+
+A 的写法是 `Type?.Classifications ?? None`——完全取自单位类型。但**「召唤物」是运行时状态**：水元素本身不在物编里标 `Summoned`，它是召唤出来的那一刻才成为召唤物（`SummonRemaining > 0`），幻象同理。
+
+后果是净化的「对召唤物额外伤害」恒为 0，所有按 `Summoned` 筛目标的判定也全部落空。改成静态分类与运行时分类的并集后，这一条立刻对上（1600 命中）。
+
+**净化还剩两条**：满减速 0、驱散没生效。
+
+- 减速：`OnBuffAdd` 里 `AddState(StateModType.Snare)` + `ApplySlow()`，Buff 确实被加进去了（`OnAdd => OnBuffAdd` 链路正常），但速度读数还是 0，需要继续查 `SpeedOf` 的口径。
+- 驱散：`buff.AutoDispel && buff.Magic` 两个 flag 来自 `BindBuffObjectData`，A 的 `War3ObjectData.GetBuff` 是返回 null 的桩，走 else 分支只挂了 ObjectData，这两个 flag 恒 false，于是「该驱散的增益」一个都摘不掉。
+
+所以净化真正卡的是**Buff 物编数据**（`GetBuff` 桩），不是技能逻辑。这条也是前面 `ObjectDataBuff` 一直没解决的那件事的同一个根。
+
 ---
 
 ## 1. 六个杠杆
