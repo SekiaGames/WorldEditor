@@ -352,9 +352,20 @@ Launcher 现在的 `Game/UI/MeleeHudController.cs`（945 行）是 Godot Control
 
 `ConsoleUiBinding` 目前只有 1 个字段。客户端的 9 个字段有 8 个来自 `SmashUI\SmashConsoleUI.fdf`，那是客户端自带的界面扩展，不在游戏资源里。Launcher 走原版 ConsoleUI，后续 U3 再决定是否补一个自己的 console 扩展。
 
+### U0.2 已完成（2026-11-13）
+
+| 项 | 结果 |
+|---|---|
+| `GodotUiRenderDevice` | 实现 `IUiRenderDevice`：纹理四边形与 uv 裁剪、平铺、冷却扇形、带阴影文本、裁剪栈按矩形求交、行高换算走字体 |
+| `GodotWar3FontFace` | 按 skin 的 `MasterFont` 从 pck 取字体，实际命中 `Fonts\dfst-m3u.ttf`；中文走 `SystemFont` 回退 |
+| 纹理解析 | `GodotUiTextureResolver` 接皮肤表，`File` 字段先查 skin 再落到 pck 的 png |
+| 首张截图 | `--ui-screen=UI\FrameDef\UI\ResourceBar.fdf\|ResourceBarFrame`，1280×960 下资源栏图标与描边正常 |
+
+已知不足：`ADD` 混合暂按普通绘制，裁剪对文本只做整块可见性判断。两者在 U3 命令卡高亮与小地图遮罩时补。
+
 ### 下一步
 
-`GodotUiRenderDevice` 补齐接口方法，`GodotWar3FontFace` 从 pck 加载字体，然后把 `ConsoleSkinFrame`、`TopBarFrame` 接到 `--ui-screen` 上做第一张对照截图。
+搬 `ConsoleSkinFrame`、`TopBarFrame`、`ResourceBarFrame` 三个帧，按 `ConsoleUI` 根帧组装出底部控制台，与客户端截屏做第一轮位置比对。
 
 ---
 
