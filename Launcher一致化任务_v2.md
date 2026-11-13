@@ -181,17 +181,43 @@ Launcher（Godot 4.7.2 / net8.0）
 
 ### 3.5 单程序集迁移顺序
 
-合并本身不是一次编辑能完成的：视图层有 174 处直接使用自有模拟/地图类型（`W3eTerrain` 70、`UnitType` 30、`Item` 16、`SlkTable` 12 等），删掉自有模拟层后这些引用全部失效。按下面五步走，每一步都能编译。
+合并要先过一道账：删掉自有模拟层后，视图层有 174 处引用直接失效（`W3eTerrain` 70、`UnitType` 30、`Item` 16、`SlkTable` 12 等），另有 1,277 处引用了与客户端同名的 `Unit`/`World`，不会报错但语义不同。前者是编译错误，后者是静默错。按下面五步走，每一步都能编译。
 
 | 步 | 动作 | 结果 |
 |---|---|---|
-| 1 | `Launcher.csproj` 内联 Client 与 War3Net 的源码；`Compile Remove` 掉自有 `Src/`、`GameCore/L1` `L2` `L3` 与 `GameCore/L4` | 编译绿。Launcher 只剩入口与平台壳，无画面 |
+| 1 | `Launcher.csproj` 内联 Client 与 War3Net 的源码；删自有 `Src/`、`GameCore/L1` `L2` `L3`，`GameCore/L4` 移出编译 | 编译绿。Launcher 只剩入口与平台壳，无画面 |
 | 2 | 抹平三个已知坑（见下） | 编译绿，错误数归零 |
 | 3 | 把 `DataProbe`、`DataCodegen` 改成 Launcher 的两个命令行模式，删掉两个工具工程与 `Extract/tools` | 数据生成与校验回到单程序集内 |
 | 4 | 接 `GameSession` + JASS，跑通 `--state-digest` | P1 达标，逻辑层可用（headless） |
-| 5 | 按 §5.4 清单把视图逐个加回编译并接 Bridge：地形 → 装饰物 → 相机 → 单位 → 特效 → 界面 → 音频 | 每加回一项关掉对应清单项 |
+| 5 | 按 §5.4 清单新写 `View/`：地形 → 装饰物 → 相机 → 单位 → 特效 → 界面 → 音频 | 每完成一项关掉对应清单项 |
 
-第 1 步之后 Launcher 没有画面，直到第 5 步的地形项加回。这是既定代价，`--data-probe`、`--state-digest`、`--headless` 不受影响。
+第 1 步之后 Launcher 没有画面，直到第 5 步的地形项落地。这是既定代价，`--data-probe`、`--state-digest`、`--headless` 不受影响。
+
+**旧视图不能"加回编译"，只能当参考**
+
+原以为视图层是"改 174 处类型引用"就能回来，实测推翻了这个判断。真正的规模在另一个方向：
+
+| 项 | 数量 |
+|---|---:|
+| L4 里出现 `Unit` 的文件 / 次数 | 44 个文件 / 994 次 |
+| L4 里出现 `World` 的次数 | 283 次 |
+
+`Unit` 与 `World` 在客户端也有同名类型，所以这 1,277 处**不会报错，会静默绑定到客户端类型上**，行为完全不同。v1 已经踩过三次（`World.Tick`、`Learned`、`Classifications`），这里是同一类问题放大一千倍。
+
+结论：旧 `GameCore/L4_Composition` 整体不进新程序集。它的价值是算法与参数（§5.2 的参数表、§5.4 的实现要点），代码本身按视图重写。留在磁盘上当参考，不参与编译。
+
+**删什么、留什么**
+
+| 目录 | 处置 | 依据 |
+|---|---|---|
+| `Src/`（18,475 行） | 删 | 与客户端同名同义，全部由 Client 取代 |
+| `GameCore/L1` `L2` `L3`（17,957 行） | 删 | 同上；含 Launcher 自有的 w3x/slk 解析器，客户端有等价实现 |
+| `GameCore/L4_Composition`（20,693 行） | 移出编译，作参考 | 994 + 283 处同名引用，不能沿用 |
+| `Platform/Godot/Extensions/MapDocument.cs`、`GmapPackage.cs` | 删（gmap 容器 P5 再议） | 解析职责归客户端 |
+| `Platform/Godot/Assets/`（pck 路径解析、资源查找） | 留 | 视图要用，客户端没有对应物 |
+| `Platform/Godot/App/LauncherApp.cs` | 留骨架，重写为薄 host | 命令行、主循环、模式分发 |
+
+合并完成后 Launcher 自有代码约 2,000 行：入口 + pck 挂载 + 参数解析 + 两个开发模式，其余全是客户端源码。
 
 **三个已知坑**
 
