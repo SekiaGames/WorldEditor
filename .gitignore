@@ -4,16 +4,14 @@
 /WorldEditor.app/
 extract.pck*
 
-/test/*
-!/test/.gitkeep
-*.tmp
-
 /Extract
 /Editor
 /Wiki
 /Launcher
 
 /.workbuddy/memory
-/Wiki_Old
 /Open-Warcraft3_Wiki
-/.tmp_shots
+/test/war3-unpack
+/test/War3_1.27a
+/test/HiveWE
+/test/Open-Warcraft3
