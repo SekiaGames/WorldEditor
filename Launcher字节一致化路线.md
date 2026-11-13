@@ -648,6 +648,23 @@ if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
 
 **醉拳卡在导弹管线**：采纳后 `Verify` 显示受害者速度没变、未命中率 0——Buff 根本没挂上。客户端的醉酒云雾不是即刻生效，而是发一枚 `AbilityMissileEffect`，命中回调里才 `shot.Apply(...)`。A 的 `TickAbilityMissiles` 和客户端的 `AbilityMissileEffect` 是两套推进方式，命中回调不触发。这是下一个要处理的子系统。
 
+### 第三十四轮（无提交）
+
+查导弹管线，结论是「管线没问题，探针的假设错了两处」。
+
+| 误判 | 实际 |
+|---|---|
+| 施放后立刻断言 Buff 已挂上 | 客户端技能发 `AbilityMissileEffect`，要 `Advance()` 若干帧后命中才 `shot.Apply(...)` |
+| 未命中表现为 `Amount = 0` | 客户端置的是 `DamageMultiplier = 0`，伤害结算时相乘 |
+
+改完探针后醉拳的两条断言都过了（减速、未命中率 0.45）。
+
+**但采纳醉拳会打断火焰吐息**：A 的 `RuntimeBreathOfFireAbility` 点火条件是 `victim.FindBuff<HazeBuff>()`（A 自己的类型），换成客户端的 `RuntimeDrunkenHazeBuff` 后，火伤加成与点燃都不触发。
+
+这是一条新的约束，比前面所有问题都更结构性：**技能之间有类型耦合**。单独采纳一个 debuff，会让依赖它的技能静默失效。要么先把交互层改成按接口/按 Buff id 匹配，要么成组采纳。
+
+本轮回退，保持 54。
+
 ---
 
 ## 1. 六个杠杆
