@@ -158,13 +158,23 @@ Launcher 的 `AiDifficulty` 0..2 映射：普通 1；疯狂 2；彻底疯狂 2 �
 
 ## 5 加载界面
 
-1. `--fdf-bindgen` 出 `LoadingScreenBinding`（根帧 `Loading`，`GlobalStrings` + `Glue\StandardTemplates` + `Glue\Loading`，14 字段）
-2. 帧树摆放：标题、副标题、正文、进度条、槽位面板、小地图预览
-3. 背景取 `LoadingScreen.mdx` 的 sprite 材质，16:9 拉伸；缺模型退回纯色
-4. 进度条按 FDF 纵向位置横置居中，8:1
-5. 槽位两行：本地玩家与电脑，头像、名字、种族图标、难度
+逐条对齐客户端 `War3LoadingScreenRenderer`：
 
-验收：标题、正文、两槽位、进度条位置与客户端截屏一致。
+| 步 | 客户端做法 |
+|---|---|
+| 1 | 种族取 `racePreference`，没有就用地图 P0 的 race；据此 `War3UiSkin.Load(race)` |
+| 2 | 标题 = `LoadingScreenTitle` ?? `Name`；副标题 = `LoadingScreenSubtitle`；正文 = `LoadingScreenText` ?? `Description`；都过 WTS |
+| 3 | 帧树用 `LoadingScreenBinding`（`GlobalStrings` + `Glue\StandardTemplates` + `Glue\Loading`），根帧 `SetAllPoints` |
+| 4 | `LoadingMeleePanel.Visible = false`，`LoadingCustomPanel.Visible = true` |
+| 5 | 背景取 `LoadingMeleeBackground` 模型；模型不可用时用四象限贴图各占半屏 |
+| 6 | 进度条宽 `min(640, W-96)`，高为宽的 1/8，居中；纵向 = FDF `LoadingBar.Y - 高 - 52` |
+| 7 | 条内：`Loading-BarBackground` 平铺、`Loading-BarFill` 按进度平铺、`Loading-BarGlass` 0.72、`Loading-BarBorder` 描边；两端按高度 0.5/0.2 内缩 |
+| 8 | 标题/副标题/正文 26/20/16，从 1.0 按 0.05 缩到总高 ≤ 480；宽 460 折行；右缘 `W-32`，从 `LoadingBar.Y-80-总高` 起（夹在 80..365） |
+| 9 | 阶段文字写进 `LoadingBarText`，18 号，超长逐级降到 10，居中于进度条 |
+
+Launcher 的实现差异只有一处：客户端把 `LoadingScreen.mdx` 当真网格画，Launcher 直接用模型引用的四象限贴图（`Loading-TopLeft` / `Loading-{Race}-TopRight` / `Loading-BotLeft` / `Loading-{Race}-BotRight`），画面等价。
+
+尚未接：加载各阶段的 `Report(progress, stage)`，目前进度按时间推进，阶段文字固定。
 
 ---
 
