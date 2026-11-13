@@ -133,21 +133,28 @@ Launcher（Godot 4.7.2 / net8.0）
 │      L2_Core                 配置模型
 │      L3_Simulation           World / Unit / Ability / Buff / Order / Pathing / JASS
 │      Src/                    Core Abilities Components Skills Units Orders Items Events
-│      Data/Generated/         由 Extract 生成的 C# 表（并非客户端源码）
+│      Data/Generated/         由 --data-codegen 生成的 C# 表（并非客户端源码）
 ├── Bridge/    客户端状态 → 视图快照；输入 → 命令；坐标与资源路径换算
 ├── View/      Godot 表现层（Terrain / Doodads / Units / Effects / Fog / Camera / Hud / Audio）
 └── Platform/  入口、pck 挂载、启动参数
 ```
 
-依赖方向：`View → Bridge → Client`。`Client` 不引用 Godot，`View` 不直接引用 `Client` 的模拟类型。两条用工程引用钉死。
+依赖方向：`View → Bridge → Client`。合一个程序集之后，这两条不能再靠工程引用强制，改由两条规矩守：`Client/` 里不写 `using Godot`，视图层不直接摸模拟类型。审查靠 `tools/check-layers.sh` 扫一遍，扫到就报。
 
-### 3.2 工程
+### 3.2 工程：两个单程序集
 
-| 工程 | 内容 | 允许引用 |
-|---|---|---|
-| `Client/Client.csproj` | 客户端源码 verbatim + `Data/Generated` | NuGet + War3Net，无 Godot |
-| `View/View.csproj` | Godot 表现层与 Bridge | GodotSharp + Client |
-| `Launcher.csproj` | `Platform/`、`project.godot`、入口 | View + Client |
+两条硬约束：Launcher 一个工程、Extract 一个工程，都不再拆子工程。
+
+| 工程 | 内容 |
+|---|---|
+| `Launcher.csproj`（Godot.NET.Sdk） | 客户端源码 + War3Net 源码 + Bridge + 视图 + 平台 + 两个开发模式（`--data-probe`、`--data-codegen`） |
+| `Extract.csproj`（Godot.NET.Sdk） | 资源转换，保持原样；不再承载任何数据生成器 |
+
+原来计划的三个 csproj（Client / View / Launcher）与两个工具工程（DataProbe / DataCodegen）全部取消。分层靠目录与 `Compile Remove` 白名单约束，不靠程序集边界。
+
+**代价**：客户端源码与 Launcher 自有代码进同一个程序集，同名类型会撞。Launcher 现有 `Src/`（18,475 行）与 `GameCore/L1` `L2` `L3`（17,957 行）里有一整套与客户端同名的 `World`、`Unit`、`War3GameplayConfig`，必须先删，否则 CS0101 满屏。
+
+**收益**：没有程序集边界要维护，也不会有「A 工程的改动没同步到 B」的问题；Godot 只需要加载一个 dll。
 
 ### 3.3 客户端源码的三类处理
 
@@ -171,6 +178,28 @@ Launcher（Godot 4.7.2 / net8.0）
 范围内：进图、加载、对战、结算的全部逻辑与画面。
 
 ---
+
+### 3.5 单程序集迁移顺序
+
+合并本身不是一次编辑能完成的：视图层有 174 处直接使用自有模拟/地图类型（`W3eTerrain` 70、`UnitType` 30、`Item` 16、`SlkTable` 12 等），删掉自有模拟层后这些引用全部失效。按下面五步走，每一步都能编译。
+
+| 步 | 动作 | 结果 |
+|---|---|---|
+| 1 | `Launcher.csproj` 内联 Client 与 War3Net 的源码；`Compile Remove` 掉自有 `Src/`、`GameCore/L1` `L2` `L3` 与 `GameCore/L4` | 编译绿。Launcher 只剩入口与平台壳，无画面 |
+| 2 | 抹平三个已知坑（见下） | 编译绿，错误数归零 |
+| 3 | 把 `DataProbe`、`DataCodegen` 改成 Launcher 的两个命令行模式，删掉两个工具工程与 `Extract/tools` | 数据生成与校验回到单程序集内 |
+| 4 | 接 `GameSession` + JASS，跑通 `--state-digest` | P1 达标，逻辑层可用（headless） |
+| 5 | 按 §5.4 清单把视图逐个加回编译并接 Bridge：地形 → 装饰物 → 相机 → 单位 → 特效 → 界面 → 音频 | 每加回一项关掉对应清单项 |
+
+第 1 步之后 Launcher 没有画面，直到第 5 步的地形项加回。这是既定代价，`--data-probe`、`--state-digest`、`--headless` 不受影响。
+
+**三个已知坑**
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| War3Net.Common 的 `global using System.Drawing;` | 内联后这条全局 using 作用于整个程序集，视图里的 `Image`、`Color` 在 `Godot` 与 `System.Drawing` 之间歧义，82 处 | 内联时去掉这一行（War3Net 实际只用到 `Point`/`Size` 少数类型，缺就补显式 using） |
+| War3Net 三个工程的 `obj/` 被 glob 扫进来 | 106 处 CS0579 重复程序集特性 | `Compile Include` 时排除 `**/obj/**`、`**/bin/**` |
+| Launcher 与客户端同名类型 | CS0101 与语义漂移 | 自有 `Src/`、`GameCore/L1` `L2` `L3` 直接删除，不做兼容层 |
 
 ## 4. 数据
 
@@ -207,11 +236,9 @@ Launcher（Godot 4.7.2 / net8.0）
 
 ### 4.3 表格怎么变成 C#
 
-**生成器位置**：`Extract/tools/DataCodegen/`，一个独立的 net11.0 控制台工程，引用客户端的 `test/Open-Warcraft3/VisualStudio/OpenWC3.Simulation.csproj`。
+**生成器位置**：`Launcher` 的 `--data-codegen` 模式，代码在 `Client/Data/DataCodegen.cs`，由 `LauncherApp` 解析参数后调用。
 
-**为什么是独立工程**：`Extract.csproj` 是 Godot 工程、锁 net8.0，引用不了 net11 的客户端。生成器只在开发机跑，独立工程最省事，也不会把客户端的 NuGet 依赖带进 Extract。
-
-**为什么放在 Extract 仓库**：它跟 Extract 一样以「真实 War3 安装目录」为输入，产物又直接进 Launcher，放这里链路最短。运行期不需要安装目录，只有生成期需要。
+**为什么在 Launcher 而不是 Extract**：内联之后客户端源码就在 Launcher 程序集里，`War3ObjectData.Load` 可以直接调，不需要引用任何外部工程。Extract 是 net8 的 Godot 工程，引用不了 net11 的客户端，把生成器放进去只能再开子工程——与单程序集约束冲突。生成期才需要安装目录，运行期不需要。
 
 **流程**：
 
@@ -463,6 +490,8 @@ worldZ =  mapY - terrain.OffsetY
 | P0.6 | `War3ObjectData` 加 `partial`，写 `LoadGenerated` |
 | P0.7 | `--data-probe`：打印六组计数 + 数据哈希；`--asset-probe` 清点美术缺件 |
 | P0.8 | 资源整理：`wc3.json` 不进 pck（是否停发看 Wiki），`assets/common` 随光照转 C# 后删除 |
+| P0.9 | 单程序集合并：内联 Client 与 War3Net、删自有模拟层、L4 移出编译（§3.5 第 1、2 步） |
+| P0.10 | 把 `--data-probe` 与 `--data-codegen` 收进 Launcher，删除 DataProbe / DataCodegen 两个工具工程与 `Extract/tools`（§3.5 第 3 步） |
 
 验收：
 
@@ -470,6 +499,8 @@ worldZ =  mapY - terrain.OffsetY
 - `--data-probe` 算出的哈希与 `data-codegen` 写进 `DataDigest.g.cs` 的值相等
 - `--asset-probe` 缺件为零
 - 生成源码 ≤ 6 MB，增量编译 ≤ 30 s
+
+进展（2026-11-13）：P0.1 至 P0.7 已完成。Client 995 个文件在 net8 编译通过，生成表 5.4 MB、文本源 1.5 MB，`--data-probe` 与客户端 `War3ObjectData.Load` 的规范化哈希在 5 张对战图上完全一致。
 
 回退：codegen 是增量工具，不改变 Extract 现有产物。
 
@@ -669,6 +700,7 @@ tools/shot-compare.sh <map.w3x> <镜头预设> <tick>
 | 阶段 | 同源文件数 | 数据哈希 | digest 一致 tick | 截图 SSIM | 清单关闭 |
 |---|---:|---|---:|---:|---:|
 | 起点 | 112 / 262 同路径 | — | — | — | 0 / 20 |
+| P0 数据通路 | Client/ 995 个文件搬入 | 5 张对战图一致（53d620…） | — | — | 0 / 20 |
 | | | | | | |
 
 辅助指标：
