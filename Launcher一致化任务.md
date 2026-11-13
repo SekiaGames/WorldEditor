@@ -369,6 +369,23 @@ for dp,_,fs in os.walk('Launcher'):
 2. **地形**——只卡两个技能，但 `TerrainGrid` 是荒芜、震荡波、地形变形的公共底座。
 3. **指令队列**——2100 行，且依赖寻路。寻路不通之前不宜动。
 
+## 8.6 寻路可行性调查（第 58 轮）
+
+结论：**寻路不能当切片做，它是原生镜像的移植**。
+
+| 项 | 数据 |
+|---|---|
+| 寻路库规模 | `Src/Core/Pathing` 199 个文件、33,279 行 |
+| `COrder` 直接引用 | 只有 3 个符号：`NativeOrderConstruction.Configure`、`NativePointOrderConstruction.Configure`、`CAbilityMove.IsFollowRequest` |
+| 补完这 3 个之后的连锁 | `NativeListHead`、`CAgentWar3`、`OrderPointData` |
+| 再往后 | `CAgent`/`CUnit` 的代理身份模型 |
+
+`COrder` 的形状是「薄数据 + 多态」，订单本身不做事，行为挂在能力上，订单与代理之间靠 `+0x38` 的链表头关联。那个链表头就是 `NativeListHead`，属于 `NativeMirror/Unit`。所以补三个符号只是把依赖往后推一层。
+
+**判断**：要么整体移植 `NativeMirror`（Orders + Unit），要么放弃这批文件。没有中间路径。
+
+**对剩余 15 个单错的影响**：`Weapon`、`War3Pathing`、`COrder` 全家、`CargoTransport` 全部挂在这条链上，占三分之一。其余三个子系统（地形、指令队列、配置模型）与寻路无直接耦合，但指令队列的执行体依赖 `COrder`。
+
 ## 9. 交接检查表
 
 接手（人或 agent）第一件事：
