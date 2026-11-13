@@ -247,18 +247,18 @@ for dp,_,fs in os.walk('Launcher'):
 
 处理：涉及「被别的技能读取的 debuff」，要么成组采纳，要么先统一交互层（按接口或 Buff id 匹配）。
 
-### 6.7 两套 Buff 注册表
+### 6.7 Buff 在两张表里，谁看得见谁
 
-A 侧 `World.ApplyBuff` 只把 Buff 放进 `unit.Buffs`；客户端技能扫描的是 `target.Abilities.OfType<Buff>()`。两边各看各的：
+`World.ApplyBuff` 把 Buff 放进 `unit.Buffs`，客户端技能扫的是 `target.Abilities.OfType<Buff>()`。
 
-| 路径 | 登记表 | 谁看得见 |
-|---|---|---|
-| `World.ApplyBuff` | `unit.Buffs` | A 自己的 `DispelBuffs`、Buff 计时 |
-| `target.AddAbility(buff)` | `unit.Abilities` | 客户端技能（净化的驱散、Buff 遍历） |
+根因比「两张表」更具体：`Unit.Abilities` 是字段初始化 `new()`，容器自己的 `Owner` **从来没被赋值**（现成的 `BindAbilityOwner()` 一次都没调用过）。所以任何依赖 `Abilities.Owner` 的逻辑都拿不到主人。
 
-后果：净化（客户端实现）扫不到 A 施加的 `StatBuff`，驱散断言恒红。同一原因也让「挂上去的效果不被技能层识别」这类问题反复出现。
+已处理（第 51 轮）：
+- `Abilities` 改成惰性构造并绑定 `Owner`；
+- 容器的**枚举**在技能之后并入 `Buffs`，`OfType<Buff>()` 因此能看到 A 施加的 Buff；
+- tick 走索引器与 `Count`（只覆盖技能），Buff 仍由 `Buffs` 循环计时，不会重复扣时长。
 
-统一之前不要采纳依赖「枚举目标身上所有 Buff」的技能。真要做，先决定哪张表是唯一真相，另一张改成视图，并确认 Buff 只被 tick 一次。
+仍未解决：净化能看见 Buff 了（实测 `OfType<Buff>()` 返回 2 个），但驱散后 `BonusDamagePct` 没回零。问题落在「移除时是否按施加路径回退属性」，与可见性无关。
 
 ### 6.6 「缺一个类型」往往是缺一整个文件
 
