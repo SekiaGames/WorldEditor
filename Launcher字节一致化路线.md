@@ -789,6 +789,18 @@ alias, code, comments, isEffect, version, useInEditor, sort, race, InBeta
 
 **分裂攻击仍红**：`_pendingCleave` 依赖 `ModifyOutgoingDamage` 里读的 `DataA`（0.3）与 `Area`（200），参数都对，`OnAttackHit` 也进去了，但溅射目标列表是空的。嫌疑在 `CanBeTargetedBy` 的 `targs1` 解析或 `CollectNearbyUnits` 的距离口径。
 
+### 第四十二轮（`3ca938b`、`138ce2b`）
+
+同路径一致 **62 → 63**（分裂攻击），另外为幻象补了一批 `Unit` 字段。
+
+**分裂攻击的根因不在技能里**：探针原来直接 `world.DealDamage(info)`，而分裂攻击的 `_pendingCleave` 是在**出伤修正**（`ApplyDamagePacketModifiers`）里挂的，那个方法由武器系统在出伤前调用。探针跳过这一环，命中回调进来时 `active=false`，于是永远不溅射。改成像武器系统一样先修正再结算即可。
+
+调试过程中确认了两件事：空间查询返回 3 个单位、两个敌方 `CanBeTargetedBy` 都是 true——**目标掩码解析是好的**，之前对 `targs1` 的怀疑可以排除。
+
+**幻象的另一半**：把 `RuntimeItemIllusionAbility` 推进到只剩事件总线。过程中补齐了 `Classifications` 可写、`VertexColorRgba`、`VisualScale*`、`SpawnViaCreateUnit`、`CompleteIllusionCopy`、`ApplyTimedLife`。`Classifications` 现在既能被显式覆盖，又保留召唤物/幻象的运行时并集。
+
+文件本身回退：它还要 `World.Events` / `EventContext` 事件总线，那是另一个子系统。
+
 ---
 
 ## 1. 六个杠杆
