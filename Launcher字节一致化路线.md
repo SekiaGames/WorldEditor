@@ -773,6 +773,22 @@ alias, code, comments, isEffect, version, useInEditor, sort, race, InBeta
 
 批处理的写法：拷贝 → 构建 → 两条探针 → 通过则留、否则还原。单个约 0.7 秒，可以反复跑。以后每修一处基础设施，重跑一次就能捡到碎片。
 
+### 第四十一轮（`6a113c9`、`7b0391d`）
+
+同路径一致 **61 → 62**（抗性皮肤），另外修了一个派发位置的错误。
+
+**抗性皮肤**：客户端用 `ProvidesResistantSkin` 标记，A 的 `DebuffDurationScale` 原来恒为 1。改成默认 `ProvidesResistantSkin ? 0.5f : 1f`，探针的 0.5 立刻对上。
+
+**`OnAttackHit` 写在未命中分支里**
+
+`World.DamageMembers` 里那段「客户端钩子：OnDamaged、OnAttackHit」整块嵌在 `if (!PassesDefensiveHooks(info))` 的失败分支内。结果是：**攻击被挡住时会通知「普攻命中」，真命中反而没有**。
+
+分裂攻击、腐蚀吐息这类「命中后再结算」的被动因此全都不触发。移到伤害结算之后，按快照遍历（回调里可能移除技能）。
+
+**夜视回退**：客户端 `Ault` 只是个被动标记，真正的夜视来自 `RefreshUnitTechEffects`（科技系统）。A 没有那套，采纳等于空操作，探针抓到了。
+
+**分裂攻击仍红**：`_pendingCleave` 依赖 `ModifyOutgoingDamage` 里读的 `DataA`（0.3）与 `Area`（200），参数都对，`OnAttackHit` 也进去了，但溅射目标列表是空的。嫌疑在 `CanBeTargetedBy` 的 `targs1` 解析或 `CollectNearbyUnits` 的距离口径。
+
 ---
 
 ## 1. 六个杠杆
