@@ -142,7 +142,7 @@ L0 判定：客户端 GL RHI/Input 由 Godot 替代，属架构差异；除此�
 
 | ID | 任务 | 说明 |
 |---|---|---|
-| T-1 | gmap 唯一入口 | Extract `--gmap-export=<w3x>|<gmap>`；Launcher 不读 w3x、不生成 gmap |
+| T-1 | gmap 唯一入口 | 官方地图放 `test/map_w3x`；Extract `--gmap-export` 输出到 `test/map_gmap`；Launcher 只列/加载 `test/map_gmap`，不读 w3x、不生成 gmap |
 | T-2 | 差异登记表 | 平台差异、JASS、AI、Legacy HUD、ADD 混合、逐字裁剪必须登记 |
 | T-3 | 一致率统计 | 文件对应数、同名文件行差、截图矩形误差（≤ 2px）、tick 快照 diff |
 | T-4 | 提交前检查 | 改动是否符合工程定义、是否有客户端原创、文件是否一一对应 |
