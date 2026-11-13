@@ -736,6 +736,24 @@ A 的写法是 `Type?.Classifications ?? None`——完全取自单位类型。�
 
 所以净化真正卡的是**Buff 物编数据**（`GetBuff` 桩），不是技能逻辑。这条也是前面 `ObjectDataBuff` 一直没解决的那件事的同一个根。
 
+### 第三十九轮（无提交）
+
+去补「Buff 物编数据」，发现方向本身有问题。
+
+`Extract/extract/Tables/UnitsAbilityBuffData.json` 有 237 行，但列只有 9 个结构字段：
+
+```
+alias, code, comments, isEffect, version, useInEditor, sort, race, InBeta
+```
+
+**没有任何玩法数据**——没有 `AutoDispel`、没有 `Magic`、没有 `Positive`、没有持续时间。这和 `AbilityData.slk` 完全不同（那边有 DataA..I、Dur、Cool、BuffID）。
+
+所以 `War3ObjectData.GetBuff` 当初被写成返回 null 的桩，不是偷懒，是这个表本来就给不出东西。客户端里 `Buff.Magic`/`AutoDispel`/`Positive` 都是 `virtual => true` 的默认值，技能各自 override。
+
+**结论**：净化的驱散失败不是「Buff 数据缺失」，得从 `Buff` 子类的 override 去查。上一轮我判断「Buff 物编数据是总线」，这个判断错了，撤回。
+
+同样的道理，`ObjectDataBuff` 那条线也不该指望从 buff 表拿数据。
+
 ---
 
 ## 1. 六个杠杆
