@@ -679,6 +679,24 @@ if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
 
 回退三个：荒芜（`World.Terrain` 在 A 侧是空壳）、沉默（`Src/Skills/Silence.cs` 是客户端的简化测试替身，直接给只读属性赋值）、集合点（A 侧是静态工具类，与客户端实例类不同形）。
 
+### 第三十六轮（无提交）
+
+重跑全量扫描，零错误 **32 → 38**，单错 18 个。同路径一致 57。
+
+**踩到一个方法上的坑**：第一次扫描得出「零错误 0」，因为我在树里留了一个编译不过的未跟踪文件（`RuntimeItemIllusionAbility.cs`）。扫描脚本每次复制-构建-还原，但污染文件一直在，于是每个文件都报错。
+
+`git checkout --` 对未跟踪文件无效，必须 `rm`。**扫描前先确认 `git status` 干净**，否则整轮数据作废。
+
+**剩余 18 个单错，按性质**：
+
+| 类别 | 文件 |
+|---|---|
+| 子系统 | 引导/库存（掘尸）、指令（游荡、运输）、地形（荒芜、震荡波）、配置装载（献祭、季风） |
+| 类型形状不同 | 集合点（静态 vs 实例）、链式闪电（`LastChain`）、武器（`StandalonePathing.Combat`） |
+| 依赖同文件内其它类 | 镜子（`RuntimeIllusionModifierBuff` 在物品幻象文件里）、魔法免疫（`RuntimePurgeBuff` 在净化文件里） |
+
+最后一类值得注意：`RuntimeIllusionModifierBuff` 不是独立文件，它和 `RuntimeItemIllusionAbility` 在同一个 `.cs` 里。所以「缺一个类型」实际是「缺一整个文件」，而这些文件又各自带着未解决的依赖。
+
 ---
 
 ## 1. 六个杠杆
