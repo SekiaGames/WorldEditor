@@ -275,6 +275,7 @@ for dp,_,fs in os.walk('Launcher'):
 | A 的简化类和客户端类写在同一个文件 | `Mine`、`Silence`、`Purge` | 工厂里 `new Mine()` 找不到类型 | 从 git 取回旧文件，把 A 的类单独落一个文件，再采纳 |
 | 两边同名同路径，各写一套 | `RuntimeMirrorImageAbility` | 删掉文件后工厂才报错 | 判断哪边语义更全；不采纳就整文件恢复 |
 | A 只定义类型/枚举，客户端写在别的文件里 | `EventTargetKind` | CS0101 重复定义 | 删 A 侧那份，保留客户端所在文件 |
+| A 与客户端同名类分属不同命名空间 | `BuffTypeData`（A 在 `OpenWC3`，客户端在 `OpenWC3.Game`） | 不报错，调用点静默绑到更近的命名空间 | 采纳前先确认单一真相；两边都要用时必须限定全名 |
 
 识别方法：复制前先 `grep "class " 目标文件`，看它是否顺带定义了别的东西；再看工厂里 `new X()` 引用的类是否就在该文件中。
 
@@ -385,6 +386,8 @@ for dp,_,fs in os.walk('Launcher'):
 `COrder` 的形状是「薄数据 + 多态」，订单本身不做事，行为挂在能力上，订单与代理之间靠 `+0x38` 的链表头关联。那个链表头就是 `NativeListHead`，属于 `NativeMirror/Unit`。所以补三个符号只是把依赖往后推一层。
 
 **判断**：要么整体移植 `NativeMirror`（Orders + Unit），要么放弃这批文件。没有中间路径。
+
+**配置模型也过不去**（第 60 轮）：`War3CustomObjectData.cs`（276 行）能编译，只有 `InvalidDataException` 这类缺口，用窄别名可解。真正的问题是它顺带定义了 `OpenWC3.Game.BuffTypeData`，而 Launcher 在 `Src/Abilities/BuffTypeData.cs` 里有一份同名的 `OpenWC3.BuffTypeData`。两份并存不报错，调用点静默绑到更近的那个，连锁出十几个类型不匹配。客户端侧没有 `Src/Abilities/BuffTypeData.cs`，说明 A 的这份是自造的等价物。
 
 **地形同样收尾在原生镜像**：`TerrainGrid.cs`（1004 行）前 940 行能直接用，尾部 60 行要 `StandalonePathing.Core.NativeWpmGrid`、`Unit.NativePathingQueryMask`、`Footprint`。所以地形也不是纯数据模块，它的查询路径挂在原生网格上。第 59 轮只落地了它前面的 `War3Pathing.cs`。
 
