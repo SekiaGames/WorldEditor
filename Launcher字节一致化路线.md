@@ -558,6 +558,28 @@ FAIL 尸体归到车名下    期望 1 实际 0
 
 **火焰雨仍红**：进入引导了（`cnt=1`），但第一波伤害 0、「挂上灼烧」也 0。探针遍历的是 `footman.Buffs`，客户端 Buff 在技能表里；伤害那一条还得看效果对象在 `TickEffects` 里有没有真正推进。
 
+### 第三十轮（`cc48606`）
+
+把前两轮的两处临时补丁收敛成一条口径：
+
+```csharp
+public bool Learned => this is Buff || Level >= 1;
+```
+
+Buff 挂在技能表里（`Buff : Ability`）没有等级，`Learned` 恒为 false。凡是「遍历技能表」的路径都会静默跳过它，而且不报错：
+
+| 路径 | 后果 |
+|---|---|
+| `ApplyIncomingModifiers` | Buff 的受击修正不执行（睡眠唤醒、护盾破裂） |
+| `TickAbilities` | Buff 的 `OnTick` 不执行（持续伤害、倒计时） |
+| 出伤修正、命中回调、死亡触发 | 同理 |
+
+改在一处，所有站点一起修好。两探针全过。
+
+**火焰雨**：引导进了（`cnt=1`），22 tick 后伤害仍为 0，`_effect.Done` 始终 false——`RainEffect.Step` 在 A 的 `TickEffects` 里没有产生伤害，得单独查效果对象。
+
+**睡眠**：时长能读到了（`RuntimeSleepBuff.Remaining` = 20），但「挨打立刻醒」仍红。客户端睡眠同时挂 `RuntimeSleepProtectionBuff`（初始无敌期），唤醒逻辑要求它不存在；而保护 Buff 的时长取 `InvulnerabilityDuration`，A 侧读到 0 → `Duration<=0` 被判成永久。这是数据口径问题，不是逻辑问题。
+
 ---
 
 ## 1. 六个杠杆
