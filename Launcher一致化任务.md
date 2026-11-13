@@ -177,8 +177,8 @@ for dp,_,fs in os.walk('Launcher'):
 | 项 | 值 |
 |---|---|
 | 字节一致 | 77 / 227 |
-| 扫描零错误 | 68（最近一次全量扫描；每采纳一批会下降，重扫即更新） |
-| 扫描单错 | 19 |
+| 扫描零错误 | 78（最近一次全量扫描；每采纳一批会下降，重扫即更新） |
+| 扫描单错 | 15 |
 | 客户端配置目录类总数 / Launcher 缺失 | 405 / 206 |
 | 构建 | 0 错 0 警告 |
 | 探针 | 两条全绿 |
@@ -306,6 +306,7 @@ for dp,_,fs in os.walk('Launcher'):
 
 | 轮次 | 提交 | 字节一致 | 收益 |
 |---|---|---:|---|
+| 57 | `e860b4e` | 77 | 无收益（荒芜要真 `Terrain`；`COrder` 依赖 `OpenWC3.Pathing`） |
 | 56 | `80c8b18` | 77 | 无一致收益（镜像探针要 `objects`，环境里为 null） |
 | 55 | `eac4677` | 77 | 事件系统 5 文件 + 物品幻象 |
 | 54 | — | 71 | 无收益（震荡波要 `TerrainGrid`，地形子系统） |
@@ -340,6 +341,33 @@ for dp,_,fs in os.walk('Launcher'):
 早期轮次见 `Launcher字节一致化路线.md`。
 
 ---
+
+## 8.5 第 57 轮结束时的退出判定
+
+第 56、57 两轮连续无收益，按第 4 节的判据**停止循环**。
+
+两轮的尝试与结论：
+
+| 轮 | 尝试 | 卡点 | 性质 |
+|---|---|---|---|
+| 56 | 镜像分身 | 客户端版本靠 `objects` 创建单位，探针环境为 null | 测试环境未装配数据源，非逻辑差异 |
+| 57 | 荒芜蔓延 | `world.Terrain` 在 Launcher 是 `object` | 地形子系统 |
+| 57 | `COrder` 家族（330 行） | `using OpenWC3.Pathing`、`StandalonePathing.Unit` | 寻路子系统 |
+
+**当前池子的真实形状**：15 个单错文件全部指向四个子系统，没有一个是补成员能解决的。
+
+| 子系统 | 阻塞的文件 | 依赖链 |
+|---|---|---|
+| 寻路 `Pathing` | `Weapon`、`War3Pathing`、`COrder` 全家、`CargoTransport` | 最深，`StandalonePathing` 是客户端自己的导航库 |
+| 地形 `Terrain` | `BlightGrowth`、`Shockwave` | `TerrainGrid` + 荒芜状态 |
+| 指令 `OrderQueue` | `Wander`、`Immolation`（切换）、`CargoTransport` | 与寻路耦合 |
+| 配置 `War3TypeData` | `Monsoon` | 276 行的自定义物编模型 |
+
+**建议立项**（按投入产出排序）：
+
+1. **寻路**——它同时卡住指令、武器、搬运三类，是唯一能一次解开多个方向的。客户端那套在 `StandalonePathing` 里，需要先确认是否可以整体移植而不改动 Launcher 的移动循环。
+2. **地形**——只卡两个技能，但 `TerrainGrid` 是荒芜、震荡波、地形变形的公共底座。
+3. **指令队列**——2100 行，且依赖寻路。寻路不通之前不宜动。
 
 ## 9. 交接检查表
 
