@@ -754,6 +754,25 @@ alias, code, comments, isEffect, version, useInEditor, sort, race, InBeta
 
 同样的道理，`ObjectDataBuff` 那条线也不该指望从 buff 表拿数据。
 
+### 第四十轮（`c9a9d17`）
+
+换了个做法：不再一个个手动试，写批处理器遍历「单拷能编译」的文件，逐个跑两条探针，通过的留下。
+
+38 个候选，27 秒跑完，收获 4 个：
+
+| 文件 | 结果 |
+|---|---|
+| `RuntimeImpalingBoltAbility` | 采纳 |
+| `RuntimeSpikedBarricadesAbility` | 采纳 |
+| `RuntimeStormHammersAbility` | 采纳 |
+| `RuntimeAttributeModSkillAbility` | 采纳，且**撤掉了之前的 1 行补丁** |
+
+最后那个值得说：之前为了让它能编译，把 `Abilities.Get<Hero>()` 改成了 `Hero.Of(Owner)`。这轮改成在 `Abilities.Get<Hero>()` 里给英雄单位返回一份**缓存的**三围视图——客户端文件保持原样，功能也没丢。视图必须缓存，否则技能里 `ReferenceEquals(_hero, hero)` 永远不等，加成会重复叠加。
+
+同路径一致 **57 → 61**。
+
+批处理的写法：拷贝 → 构建 → 两条探针 → 通过则留、否则还原。单个约 0.7 秒，可以反复跑。以后每修一处基础设施，重跑一次就能捡到碎片。
+
 ---
 
 ## 1. 六个杠杆
