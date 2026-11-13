@@ -166,17 +166,36 @@ Launcher 的 `AiDifficulty` 0..2 映射：普通 1；疯狂 2；彻底疯狂 2 �
 | 2 | 标题 = `LoadingScreenTitle` ?? `Name`；副标题 = `LoadingScreenSubtitle`；正文 = `LoadingScreenText` ?? `Description`；都过 WTS |
 | 3 | 帧树用 `LoadingScreenBinding`（`GlobalStrings` + `Glue\StandardTemplates` + `Glue\Loading`），根帧 `SetAllPoints` |
 | 4 | `LoadingMeleePanel.Visible = false`，`LoadingCustomPanel.Visible = true` |
-| 5 | 背景取 `LoadingMeleeBackground` 模型；模型不可用时用四象限贴图各占半屏 |
+| 5 | 背景取 `LoadingMeleeBackground` 模型，按顶点包围盒归一化到全屏 |
 | 6 | 进度条宽 `min(640, W-96)`，高为宽的 1/8，居中；纵向 = FDF `LoadingBar.Y - 高 - 52` |
-| 7 | 条内：`Loading-BarBackground` 平铺、`Loading-BarFill` 按进度平铺、`Loading-BarGlass` 0.72、`Loading-BarBorder` 描边；两端按高度 0.5/0.2 内缩 |
+| 7 | 条内：`Loading-BarBackground` 平铺、`Loading-BarFill` 按进度平铺、`Textures\Loading-BarGlass` 0.72、`Loading-BarBorder` 描边；两端按高度 0.5/0.2 内缩 |
 | 8 | 标题/副标题/正文 26/20/16，从 1.0 按 0.05 缩到总高 ≤ 480；宽 460 折行；右缘 `W-32`，从 `LoadingBar.Y-80-总高` 起（夹在 80..365） |
 | 9 | 阶段文字写进 `LoadingBarText`，18 号，超长逐级降到 10，居中于进度条 |
+| 10 | `MinimapImage` 里放地图缩略图 `war3mapMap.blp` |
 
-Launcher 的实现差异只有一处：客户端把 `LoadingScreen.mdx` 当真网格画，Launcher 直接用模型引用的四象限贴图（`Loading-TopLeft` / `Loading-{Race}-TopRight` / `Loading-BotLeft` / `Loading-{Race}-BotRight`），画面等价。
+**背景几何**：`Load-Multiplayer-*.mdx` 是 4 个面，但不是四个等分象限。按顶点坐标归一化后是 2 列 × 2 行不等高：上带 `y 0.2..0.6` 占 2/3 屏高（两张 512×512），下带 `y 0..0.2` 占 1/3（两张 512×256）。四张贴图在设计单位下正好 1:1。Launcher 直绘这四张贴图，不用模型。
 
-尚未接：加载各阶段的 `Report(progress, stage)`，目前进度按时间推进，阶段文字固定。
+**进度条平铺**：客户端不是按纹理像素 1:1 重复，而是以条高为段宽切段，每段铺满整张贴图（u 0..1）。所以 `Loading-BarBackground`（32×32）在 560 宽的槽里重复 12 段多，不是 17 段。
 
----
+**字号**：FDF 的 `FontHeight` 就是 em 尺寸，客户端直接 `fontSize * ScaleY` 做光栅字号，行高按 `fontSize * 1.25`。Launcher 不按字体的 ascent+descent 回缩，中英文用同一套尺寸。
+
+**调试**：两侧都读 `OPENWC3_LOADING_DEBUG`，设为 `1` 时每次布局变化输出一段 `[loading-layout]`，设为 `2` 每帧输出。同一份日志逐行 diff 即可定位到具体元件：
+
+```
+[loading-layout] fb=1920x1080 active=1920 offset=0 scale=1.875x1.4063 design=1024x768
+[loading-layout] bg mode=quads
+[loading-layout] bg TL tex=512x512 path=UI\Glues\Loading\Multiplayer\Loading-TopLeft.png
+[loading-layout] bg rects TL=0,0,512,512 TR=512,0,512,512 BL=0,512,512,256 BR=512,512,512,256
+[loading-layout] bar rect=192,632.8,640,80 fdf=0,764.8,0,0
+[loading-layout] channel rect=232,648.8,560,44 progress=0
+[loading-layout] label size=18 px=25 rect=192,632.8,640,80 lines=1 w=40 text='装载中'
+[loading-layout] text title size=26 px=37 rect=532,365,460,47 lines=1 h=47 w=111.47 text='Turtle Rock'
+[loading-layout] text body size=16 px=22 rect=532,422,460,32 lines=1 h=32 w=352 text='…'
+```
+
+`px` 是实际光栅字号，`w` 是首行宽度（设计单位），`h` 是含 8 单位内边距的整块高度。三者任一不同都说明字体或折行有偏差。
+
+**未接**：加载阶段的 `Report(progress, stage)`，目前进度按时间推进、阶段文字固定；地图缩略图读到了字节但 Godot 的 JPEG 解码器不支持这种 4 分量 BLP1，帧内暂时留空。
 
 ## 6 游戏内界面
 
