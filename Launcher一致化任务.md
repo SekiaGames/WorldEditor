@@ -247,6 +247,19 @@ for dp,_,fs in os.walk('Launcher'):
 
 处理：涉及「被别的技能读取的 debuff」，要么成组采纳，要么先统一交互层（按接口或 Buff id 匹配）。
 
+### 6.7 两套 Buff 注册表
+
+A 侧 `World.ApplyBuff` 只把 Buff 放进 `unit.Buffs`；客户端技能扫描的是 `target.Abilities.OfType<Buff>()`。两边各看各的：
+
+| 路径 | 登记表 | 谁看得见 |
+|---|---|---|
+| `World.ApplyBuff` | `unit.Buffs` | A 自己的 `DispelBuffs`、Buff 计时 |
+| `target.AddAbility(buff)` | `unit.Abilities` | 客户端技能（净化的驱散、Buff 遍历） |
+
+后果：净化（客户端实现）扫不到 A 施加的 `StatBuff`，驱散断言恒红。同一原因也让「挂上去的效果不被技能层识别」这类问题反复出现。
+
+统一之前不要采纳依赖「枚举目标身上所有 Buff」的技能。真要做，先决定哪张表是唯一真相，另一张改成视图，并确认 Buff 只被 tick 一次。
+
 ### 6.6 「缺一个类型」往往是缺一整个文件
 
 `RuntimeIllusionModifierBuff` 不在独立文件里，它在 `RuntimeItemIllusionAbility.cs` 内。`RuntimePurgeBuff` 在 `RuntimePurgeAbility.cs` 内。评估成本时按文件算，不按类型算。
