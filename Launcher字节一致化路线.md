@@ -580,6 +580,33 @@ Buff 挂在技能表里（`Buff : Ability`）没有等级，`Learned` 恒为 fal
 
 **睡眠**：时长能读到了（`RuntimeSleepBuff.Remaining` = 20），但「挨打立刻醒」仍红。客户端睡眠同时挂 `RuntimeSleepProtectionBuff`（初始无敌期），唤醒逻辑要求它不存在；而保护 Buff 的时长取 `InvulnerabilityDuration`，A 侧读到 0 → `Duration<=0` 被判成永久。这是数据口径问题，不是逻辑问题。
 
+### 第三十一轮（`f550b1d`）
+
+睡眠落地（同路径一致 51 → 52），顺带把 Buff 的整个生命周期对齐了。这是三轮里最有价值的一块。
+
+**三处 Bug，都在 Buff 挂进技能表之后**
+
+| 位置 | 问题 | 修法 |
+|---|---|---|
+| `TickAbilities` | 只调单参 `OnTick(float)`，Buff 的倒计时写在双参 `OnTick(World, dt)` 里 → **Buff 永不过期** | Buff 走双参 tick，到期延迟到遍历后统一摘除并触发 `OnRemove()` |
+| `ApplyIncomingModifiers` | 修正回调里 Buff 会移除自己（睡眠唤醒、护盾破裂），直接 `foreach` 抛 `Collection was modified` | 改成快照遍历 |
+| `OnRemove(World)` | 空实现，`OnBuffRemove` 不触发 → 保护期结束不撤无敌状态 | 显式调无参 `OnRemove()`（不能在 World 版里转调，会二次移除导致遍历崩溃） |
+
+**探针按数据重写**
+
+原来断言「挨打后立刻醒」。查数据发现 `DataA=2`（保护期 2 秒），睡眠 20 秒：保护期内挨打本来就不该醒。改成三段验证：
+
+```
+睡眠 20 秒 = 20          （读 RuntimeSleepBuff.Remaining）
+睡眠保护期 = DataA=2     （读 RuntimeSleepProtectionBuff.Remaining）
+保护期内挨打不醒 = 1
+保护期过后挨打立刻醒 = 0
+```
+
+**这条链给的教训**：Buff 相关的三处 bug 都是「静默」的——不报错、不改可见行为，只是某项功能悄悄不生效。前两轮修的是 `Learned` 过滤，这轮是计时与移除。同类代码位置应该已经覆盖完。
+
+火焰雨仍红（第一波伤害 0），`RainEffect` 在 `TickEffects` 里不产生伤害，待查。
+
 ---
 
 ## 1. 六个杠杆
