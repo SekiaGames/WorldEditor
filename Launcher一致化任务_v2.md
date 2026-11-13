@@ -178,7 +178,7 @@ Launcher（Godot 4.7.2 / net8.0）
 
 | 数据 | 例子 | 落地方式 | 运行期从哪来 |
 |---|---|---|---|
-| 美术资产 | `.tscn`、`.tres`、`.png`、`.wav`、`.mp3`、`wc3.json` | Godot 资源，打进 `extract.pck` | Godot 加载 |
+| 美术资产 | `.tscn`、`.tres`、`.png`、`.glb`、`.wav`、`.mp3` | Godot 资源，打进 `extract.pck` | Godot 加载 |
 | 表格 | `UnitData.slk`、`AbilityData.slk`、各 `*Func.txt`/`*Strings.txt` | 生成 C# 表（成品 cells） | 直接装对象 |
 | 文本配置 | `MiscData.txt`、`MiscGame.txt`、`MetaHero.txt`、`UnitMetaData.slk`、`common.j`、`Blizzard.j`、`*.ai`、FDF | 生成 C# 常量 | 经 `IWarcraftFileSource` 供给 |
 | 地图数据 | `war3map.w3e/.w3i/.doo/.w3u/.w3a/.j/.wts/.wpm` | 不生成，随地图走 | 运行时从 w3x 读 |
@@ -196,9 +196,14 @@ Launcher（Godot 4.7.2 / net8.0）
 | .png | 6,380 | 贴图 |
 | .glb | 3,264 | 网格 |
 | .wav / .mp3 | 6,357 | 音频 |
-| .wc3.json | 每模型一份 | 动画序列、包围盒、`boundsRadius` |
 
-要搬出 pck 的有三类：`Tables/*.json`（63 个）、`Texts/*.json`（137 个）、`.fdf`（84 个）。它们都是配置，转成 C# 之后从 pck 删除。pck 里其余约 3,200 个 json 是模型与材质的附属数据，留在原地。
+要搬出 pck 的有三类：`Tables/*.json`（63 个）、`Texts/*.json`（137 个）、`.fdf`（84 个）。它们都是配置，转成 C# 之后从 pck 删除。
+
+`*.wc3.json`（3,264 个）Launcher 不需要。它的内容是动画序列表、包围盒与 `boundsRadius`，而转换后的模型场景已经自带这些：序列在 `*.anim.tres`（`AnimationLibrary`，键就是 MDX 原名 `Stand - 1`、`Attack - 1`、`Walk`），附着点在 `BoneAttachment3D` 节点（`attach_Weapon_Ref` 这类），包围盒 Godot 能直接从网格算。
+
+它还剩一个消费者：Wiki 的 `Data.cs:881`（`Wc3JsonFor` → `MaterialDetailAlpha`，第二层材质的细节透明）。文件缺失时返回 null，调用点降级跳过，不会崩。所以是否停发取决于 Wiki：保留这个效果就继续生成但不进 pck，放弃就整体停发。
+
+**资源目录整理**：`assets/common/mesh/particle_quad.tres` 已移到 `assets/mesh/particle_quad.tres`，生成器常量与 3,682 个生成场景的引用同步改完。`assets/common/lighting/dnc.json` 在 §4.6 转成 C# 之后，整个 `assets/common` 目录即可删除。
 
 ### 4.3 表格怎么变成 C#
 
@@ -327,7 +332,9 @@ static class LightingTable
 }
 ```
 
-`View/Lighting` 按当前时间插值 keyframe，写入 `WorldEnvironment` 与方向光。json 保留给 Wiki，两者由同一个解析器产出，不会漂。
+`View/Lighting` 按当前时间插值 keyframe，写入 `WorldEnvironment` 与方向光。
+
+Launcher 只吃 `Lighting.g.cs`，不读 json。json 留给 Wiki（`Wiki/src/Lighting.cs:15` 读它）；Wiki 迁到同一份生成的 C# 之后，`assets/common/lighting/dnc.json` 与 `assets/common` 目录一起删除。两边由同一个解析器产出，迁移期间不会漂。
 
 ### 4.7 资源路径映射
 
@@ -404,7 +411,7 @@ worldZ =  mapY - terrain.OffsetY
 | 9 | 战争迷雾（含 LOS 遮挡） | `FogOfWar.cs:566-597` | shader + 贴图 | P2 |
 | 10 | 单位模型与骨骼动画 | `CharacterRenderer.cs` | `View/Units` + AnimationPlayer | P3 |
 | 11 | 动画选择规则 | `UnitAnimationController.cs` | 决策表移植 | P3 |
-| 12 | 附着点与武器挂点 | MDX 事件、`AttachmentPoints` | 从 `wc3.json` 读 | P3 |
+| 12 | 附着点与武器挂点 | MDX 事件、`AttachmentPoints` | 从 tscn 的 `attach_*` 节点读 | P3 |
 | 13 | 队伍色、幻象染色、虚无色调 | `UnitStateColor.cs` | 材质参数 | P3 |
 | 14 | 选择圈、血条、施法条 | `Presentation.cs:1844` | `View/Hud/Overlay` | P3 |
 | 15 | 技能特效与粒子 | `Effect.Visual*` | `View/Effects` | P3 |
@@ -455,6 +462,7 @@ worldZ =  mapY - terrain.OffsetY
 | P0.5 | `IWarcraftFileSource` 回退 + Launcher 实现（读生成常量） |
 | P0.6 | `War3ObjectData` 加 `partial`，写 `LoadGenerated` |
 | P0.7 | `--data-probe`：打印六组计数 + 数据哈希；`--asset-probe` 清点美术缺件 |
+| P0.8 | 资源整理：`wc3.json` 不进 pck（是否停发看 Wiki），`assets/common` 随光照转 C# 后删除 |
 
 验收：
 
@@ -510,8 +518,8 @@ digest 字段：
 | 任务 | 内容 |
 |---|---|
 | P3.1 | `Bridge/UnitView` 快照 + 实例池；单位增删走事件 |
-| P3.2 | 模型实例化：`res://extract/**/*.tscn`，`wc3.json` 提供序列与包围盒 |
-| P3.3 | 动画规则移植：状态 → 序列标签、过渡时长、行走速率 |
+| P3.2 | 模型实例化：`res://extract/**/*.tscn`；序列取 `*.anim.tres` 的 `AnimationLibrary`，附着点取 `BoneAttachment3D` |
+| P3.3 | 动画规则移植：状态 → 序列标签、过渡时长、行走速率。库键就是 MDX 原名，客户端决策表可直接映射 |
 | P3.4 | 附着点、武器挂点、缩放 |
 | P3.5 | 队伍色、幻象染色、虚无色调、隐身透明度 |
 | P3.6 | 选择圈、血条、施法条、浮动文字 |
