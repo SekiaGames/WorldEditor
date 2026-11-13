@@ -59,6 +59,7 @@ dotnet build "$PROJECT/Extract.csproj" -v:minimal --nologo
 
 printf '\n[2/8] unpack mpq to %s\n' "$WORK"
 mkdir -p "$WORK" "$OUT"
+rm -rf "$OUT/Tables" "$OUT/Texts"
 if [ -f "$WORK/$UNPACK_MARKER" ]; then
 	printf '      marker found, skip unpack\n'
 else
@@ -66,31 +67,27 @@ else
 	: > "$WORK/$UNPACK_MARKER"
 fi
 
-printf '\n[3/8] tables and texts\n'
-"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" --table-export
-"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" --text-export
-
-printf '\n[4/8] images to png\n'
+printf '\n[3/8] images to png\n'
 "$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--image-convert=$WORK|$OUT"
 
-printf '\n[5/8] mdx to glb\n'
+printf '\n[4/8] mdx to glb\n'
 "$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--mdx-export=$OUT"
 
-printf '\n[6/8] copy audio\n'
+printf '\n[5/8] copy audio\n'
 "$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--media-copy=$WORK|$OUT"
 
-printf '\n[7/8] importing into godot, this takes 20 to 40 minutes\n'
+printf '\n[6/8] importing into godot, this takes 20 to 40 minutes\n'
 if ! "$GODOT" --headless --quiet --path "$PROJECT" --import; then
 	printf '      first pass failed - retrying once\n'
 	"$GODOT" --headless --quiet --path "$PROJECT" --import
 fi
 
-printf '\n[8/9] tables and texts to C#\n'
+printf '\n[7/8] tables and texts to C#\n'
 mkdir -p "$ROOT/Launcher/Generated"
 "$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
 "$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
 
-printf '\n[9/9] pack %s\n' "$PACK"
+printf '\n[8/8] pack %s\n' "$PACK"
 rm -f "$PACK"
 "$GODOT" --headless --quiet --path "$PROJECT" --export-pack "extract.pck" "$PACK"
 

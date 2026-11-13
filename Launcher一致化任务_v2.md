@@ -252,7 +252,7 @@ Launcher（Godot 4.7.2 / net8.0）
 | .glb | 3,264 | 网格 |
 | .wav / .mp3 | 6,357 | 音频 |
 
-要搬出 pck 的有三类：`Tables/*.json`（63 个）、`Texts/*.json`（137 个）、`.fdf`（84 个）。它们都是配置，转成 C# 之后从 pck 删除。
+已搬出 pck：`Tables/*.json`（63 个）与 `Texts/*.json`，两者都转成 C#，`extract.command` 不再生成它们，打包前还会把旧目录删掉。`.fdf`（84 个）仍留在 pck，等 P4 界面重写时再转。
 
 `*.wc3.json`（3,264 个）Launcher 不需要。它的内容是动画序列表、包围盒与 `boundsRadius`，而转换后的模型场景已经自带这些：序列在 `*.anim.tres`（`AnimationLibrary`，键就是 MDX 原名 `Stand - 1`、`Attack - 1`、`Walk`），附着点在 `BoneAttachment3D` 节点（`attach_Weapon_Ref` 这类），包围盒 Godot 能直接从网格算。
 
@@ -303,8 +303,8 @@ internal static class UnitsUnitData
 
 **运行期装载**：
 
-- `War3SlkReader.Load` 先查 `SlkTables.All`，未命中回落原来的 `res://extract/Tables/*.json`
-- `GeneratedTexts.Get(name)` 把 `Keys`/`Values` 组装成 `{"keys": {...}}` 的 Godot 字典，`MiscRules`、`ItemCatalog`、`TechTree`、`AbilityCatalog`、`TerrainTextureLoader` 五处从 `Assets.ReadJson` 切过来，循环体一行没动
+- `War3SlkReader.Get` 只查 `SlkTables.All`，查不到就打印 `[TABLE] 生成的表里找不到 X` 并返回空表。json 回退路径已删除——pck 里不再有表
+- `GeneratedTexts.Get(name)` 把 `Keys`/`Values` 组装成 `{"keys": {...}}` 的 Godot 字典，`MiscRules`、`ItemCatalog`、`TechTree`、`AbilityCatalog`、`TerrainTextureLoader`、`FogRules`、`War3MusicPlayer` 从 `Assets.ReadJson` 切过来，循环体一行没动
 
 **收益**：表与文本不再来自 pck；一个表一个文件，改哪张看哪张；Extract 保持单工程、不含客户端代码。
 
@@ -317,7 +317,9 @@ internal static class UnitsUnitData
 | Launcher 全量重建 | 约 2 s |
 | 真机验证 | 整局对战跑通，无 `[TABLE]`/`[TEXT]` 告警 |
 
-**正确性检查**：表名集合与 pck 里 63 个 json 逐一比对，文本表名与 `TechTree`/`AbilityCatalog` 引用的名单逐一比对，都为零缺失。剩下靠真机跑一局看有没有 `[TABLE] 找不到`、`[TEXT] 找不到` 的告警。
+**正确性检查**：生成 63 张表，与旧 json 名称集合逐一比对为零差异；文本表名覆盖 `TechTree`/`AbilityCatalog` 引用的全部名字。删掉 pck 里的 json 后重打包，真机跑一局无 `[TABLE]`/`[TEXT]` 告警。
+
+`--table-export` / `--text-export` 保留为调试命令，默认输出改到 `dump/Tables`、`dump/Texts`（`extract/` 之外，不会被打进 pck）。
 
 ### 4.4 文本表
 
@@ -332,6 +334,10 @@ internal static class UnitsUnitData
 | `TechTree` | 六族 UnitFunc / UnitStrings / UpgradeFunc / UpgradeStrings |
 | `AbilityCatalog` | 能力文本若干 |
 | `TerrainTextureLoader` | UIWorldEditData |
+| `FogRules` | UIMiscData（雾色四元组） |
+| `War3MusicPlayer` | UIwar3skins（音乐分曲） |
+
+音效表也一并切了：`War3SoundTables` 原先直读 `Tables/*.json`，现在走 `War3SlkReader`，跑出来 1,406 条音效。
 
 尚未迁移：
 
@@ -495,7 +501,8 @@ worldZ =  mapY - terrain.OffsetY
 
 验收：
 
-- 表名集合与 pck 里 63 个 json 完全一致，文本表名覆盖 `TechTree`/`AbilityCatalog` 引用的全部名字
+- 生成 63 张表与旧 json 名称集合零差异，文本表名覆盖 `TechTree`/`AbilityCatalog` 引用的全部名字
+- pck 里不再有 `extract/Tables/` 与 `extract/Texts/` 路径，真机整局无 `[TABLE]`/`[TEXT]` 告警
 - 真机跑一局：单位、建筑、施法、寻路、音频、迷雾全部正常，无表/文本缺失告警
 - Launcher 全量重建约 2 s
 
