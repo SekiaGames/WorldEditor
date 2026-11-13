@@ -15,7 +15,7 @@
 
 | 指标 | 含义 | 当前 |
 |---|---|---|
-| 字节一致文件数 | 两边同路径 `.cs` 内容完全相同 | 77 / 227 |
+| 字节一致文件数 | 两边同路径 `.cs` 内容完全相同 | 78 / 227 |
 | 扫描零错误文件数 | 单独替换进 Launcher 后能编译通过的文件 | 38 / 约 190 |
 
 字节一致是主指标。它是「逻辑同源」最硬的证据，也让后续改动可以直接对照客户端。
@@ -176,7 +176,7 @@ for dp,_,fs in os.walk('Launcher'):
 
 | 项 | 值 |
 |---|---|
-| 字节一致 | 77 / 227 |
+| 字节一致 | 78 / 227 |
 | 扫描零错误 | 78（最近一次全量扫描；每采纳一批会下降，重扫即更新） |
 | 扫描单错 | 15 |
 | 客户端配置目录类总数 / Launcher 缺失 | 405 / 206 |
@@ -306,6 +306,8 @@ for dp,_,fs in os.walk('Launcher'):
 
 | 轮次 | 提交 | 字节一致 | 收益 |
 |---|---|---:|---|
+| 59 | `605eb36` | 78 | `War3Pathing`（wpm 解码 + `PathingOverlay` + `PathingTextureBits`） |
+| 58 | `e5cea01` | 77 | 无收益（寻路可行性调查：不能当切片做） |
 | 57 | `e860b4e` | 77 | 无收益（荒芜要真 `Terrain`；`COrder` 依赖 `OpenWC3.Pathing`） |
 | 56 | `80c8b18` | 77 | 无一致收益（镜像探针要 `objects`，环境里为 null） |
 | 55 | `eac4677` | 77 | 事件系统 5 文件 + 物品幻象 |
@@ -383,6 +385,8 @@ for dp,_,fs in os.walk('Launcher'):
 `COrder` 的形状是「薄数据 + 多态」，订单本身不做事，行为挂在能力上，订单与代理之间靠 `+0x38` 的链表头关联。那个链表头就是 `NativeListHead`，属于 `NativeMirror/Unit`。所以补三个符号只是把依赖往后推一层。
 
 **判断**：要么整体移植 `NativeMirror`（Orders + Unit），要么放弃这批文件。没有中间路径。
+
+**地形同样收尾在原生镜像**：`TerrainGrid.cs`（1004 行）前 940 行能直接用，尾部 60 行要 `StandalonePathing.Core.NativeWpmGrid`、`Unit.NativePathingQueryMask`、`Footprint`。所以地形也不是纯数据模块，它的查询路径挂在原生网格上。第 59 轮只落地了它前面的 `War3Pathing.cs`。
 
 **对剩余 15 个单错的影响**：`Weapon`、`War3Pathing`、`COrder` 全家、`CargoTransport` 全部挂在这条链上，占三分之一。其余三个子系统（地形、指令队列、配置模型）与寻路无直接耦合，但指令队列的执行体依赖 `COrder`。
 
