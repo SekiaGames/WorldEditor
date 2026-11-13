@@ -665,6 +665,20 @@ if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
 
 本轮回退，保持 54。
 
+### 第三十五轮（`4b1e0ba`、`991195c`）
+
+同路径一致 **54 → 57**。
+
+| 落地 | 说明 |
+|---|---|
+| `AbilityLineMissileEffect`（68 行） | 线型导弹，无外部依赖，直接照搬 |
+| `RuntimeCarrionSwarmAbility` | 腐尸群 |
+| `RuntimeDefendAbility` | 防御姿态，补 `Unit.AnimationRequestVersion` |
+
+**这轮把上一轮的发现用上了**：探针原来默认「施放即生效」，而客户端技能大量走异步导弹。腐尸群改成推进 30 帧再数命中，一次就过。这条以后会反复用到——**凡是有飞行物的技能，探针必须先推进**。
+
+回退三个：荒芜（`World.Terrain` 在 A 侧是空壳）、沉默（`Src/Skills/Silence.cs` 是客户端的简化测试替身，直接给只读属性赋值）、集合点（A 侧是静态工具类，与客户端实例类不同形）。
+
 ---
 
 ## 1. 六个杠杆
