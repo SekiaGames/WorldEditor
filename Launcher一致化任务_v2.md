@@ -128,15 +128,17 @@ public class War3TypeData : IRuntimeObjectData
 
 ```
 Launcher（Godot 4.7.2 / net8.0）
-├── Client/    客户端模拟、数据与生成表，禁止 using Godot
-│      L1_Adapter/Formats      地图段解析、txt 解析、物编覆盖
-│      L2_Core                 配置模型
-│      L3_Simulation           World / Unit / Ability / Buff / Order / Pathing / JASS
-│      Src/                    Core Abilities Components Skills Units Orders Items Events
-│      Data/Generated/         由 --data-codegen 生成的 C# 表（并非客户端源码）
-├── Bridge/    客户端状态 → 视图快照；输入 → 命令；坐标与资源路径换算
-├── View/      Godot 表现层（Terrain / Doodads / Units / Effects / Fog / Camera / Hud / Audio）
-└── Platform/  入口、pck 挂载、启动参数
+├── GameCore/L1_Adapter    地图段解析、slk/txt 解析、物编覆盖
+│         /L2_Core         配置模型与 FDF 解析
+│         /L3_Simulation   World / Unit / Ability / Buff / Order / Pathing
+│         /L4_Composition  Godot 表现层与场景
+├── Src/                    Core Abilities Components Skills Units Orders Items Events UI
+├── Platform/Godot/         入口、pck 挂载、启动参数、资源查找
+└── Generated/              由 Extract 生成的配置源码，随仓库分发
+        Tables/   63 张 slk
+        Texts/    159 个 txt
+        Fdf/      86 个界面定义
+        Lighting/ 6 组昼夜曲线
 ```
 
 依赖方向：`View → Bridge → Client`。合一个程序集之后，这两条不能再靠工程引用强制，改由两条规矩守：`Client/` 里不写 `using Godot`，视图层不直接摸模拟类型。审查靠 `tools/check-layers.sh` 扫一遍，扫到就报。
@@ -296,6 +298,8 @@ Launcher/Generated/
     TextTables.g.cs       159 条名称映射
     Texts/                159 个 .g.cs
 ```
+
+`Generated/` 入库：这四个目录就是配置的唯一形态，随仓库分发，构建时和普通源码一样参与编译。`extract.command` 重跑会覆盖它们，diff 能看出数据有没有变。
 
 单表文件：
 
