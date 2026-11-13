@@ -171,13 +171,17 @@ Launcher 的 `AiDifficulty` 0..2 映射：普通 1；疯狂 2；彻底疯狂 2 �
 | 7 | 条内：`Loading-BarBackground` 平铺、`Loading-BarFill` 按进度平铺、`Textures\Loading-BarGlass` 0.72、`Loading-BarBorder` 描边；两端按高度 0.5/0.2 内缩 |
 | 8 | 标题/副标题/正文 26/20/16，从 1.0 按 0.05 缩到总高 ≤ 480；宽 460 折行；右缘 `W-32`，从 `LoadingBar.Y-80-总高` 起（夹在 80..365） |
 | 9 | 阶段文字写进 `LoadingBarText`，18 号，超长逐级降到 10，居中于进度条 |
-| 10 | `MinimapImage` 里放地图缩略图 `war3mapMap.blp` |
+| 10 | `LoadingMeleePanel` 整体隐藏，`MinimapImage` 与槽位文字因此都不显示 |
 
 **背景几何**：`Load-Multiplayer-*.mdx` 是 4 个面，但不是四个等分象限。按顶点坐标归一化后是 2 列 × 2 行不等高：上带 `y 0.2..0.6` 占 2/3 屏高（两张 512×512），下带 `y 0..0.2` 占 1/3（两张 512×256）。四张贴图在设计单位下正好 1:1。Launcher 直绘这四张贴图，不用模型。
+
+左中那个带框的空白不是缺缩略图，是 `Loading-TopLeft.png` 画面里自带的取景框。缩略图挂在 `MinimapImage` 下，而它属于 `LoadingMeleePanel`，客户端把它 `Visible=false` 了。
 
 **进度条平铺**：客户端不是按纹理像素 1:1 重复，而是以条高为段宽切段，每段铺满整张贴图（u 0..1）。所以 `Loading-BarBackground`（32×32）在 560 宽的槽里重复 12 段多，不是 17 段。
 
 **字号**：FDF 的 `FontHeight` 就是 em 尺寸，客户端直接 `fontSize * ScaleY` 做光栅字号，行高按 `fontSize * 1.25`。Launcher 不按字体的 ascent+descent 回缩，中英文用同一套尺寸。
+
+**文本基线**：客户端把文字贴图铺在矩形左上角；Godot 的 `DrawString` 以**基线**定位，直接传矩形顶边会让整行上浮一个字高（37 号字上浮约 47 px）。所有 FDF 文本统一在 y 上加 `GetAscent`。
 
 **调试**：两侧都读 `OPENWC3_LOADING_DEBUG`，设为 `1` 时每次布局变化输出一段 `[loading-layout]`，设为 `2` 每帧输出。同一份日志逐行 diff 即可定位到具体元件：
 
@@ -195,7 +199,7 @@ Launcher 的 `AiDifficulty` 0..2 映射：普通 1；疯狂 2；彻底疯狂 2 �
 
 `px` 是实际光栅字号，`w` 是首行宽度（设计单位），`h` 是含 8 单位内边距的整块高度。三者任一不同都说明字体或折行有偏差。
 
-**未接**：加载阶段的 `Report(progress, stage)`，目前进度按时间推进、阶段文字固定；地图缩略图读到了字节但 Godot 的 JPEG 解码器不支持这种 4 分量 BLP1，帧内暂时留空。
+**未接**：加载阶段的 `Report(progress, stage)`，目前进度按时间推进、阶段文字固定。
 
 ## 6 游戏内界面
 
