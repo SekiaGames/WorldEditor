@@ -697,6 +697,28 @@ if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
 
 最后一类值得注意：`RuntimeIllusionModifierBuff` 不是独立文件，它和 `RuntimeItemIllusionAbility` 在同一个 `.cs` 里。所以「缺一个类型」实际是「缺一整个文件」，而这些文件又各自带着未解决的依赖。
 
+### 第三十七轮（无提交）
+
+试了「类型形状不同」那一档，三个都不是便宜货：
+
+| 文件 | 真实情况 |
+|---|---|
+| `ChainLightning` | `LastChain` 是 A 自己代码在用（`Lightning.cs`、`Cheats.cs`、探针），换成客户端实现会打断这些调用点 |
+| `Weapon` | 缺 `StandalonePathing.Combat`，那是 `NativeMirror/Combat/` 整个目录 |
+| `RallyPointDisplay` | A 版 124 行静态工具类，客户端 86 行实例类，形态不同 |
+
+掘尸也一样：它的补货逻辑要 `RuntimeMeatCargoAbility`，而 A 侧对应类叫 `RuntimeMeatLoadAbility`——**两边对同一个概念用了不同类名**，`OfType<T>` 找不到就静默返回。
+
+**类名对照（客户端配置目录）**
+
+```
+类总数 405，A 侧完全不存在 206
+```
+
+这 206 个类分布在约 150 个文件里，是剩余工作的真实规模。它们不是「缺成员」，是「能力没搬」。按抽样看，每 3 到 5 个类共享一套依赖（一根 Buff 链、一个特效类、一套指令），对应前面列的八处子系统。
+
+**结论**：继续按文件逐个试的收益已经接近零。剩下的是约 150 个文件的整块迁移，按子系统切更合理。
+
 ---
 
 ## 1. 六个杠杆
