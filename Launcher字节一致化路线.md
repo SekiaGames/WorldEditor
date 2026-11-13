@@ -636,6 +636,18 @@ age = world.Tick * World.TickSeconds - _start;
 
 四条都不是同一个原因，各自要查一处。
 
+### 第三十三轮（`3be1da6`）
+
+隐身落地（同路径一致 53 → 54）。
+
+客户端隐身能力只挂 `DisableAutoAttack`（不自动索敌），**没有自带出手钩子**。WC3 的规则是「攻击即破隐」，A 侧原本由自己的隐身 Buff 处理，换成客户端实现后就没人做了。补在出手路径上：
+
+```csharp
+if (attacker.State.Invisible) attacker.State.RemoveAll(StateMod.Invisible);
+```
+
+**醉拳卡在导弹管线**：采纳后 `Verify` 显示受害者速度没变、未命中率 0——Buff 根本没挂上。客户端的醉酒云雾不是即刻生效，而是发一枚 `AbilityMissileEffect`，命中回调里才 `shot.Apply(...)`。A 的 `TickAbilityMissiles` 和客户端的 `AbilityMissileEffect` 是两套推进方式，命中回调不触发。这是下一个要处理的子系统。
+
 ---
 
 ## 1. 六个杠杆
