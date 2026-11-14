@@ -59,6 +59,13 @@
 - **表现差异**：远处的技能粒子/环境粒子在浓雾图里保持原色，和地形、模型、丝带的雾感不一致。
 - **要做**：`war3_particle.gdshader` 引入 `atmosphere.gdshaderinc`，片元里按视深调 `war3_apply_fog`。
 
+> **执行结论（Launcher7，待合并）**：已修复。查 pck 内实际资源确认两处都缺：`war3_particle.gdshader` 没有雾项，导出的粒子材质也没有 `fog_color/fog_params`（读出来是 `<null>`）；`SceneLightRig.Apply` 只遍历 `MeshInstance3D`，粒子挂在 `GPUParticles3D.MaterialOverride` 上，从未写过雾参数。
+> - Extract：`war3_particle.gdshader` 引入 `atmosphere.gdshaderinc`，片元改为 `ALBEDO = war3_apply_fog(rgb, -VERTEX.z)`，与丝带/天气同一套公式。
+> - Launcher7：`SceneLightRig.Apply` 补遍历 `GPUParticles3D`，把 `SceneFog.Write` 写进粒子材质，和地形、模型、丝带共用同一份雾参数。
+> - `extract.pck` 已按只重打包方式更新（先导出到临时 `.pck` 校验再替换），新包里 `war3_particle.gdshader` 已包含 `atmosphere` 与 `war3_apply_fog`。
+> - 验证：headless 加载 `(4)Turtle Rock` 时粒子材质雾参数从 `<null>` 变为已写入值；opengl3 实际渲染无 shader 编译错误，画面正常。两张样例图 `useTerrainFog=0`，最终雾效观感需要带距离雾的地图复核。
+> - 复核方式：用 Godot 启动本工作区的 Launcher7，进入带距离雾的地图，对比远处技能粒子/环境粒子与地形、模型、丝带的雾感。
+
 ### 18. 飞弹模型几乎不可见（V1 #63）
 
 - **客户端**：弹道用 `CharacterRenderer` 画模型，箭、火球、投石在游戏里都看得很清楚。
