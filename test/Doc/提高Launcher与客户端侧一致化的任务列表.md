@@ -49,20 +49,6 @@
 
 > 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
 
-### 7. 天空穹顶被当普通模型着色，吃大气雾还吃战争迷雾
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/SkyboxRenderer.cs:102-116` 天空壳与日月用 `FogSettings.None` 绘制，`applyFogOfWar:false`，不写深度。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/SkyDomeRenderer.cs:66` 直接 `War3FogConfig.Current.ApplyTo(model)`；通用模型片元 `Extract/assets/shaders/war3_model_opaque.gdshader:19-22` 里有 `war3_apply_fog` 与 `war3_fog_of_war_mix`，而天空的世界坐标固定在原点（`SkyBackground.cs:101`）。
-- **玩家可见**：开了地形雾的地图，天空被染成地面雾色；天空亮度由地图原点那一格的探索状态决定，该格未探索时整片天空发黑，走过一次又突然变亮。
-- **要做**：天空单独一个不吃 fog/fow 的模型 shader。
-
-> **执行结论（Launcher7，待合并）**：已修复。`SkyDomeRenderer.Load` 会给天空模型调 `War3FogConfig.ApplyTo`，而通用模型片元同时调用 `war3_apply_fog` 与 `war3_fog_of_war_mix`；天空世界坐标固定在原点，所以地面雾和原点格的探索状态都会染到天空。
-> - Extract：把 `atmosphere.gdshaderinc` / `fog_of_war.gdshaderinc` 从公共 `war3_model.gdshaderinc` 移到四个 `war3_model_*` 变体；新增 `war3_sky_opaque.gdshader` 与 `war3_sky_add.gdshader`，只做采样/着色，不声明也不应用 fog/fow。
-> - Launcher7：`SkyDomeRenderer` 不再对天空调 `ApplyTo`；实例化后复制每个天空材质并换成对应混合模式的 sky shader（opaque → `war3_sky_opaque`，add → `war3_sky_add`），原材质的贴图与参数保留。穹顶和日月走同一套。
-> - `extract.pck` 已重建并替换（临时 `.pck` 校验后原子替换）。
-> - 验证：新 pck 内 sky shader 无 fog/fow 调用；运行期材质替换为 `war3_model_opaque → war3_sky_opaque` 且 `base_texture` 保留；离屏渲染同时施加红色线性雾与全黑战争迷雾，天空像素保持贴图色 `(0.886,0.937,1.0)`，模型像素为 `(0,0,0)`（雾与战争迷雾生效）；opengl3 进图无 shader 编译错误，headless 加载无异常。
-> - 复核方式：用带地形雾的地图进图，天空保持天空贴图色，不再随地面雾变暗，也不随地图原点格探索状态从黑变亮。
-
 ### 9. 水面写深度，水面之后的半透明物体被裁掉
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WaterRenderer.cs:66-70` 深度测试开、深度写关，`SrcAlpha/OneMinusSrcAlpha` 混合。
