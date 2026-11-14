@@ -56,24 +56,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）已落地并合并到 Launcher，编号不复用。
-
-### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
-
-- **客户端**：`MinimapUnitView.Classify` 认金矿、缠绕金矿、闹鬼金矿、中立建筑、圈地、物品、野怪营地、出生点（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/MinimapUnitView.cs:58`）；野怪营地还有 `MinimapCampTracker`（按迷雾和等级画两种图标，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:1338`）；`MinimapFilter` 和 `Alt+G/T/A` 都接到真实状态；腐地用 `MinimapBlightTexture` 缓存（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MinimapBlightTexture.cs:10`）。
-- **Launcher**：`Classify` 只认 4 个金矿 id（`Launcher/GameCore/L4_Composition/Game/UI/MinimapUnitView.cs:43-54`），`SimulationId` 恒为 0，`ColorIndex = unit.Player`；`_minimapIcons` 声明后从未 `Add`（`Scenes/War3GameScene/Ui.cs:199`、`Lifecycle.cs:520-521`），`DrawMinimapCamp` 直接 `return false`（`GodotUiRenderDevice.cs:157`）。`HandleAltShortcut` 没有调用者（`MinimapFrame.cs:190`），`MinimapFilter` 只赋值没人读（`Ui.cs:203`）；阵型按钮只改自己的开合状态，不改变移动阵型。腐地已经改用 `MinimapBlightTexture` 缓存（`Ui.cs:186-242`），这部分已修复。
-- **表现差异**：小地图没有野怪营地图标（野怪只按单位点显示）、没有物品和出生点图标，中立建筑只按玩家色画方块而没有中立图标；Alt+G/T/A 没反应；因为没有营地图标，野怪过滤没有实际对象；阵型按钮不改变移动阵型。
-- **要做**：补全 `Classify` 与营地图标；把 `HandleAltShortcut` 接到输入、把阵型开关接到移动阵型；配色/野怪按钮现有的颜色与显隐逻辑保留；腐地保持现状。
-
-> **复核评价**：「只认 4 个金矿 id」与代码不符：`MinimapUnitView.cs:43-54` 现在是 3 个金矿（`ugol`/`egol`/`ngol`）加 3 个圈地（`ncop`/`ncp2`/`ncp3`），圈地图标已经在用。补 `Classify` 的时候别把圈地这几个分支一起重写成新表。
-
-> **执行结论（Launcher6，待合并）**：已修复。
-> - Classify：金矿改用资源技能族 `Agld/Abgm/Aegm`（同客户端 `GoldMineIdentity`），闹鬼/缠绕只对拥有者显示；补 `UnitUI.nbmmIcon`（中立建筑图标）与 `hideHeroMinimap`（英雄降级为普通点）；圈地分支与配色/野怪按钮逻辑未动。
-> - 野怪营地：补 `MinimapCampTracker`（按 `Home` 600 半径归组、等级求和、按迷雾与已清营地记忆过滤），`_minimapIcons` 现在真正填充；`DrawMinimapCamp` 仍返回 false，由 `MinimapFrame` 既有回退画 CreepLoc 贴图。同时修正 war3skins 里 CreepLoc 路径多出来的 `MinimapIcon/` 目录（导出资源实际在 `UI/MiniMap/` 下），否则贴图解析为空。
-> - 快捷键：`War3InputComponent` 在命令卡热键之前接 Alt+G 信号 / Alt+T 地形 / Alt+A 配色，Alt+F 切阵型。
-> - 阵型：新增场景 `FormationMovementEnabled`（默认开），小地图阵型按钮经 `FilterChanged` 写入；`PlayerCommandProcessor` 的 Move/AttackMove/Patrol 在关闭时不再套 `GroupFormation.Layout`、不再限速与组路径。
-> - 物品/出生点：客户端 `MinimapUnitView.Classify` 实际没有 Item/StartLocation 分支，这两类只是贴图/配色枚举，由 JASS 自定义图标注入；Launcher 不跑 JASS，按客户端口径不生成。
-> - 验证：`dotnet build` 0 错误；Turtle Rock 运行日志出现「营地图标 19」；在 `extract.pck` 内校验修正后的 CreepLoc PNG 路径存在、旧路径不存在。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）已落地并合并到 Launcher，编号不复用。
 
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
@@ -114,6 +97,13 @@
 - **表现差异**：玩家看不到差别，但任何按客户端路径找坡面姿态的改动都会落空，后续场景层改动容易漏改这份独立实现。
 - **要做**：搬回 `War3GameScene` 的 partial（可放 `Scenes/War3GameScene/Presentation.cs` 同目录新 partial），调用点经场景转调；如果拿场景引用不方便，至少放到 `Scenes/War3GameScene/` 下并在类名上体现归属。
 
+> **执行结论（Launcher1，待合并）**：
+> - 方法已搬进客户端同路径的 `GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs`，作为 `War3GameScene` 的 `internal static ComputeUnitTerrainTilt`，与客户端 `Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489` 的归属一致。
+> - 唯一调用点 `UnitSceneComponent.SyncPlacement` 改为 `War3GameScene.ComputeUnitTerrainTilt(...)`；方法为静态，不需要场景实例。独立文件 `Game/Rendering/UnitTerrainTilt.cs` 已删除。
+> - 方法体逐字保留原来的采样与夹取逻辑（Launcher 世界 X/Z 的前后/左右方向映射属于平台坐标差异，未改）。`git diff` 可见只有归属与调用名变化，没有算法改动。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；headless `--play="(4)Turtle Rock.gmap" --no-ai --no-music` 正常到 `[HUD] 界面已接管`，无新增异常。
+> - 合并注意：只改 `Launcher1`，不涉及 `Extract`/`extract.pck`，不影响画面数值。
+
 ### 32. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾（V1 #58）
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/FogOfWarUniforms.cs` 只管战争迷雾的 `Texture/Uvp/Enabled` 加 `Publish/Reset/Upload`；大气雾由各渲染器按 `FogSettings` 自己传 `uFogColor/uFogParams`。
@@ -125,11 +115,10 @@
 
 ---
 
-## 核对结果（V1 剩余 6 条）
+## 核对结果（V1 剩余 5 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
