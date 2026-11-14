@@ -77,7 +77,15 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹道用过，所以狮鹫、双足飞龙、冰龙全都贴地；没有俯仰横滚；朝向在 20Hz 仿真步里直接写 `Root.Rotation`，角速度上限还是 14 rad/s（客户端 20）；完全没有 look-at。
 
-要做：飞行高度、坡面姿态、朝向插值、look-at 四件，先做飞行高度。
+要做：坡面姿态、朝向插值、look-at 三件（飞行高度已完成）。
+
+**已完成**（2026-11-14，飞行高度）：
+
+1. `UnitType` 补 `FlyHeight = UnitData.moveHeight`、`MoveFloor = max(0, moveFloor)`，此前 Launcher 把飞行高度写死成 `Flying ? 100 : 0`。
+2. `Unit.FlyHeight` 改成可写字段，未赋值时回落到类型的 `FlyHeight`，这样 `Type` 为空/后设的召唤、幻象、变形路径都不用单独初始化。
+3. 模型摆位统一收到 `UnitSceneComponent.SyncPlacement`：`y = 地面高 + RenderFlyHeight`，建筑再 +12 防 z-fighting，飞行单位按 `moveFloor` 兜底取大；每帧在 `_Process` 里跟着 `unit.Position` 走。
+4. `RenderFlyHeight` 按客户端 `UpdateRenderFlyHeight` 的方式平滑逼近 `unit.FlyHeight`（速度 = 本次变化量 / 仿真步长），起飞/落地不会瞬移。
+5. 影子与选中圈仍读 `unit.Position`（地面），飞行单位不会把影子带上天；血条读 `Root.GlobalPosition`，跟着模型升空。
 
 ## 18. 战斗动作：攻击只播一次，攻速不影响动作
 
@@ -190,40 +198,6 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 ---
 
 ## 九、加载流程
-
-## 32. 加载屏少了缩略图和背景模型，节奏也不一样
-
-客户端加载屏由宿主持有，`Report` 里直接画一帧再 SwapBuffers，`using` 完就释放，时长等于真实加载时长；`MinimapImage` 里塞的是地图缩略图，背景优先用 w3i 的 `LoadingScreenModel` 或 `UI\WorldEditData.txt` 的 `[LoadingScreens]`，FDF 绑失败还有一条直绘回退。
-
-Launcher 的加载屏是场景里的一个 `Control`（这一层是平台差异，不用动），`Report` 只 `QueueRedraw`；但另外硬加了「至少显示 1.2 秒 + 稳定 3 帧 + 0.5 秒淡出」。缩略图完全没有，背景是按 skin 里模型路径取目录硬拼四张 `Loading-*.png`；`BuildFrameTree` 在 `_loading == null` 时直接 return，但 `LayoutTexts` 照样解引用，FDF 绑不出来会空引用。
-
-要做：缩略图接上（选图页解码一次就能复用），背景模型按 w3i / LoadingScreens 表来，1.2 秒那条规则去掉或改成「不早于真实加载完成」，补回 FDF 失败时的直绘路径。
-
-## 33. 加载阶段表和建世界的顺序都变了
-
-客户端阶段是枚举驱动的（`Begin → Terrain → Textures → TerrainPresentation → SceneResources → WorldConfiguration → PlacedUnits → MapAot → MapScript → PresentationPreload → Pathing → Selection → Behaviours`），打点 .10/.22/.34/.45/.56/.66/.73/.76/.86/.93/.98。
-
-Launcher 是 `SetupSteps` 里手写 async 顺序，打点 .10/.22/.34/.45/.66/.80/.90/.98：少了 .56、.73、.76 三格；「构建寻路与碰撞网格」从 .93 提前到 .80，跑在预热之前；单位在 .45 就生成，那时 `_world` 还是 null，落点只能退回纯地形高度。
-
-要做：阶段名和打点对齐；World 先于单位；脚本那两格虽然不跑 JASS，也要留位置。
-
-## 34. 加载出错时，一边中止一边带病进门
-
-客户端只对 `SceneResources..Selection` 区间吞异常并跳到 `Behaviours`，其余阶段直接抛；`Scene.ContinueLoad` 会先 `Dispose` 再抛，最终由 `AppDomain.UnhandledException` 写 `CrashLog`。
-
-Launcher 的 `RunSetupAsync` 捕所有异常，只 `GD.PushError`，然后照样 `Finish()` 并发 `Loaded`。
-
-要做：区分「可跳过」和「必须中止」，中止时给玩家一个明确提示。
-
-## 35. 进图不预载，第一次出现都卡一下
-
-客户端的 loading 阶段会预载：地图现有单位、参战玩家的建造/训练/升级树、写死的 timer 兵线和野怪、每个单位的挂件模型、头像、所有武器弹道、技能的 Caster/Target/Special/Effect/Area 艺术、Buff 视觉模型，并由 `PresentationResourceRegistry` 统一释放。
-
-Launcher 在 `.90 预热单位与界面资源` 之后没有预载循环，`Assets.LoadScene` 直接 `ResourceLoader.Load`。
-
-要做：把客户端的预载名单搬过来，至少覆盖「本局会出的兵」和「本局技能表」。
-
----
 
 ## 十、界面
 
@@ -348,7 +322,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 15 | 2 | 三块已完成，等合并后删 |
 | 16 | 2 | 已完成，等合并后删 |
-| 17 | 2 | 保留：贴地、姿态、朝向 |
+| 17 | 2 | 保留：姿态、朝向、look-at |
 | 18 | 2 | 保留：动画优先级 |
 | 19 | 2 | 保留：死亡/升级/金矿 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
@@ -362,10 +336,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 28 | 1、3 | 保留：两套子组、点头像清队 |
 | 29 | 1 | 保留：右键分支 |
 | 30 | 1、3 | 保留：拖拽、拾取、地面物品详情 |
-| 32 | 1、2 | 保留：缩略图、时长、回退 |
-| 33 | 1 | 保留：阶段表与建世界顺序 |
-| 34 | 1 | 保留：出错处理 |
-| 35 | 1 | 保留：预载阶段缺失 |
 | 36 | 1、2、5 | 保留：选图页壳与内容 |
 | 37 | 2、3 | 保留：命令卡结构 |
 | 38 | 2、3 | 保留：槽位、热键、可用性 |
@@ -401,8 +371,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 底层那一批里，**第 2、3、10** 是「一改就能并排看出差别」的，建议先啃这三个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
 单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 22 的闪电和弹道最容易被玩家看出来。
-
-加载流程（**32–35**）要动 `LauncherApp` 和加载编排，和渲染改动冲突小，适合在不方便跑图的时候做。
 
 结构清理（**46**）什么时候做都行，但每接一条新功能之前先看一眼 46，能省一次找错文件。
 
