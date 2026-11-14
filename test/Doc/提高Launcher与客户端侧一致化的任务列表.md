@@ -67,6 +67,14 @@
 
 > **复核评价**：「只认 4 个金矿 id」与代码不符：`MinimapUnitView.cs:43-54` 现在是 3 个金矿（`ugol`/`egol`/`ngol`）加 3 个圈地（`ncop`/`ncp2`/`ncp3`），圈地图标已经在用。补 `Classify` 的时候别把圈地这几个分支一起重写成新表。
 
+> **执行结论（Launcher6，待合并）**：已修复。
+> - Classify：金矿改用资源技能族 `Agld/Abgm/Aegm`（同客户端 `GoldMineIdentity`），闹鬼/缠绕只对拥有者显示；补 `UnitUI.nbmmIcon`（中立建筑图标）与 `hideHeroMinimap`（英雄降级为普通点）；圈地分支与配色/野怪按钮逻辑未动。
+> - 野怪营地：补 `MinimapCampTracker`（按 `Home` 600 半径归组、等级求和、按迷雾与已清营地记忆过滤），`_minimapIcons` 现在真正填充；`DrawMinimapCamp` 仍返回 false，由 `MinimapFrame` 既有回退画 CreepLoc 贴图。同时修正 war3skins 里 CreepLoc 路径多出来的 `MinimapIcon/` 目录（导出资源实际在 `UI/MiniMap/` 下），否则贴图解析为空。
+> - 快捷键：`War3InputComponent` 在命令卡热键之前接 Alt+G 信号 / Alt+T 地形 / Alt+A 配色，Alt+F 切阵型。
+> - 阵型：新增场景 `FormationMovementEnabled`（默认开），小地图阵型按钮经 `FilterChanged` 写入；`PlayerCommandProcessor` 的 Move/AttackMove/Patrol 在关闭时不再套 `GroupFormation.Layout`、不再限速与组路径。
+> - 物品/出生点：客户端 `MinimapUnitView.Classify` 实际没有 Item/StartLocation 分支，这两类只是贴图/配色枚举，由 JASS 自定义图标注入；Launcher 不跑 JASS，按客户端口径不生成。
+> - 验证：`dotnet build` 0 错误；Turtle Rock 运行日志出现「营地图标 19」；在 `extract.pck` 内校验修正后的 CreepLoc PNG 路径存在、旧路径不存在。
+
 ### 27. 单位信息面板没有 Buff 图标栏
 
 - **客户端**：`UnitInfoPanelFrame` 有 8 个 `BuffIcon0..7`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:41-43`、`:126-128`），`UpdateBuffIcons` 按选中单位的 Buff 填图标、剩余时间和光环/增益标记（`:534-573`），悬停显示 `Bufftip/BuffUbertip`。
