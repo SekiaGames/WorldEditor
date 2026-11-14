@@ -1,110 +1,423 @@
-# 提高 Launcher 与客户端侧一致化的任务列表 V2
+# 提高 Launcher 与客户端侧一致化的任务列表 V3
 
-这份清单只记真正会造成流程、画面或行为差异的地方。判定标准沿用 AGENTS.md：
+判定标准沿用 AGENTS.md：做同一件事流程不同、看到的效果不同、客户端有实现而 Launcher 另写一套、能共用没共用、C# 文件的路径/文件名/类名对不上。
 
-1. 客户端和 Launcher 做同一件事，但执行流程不一样。
-2. 客户端和 Launcher 看到的效果不一样，尤其是动画、特效、加载和镜头。
-3. 客户端已经有现成实现，Launcher 却另写了一套，导致后续很难保持同步。
-4. Launcher 可以共用代码的情况下没有共用。
-5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
-
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..36，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **37** 起，做完一条删一条，序号不复用。
+**按模块分组，模块从底层到表层，模块内也从上往下做。** 每条都写三件事：客户端在哪、Launcher 在哪、玩家看到什么。编号 1..45 是阅读顺序，做完一条删一条，序号不复用。
 
 ## 范围
 
-- 起点是地图选择界面。客户端首屏（公告页、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表不在本轮范围内，Launcher 固定从 `test/map_gmap` 读地图。
-- Launcher 不跑 JASS 与触发器，只有脚本能触发的效果不进清单。
-- 默认环境：macOS，`RunLauncher.command` 启动；地图用 `(4)Turtle Rock.gmap`、`(2)BootyBay.gmap`。
+- 起点是地图选择界面；客户端首屏（公告、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表不在范围内。
+- Launcher 不跑 JASS 与触发器，脚本才能触发的表现不进清单。
+- 默认环境 macOS，`RunLauncher.command` 启动，地图 `(4)Turtle Rock.gmap`、`(2)BootyBay.gmap`。
 
 ---
 
-## 模块一：数据、资源与导出
+## 模块一 数据与配置
 
-> L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
-> 任务 1（V1 #51）、任务 2（V1 #53）、任务 3（V1 #49）、任务 4（V1 #50）已落地并合并到 Launcher，编号不复用。
+> 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
+### 1. w3i 里的「随机」种族不解析，随机座位被摆成 12 只羊
 
-## 模块二：地形与环境
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassRuntimeHost.cs:861-877` 在 config 之后、main 之前调 `RandomizeMeleePlayerAndAiRaces`，本地玩家用玩家所选，其余座位从 {human,orc,nightelf,undead} 里随机；随后 `ResolveStartingPlayerRaces` 把 `RANDOM=32 / USER_SELECTABLE=64` 落成真实种族（实现在 `Jass/JassGameNatives.Ai.cs:381-418`）。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:262-271` 只改写本地玩家的种族；`Launcher/GameCore/L3_Simulation/Simulation/Configuration/MeleeRules.cs:84-106` 的 `Plan` 对 race 5 走 `default`，落到 `:195-206 PlanUnknownRace`，刷 12 只 `nshe` 羊。
+- **玩家可见**：任何座位标「随机」的地图，该出生点只有 12 只羊，没有基地没有工人，AI 整局废掉。即使用户在选图界面选了种族，客户端会让每个 AI 的种族每局随机，Launcher 始终沿用 w3i 固定值。
+- **要做**：在 `ResolveActivePlayers` 之前做一次 race 5/32/64 → 1..4 的落定，本地玩家用所选、AI 用种子随机；`PlanUnknownRace` 只留给真正的未知种族。
 
-> 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
-> 任务 6（地形/悬崖动态光）、任务 7（装饰物死亡姿态）、任务 8（天气实例化）、任务 9（迷雾参数即时下发）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
+### 2. war3mapMisc.txt 没读，小地图与迷雾的颜色、营地阈值全是默认值
 
-## 模块三：单位、技能与物品
-
-> 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）、任务 15（地面物品影子/光圈/离场）、任务 33（烈焰风暴/云雾/季风/哨兵/火山美术循环）已落地并合并到 Launcher，编号不复用。
-
-## 模块四：特效与声音
-
-> MDX 粒子、丝带、弹道与音乐、事件音。
-> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）、任务 18（飞弹材质与丝带）、任务 19（音乐/循环音/声部）、任务 20（城镇被攻击/英雄阵亡事件音）已落地并合并；音量设置仍随任务 21 的选项界面做，编号不复用。
-
-## 模块五：输入与镜头
-
-> 键鼠语义、Esc/菜单与快捷键。
-> 任务 21（Esc/F10/顶栏/选项设置）已落地并合并到 Launcher，编号不复用。
-
-## 模块六：界面
-
-> 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 29（超宽屏居中/UI 字号）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）、任务 35（命令卡结构化成本）已落地并合并到 Launcher，编号不复用。
-
-### 36. Esc 菜单与胜负面板固定 1600×900，超宽屏不居中（新增）
-
-- **客户端**：Esc 菜单走 FDF `EscMenuMainPanel`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs`，`War3FdfUi` 装载），和 HUD 一样使用 `War3UiViewport` 的居中 16:9 设计坐标；胜负结算也在同一套 UI 视口里。
-- **Launcher**：`EscMenuFrame` 与 `GameOverPanel` 是独立 `CanvasLayer + ColorRect`，遮罩 `Size = 1600×900`、面板坐标写死（`Launcher/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs:16-29`、`GameOverPanel.cs:17-29`）；HUD 已改 `War3UiViewport`，这两层没有跟着换算。
-- **表现差异**：2560×1080/3440×1440 下 Esc 菜单和胜负面板贴左或留黑边，和居中的 HUD 不一致。
-- **要做**：让两层使用 `War3UiViewport` 的设计坐标与 `PixelOffsetX/ActivePixelWidth`（或搬进 HUD 帧体系），面板按设计单位居中；不改客户端 FDF 外观。
-
-## 模块七：工程结构（横切）
-
-> 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
-> 任务 31（坡面姿态归属）、任务 32（战争迷雾/大气雾拆分）已落地并合并到 Launcher，编号不复用。
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:188-190` 用 `War3MiscData.Load(_uiSource)` 读地图自带的 `war3mapMisc.txt` 覆盖迷雾色、营地阈值、`BlightMask` 等。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:127` `new War3MiscData()`，全仓没有 `Load` 调用。
+- **玩家可见**：默认地图看不出差别；用自定义迷雾颜色或营地范围的地图，小地图与战场的迷雾色、野怪营地脉动范围都和客户端不同。
+- **要做**：HUD 初始化时从地图资源读 `war3mapMisc.txt`，读不到再用默认值。
 
 ---
 
-## 核对结果（V1 剩余 1 条）
+## 模块二 寻路与移动
 
-| V1 # | 状态 | 关键证据 |
-|---|---|---|
-| 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
+> 走位、碰撞、可达性。玩家感知最强的一层差异在这里。
 
-> **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
+### 3. 寻路用的是自研 32px 布尔网格，不是客户端的路径纹理系统
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Core/Pathing/` 整套（约 2.1MB）：`NativeMirror/` 下的路径纹理 footprint、接触解算、放置掩码、粗/细搜索与出口搜索，`CProximityMap` 逐格记录对象的占用与关系。
+- **Launcher**：`Launcher/Src/Core/Pathing/Search/PathGrid.cs` 340 行，一张 `CellWorld = 32f` 的布尔网格 + `FindPath`；`Launcher/Src/Core/NativeMathShim.cs` 自述是临时替身；全仓搜 `NativeMirror`、`TerrainGrid`、`PathingFlags`、`VisionLevel` 均为 0 命中。单位移动不写回网格，只有建筑放置与移除会 `AddBlocker/RemoveBlocker`（`Launcher/Src/World/World.UnitLookup.cs:90,97`）。
+- **玩家可见**：单位能否挤过建筑和树林之间的缝、绕建筑拐角的走法、被围住时能否蹭出去，都和客户端不同；窄口会出现「客户端能过、Launcher 判定不可达」，或者反向的卡位。
+- **要做**：按整体接入立项，两条路径系统没有可逐点对齐的公共语义，先接 footprint 与放置掩码，再替换搜索。
 
 ---
 
-## 已排除的候选（不写进清单）
+## 模块三 地形与环境
 
-| 内容 | 排除理由 |
-|---|---|
-| 任务/盟友面板、排行榜、多面板、脚本对话框、过场遮罩、秘籍面板 | 全部来自触发器/JASS 数据，Launcher 不跑 JASS |
-| 电影模式隐藏 HUD、`AnimationTimeScale` | 只由 JASS 触发，Launcher 永远不会遇到 |
-| 地形高度变形 `TerrainDeformCrater` | 只有脚本会调，等接 JASS 再一起做 |
-| Android 自动拾取指令、返回上一个选择、镜头锁定/遥杆 | 客户端安卓触控套件专属，Launcher 没有触控套件 |
-| 多人聊天频道、共享单位控制、联机大厅 | Launcher 固定单人+AI，不做多人 |
-| F4–F7 选英雄 | 单人最多 3 个英雄，永远用不到 |
-| 非英雄背包 / 物品合成 | 客户端 C# 没有对应实现，不在对齐范围 |
-| AI 的战术选择 | “仅对战”的已知取舍；Launcher 的 AI 不是客户端 melee AI 的移植对象 |
-| CAMS 模型自带镜头、UberSplat 建筑光晕 | 1.27 数据/客户端运行时没有可对齐的实现 |
+> 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
 
-> **复核评价**：这张表当「防重复立项的对照表」用是有价值的，但 AGENTS.md 规则 7 写的是「平台差异和『仅对战』的已知取舍不再列出」，「AI 的战术选择」这一行就是纯粹的仅对战取舍。要么在表头点明这是对照表而不是清单内容，要么把这一行去掉。
+### 4. 战争迷雾没有视线遮挡，也没有高度层
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Core/FogOfWar.cs:586-619` 用 `SelfOccludes/OccluderLevel/HeightLevel`（128 世界单位一级）做视线遮挡，`:514-583` 八分圆 parent 阴影传播；`War3GameScene/Lifecycle.cs` 的 TerrainGrid 把 w3e 的 `LayerHeight-2` 灌进视野高度面，树木与建筑按 `OcclusionHeight` 成为遮挡体。
+- **Launcher**：`Launcher/Src/Core/FogOfWar.cs:212-236` 的 `Stamp` 是纯 Bresenham 圆，`:107-133` 只按单位视野半径刷格子，没有高度面、没有遮挡体。
+- **玩家可见**：站在低地能直接看到悬崖上方和被崖体挡住的凹地；站在林边能透视整片森林（客户端树后保持灰雾）。高地视野优势消失，侦察回报区域比客户端大一圈。
+- **要做**：先补逐格视野高度与遮挡标记，再改 `Stamp` 为八分传播。
+
+### 5. 悬崖四个面用一个法线，烘焙的明暗写了但 shader 不读
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/CliffRenderer.cs:184-186` 崖体顶点法线取各自 geoset 法线；`CliffSurface.cs:35-40` 只对落在 128 网格边界上的顶点改用地形梯度；`Shaders/Cliff.frag.glsl:20-24` 采样 `uShadowMap` 后压暗。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/MapWorldBuilder.Cliffs.cs:173,192` 用四个地形角点法线求平均，把这一个法线写进所有崖体顶点；`:175` 其实算好了逐悬崖的烘焙明暗写进 `CUSTOM0.y`，`Extract/assets/shaders/cliff_map.gdshader:65-78` 只读 `CUSTOM0.x`，烘焙值是死数据，也没有 `shadow_map`。
+- **玩家可见**：悬崖四面墙亮度一致，朝光的墙和背光的墙看不出区别，崖体像纸片；有烘焙阴影或树影的区域，地面暗下去而崖壁依旧雪亮，交界出现亮边。
+- **要做**：顶点法线改回逐面，shader 读 `CUSTOM0.y` 当烘焙明暗，并把地形阴影图绑到悬崖材质。
+
+### 6. 悬崖邻接地表贴图：15 被硬映射成 1，ramp 优先级与变体上限表都缺
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/TerrainRenderState.cs:245-271` 分两趟（先 ramp 后 cliff），`:260` 遇到 `texture==15` 走 `FindCliffTexture` 的 5×5 邻域搜索（`:205-228`），变体由 `GetCliffVariation` 按每种 cliffCode 的最大值表取模。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/TerrainGridFactory.cs:329-346` 里 `if (num3 == 15) num3 -= 14;`，只查一趟、只按 `IsCliffTile` 判断；变体由 `CliffModelLibrary.cs:36-43` 从 variation 向下逐个回退取第一个存在的模型。
+- **玩家可见**：悬崖底部与顶部的土带刷成第 1 组悬崖的贴图，和崖体不同色（达拉然、外域的崖壁配洛丹伦土色）；同一 cliffCode 的多个变体会取到和客户端不同的一款，崖面花纹接缝断开。
+- **要做**：补 5×5 搜索与两趟顺序，变体改走每种 cliffCode 的最大值表。
+
+### 7. 天空穹顶被当普通模型着色，吃大气雾还吃战争迷雾
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/SkyboxRenderer.cs:102-116` 天空壳与日月用 `FogSettings.None` 绘制，`applyFogOfWar:false`，不写深度。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/SkyDomeRenderer.cs:66` 直接 `War3FogConfig.Current.ApplyTo(model)`；通用模型片元 `Extract/assets/shaders/war3_model_opaque.gdshader:19-22` 里有 `war3_apply_fog` 与 `war3_fog_of_war_mix`，而天空的世界坐标固定在原点（`SkyBackground.cs:101`）。
+- **玩家可见**：开了地形雾的地图，天空被染成地面雾色；天空亮度由地图原点那一格的探索状态决定，该格未探索时整片天空发黑，走过一次又突然变亮。
+- **要做**：天空单独一个不吃 fog/fow 的模型 shader。
+
+### 8. 天气贴图在两帧之间滑动，全局/区域格数还装反了
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Weather.vert.glsl:46-57` 先把区间内的 t 归一化再 `floor()` 取离散帧号；`Environment/WeatherRenderer.cs:58` 全局可见窗口 7 格，区域按 rect 切格。
+- **Launcher**：`Extract/assets/shaders/weather.gdshaderinc:31-37` 的 `weather_uv_at` 没有 `floor`，`mod(frame, grid.x)` 得到小数列号，UV 落在两帧之间被双线性插值；`Environment/WeatherRenderer.cs:10-11` 是全局 5 格、区域 7 格，和客户端相反。
+- **玩家可见**：雨雪贴图不是逐帧跳，而是整张图在两帧之间交叉淡化，雪花糊成一片、雨丝带重影；镜头拉远能看出雨的边界比客户端小约三成。
+- **要做**：`weather_uv_at` 里补 `floor`，两个格数常量对调。
+
+### 9. 水面写深度，水面之后的半透明物体被裁掉
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WaterRenderer.cs:66-70` 深度测试开、深度写关，`SrcAlpha/OneMinusSrcAlpha` 混合。
+- **Launcher**：`Extract/assets/shaders/water_map.gdshader:2` 是 `render_mode unshaded, blend_mix, depth_draw_always, cull_disabled, fog_disabled;`。
+- **玩家可见**：浅水区的单位阴影、选中圈、施法贴花会间歇性消失，换个视角又出现（Godot 透明排序不同）；水块之间也会互相遮挡出硬边。
+- **要做**：改 `depth_draw_never`，其余参数不动。
+
+### 10. 装饰物开局用地形光照，游戏时间走过 0.05 小时后整片跳亮
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Rendering.cs:431` 装饰物始终用 `unitLight` 绘制，和单位同一套光照。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:315` 加载时 `SceneLightRig.Apply(_worldRoot, Terrain, Terrain)`，两个参数都传地形；`Scenes/War3GameScene/Environment.cs:58-62` 只有 `|tod - hour| >= 0.05` 才重刷成 `Units`。
+- **玩家可见**：进图后树木比站在里面的步兵更亮或更冷；游戏时间走过约 0.05 小时，整片森林亮度突变一次。
+- **要做**：`Lifecycle.cs:315` 第二个参数改 `Units`。
+
+### 11. 地面阴影按均匀网格细分，斜坡上会陷进去或浮起来
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/ShadowRenderer.cs:195-242` 按 128 世界单位的整格切片，保持地形完整三角面（含 TL–BR 对角线），`DecalAlphaMask` 逐格剔除全透明块，纹理外扩 1 像素再用 shader 重映射 UV。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/UnitShadowRenderer.cs:139-170` 用 `side = clamp(ceil(max(spanX,spanZ)/128), 2, 8)` 做均匀 N×N 细分，逐格四边形只做 `heightAt()` 采样，没有 alpha 剔除；`Extract/assets/shaders/shadow_map.gdshader:20` 直接 `texel.a * COLOR.a`。
+- **玩家可见**：斜坡、坑洼、悬崖边缘上阴影局部陷进地面被切掉，或者浮在坡面折角；贴图边缘偶发 clamp 拖尾的硬边。
+- **要做**：Launcher 已有按 128 格切片的 `ShadowRenderer`，让 `UnitShadowRenderer` 复用它的网格与 alpha 剔除。
+
+---
+
+## 模块四 单位、技能与物品
+
+> 模拟层行为。这一层决定对局打得对不对。
+
+### 12. 自动索敌挂在调试开关后面，默认开局谁都不主动打
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Components/Ai.cs:48` 每个单位自带 `AutoAttack = true`，`Src/Units/Unit.Step.cs:69-77` 空闲即索敌并派 `COrderTarget`。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:416` `AutoAcquire = Aggression && (player <= 3 || player == 12)`，`Aggression` 只能由命令行 `--aggro` 打开（`Platform/Godot/App/LauncherApp.cs:556`，字段在 `Scenes/War3GameScene/Lifecycle.cs:87`）；索敌分支整段被 `if (unit.AutoAcquire)` 包住（`Src/World/World.cs:275`），受击反击同样要求它（`Src/World/World.WeaponSystem.cs:122`）。
+- **玩家可见**：不带 `--aggro` 启动，野怪站在营地被人贴着走过不打人，自己的部队在敌人旁边待命不还手，只有明确下令才动。
+- **要做**：`AutoAcquire` 改为常开，`--aggro` 保留为调试开关只影响 AI 波次。
+
+### 13. 只有中立野怪会喊人，玩家单位被集火时旁边部队不动
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Components/Health.DamageCallbacks.cs:31` 每次受击都调 `CallForHelp`，`Src/Components/Ai.cs:264-285` 按玩家类型取半径（玩家 600 / 电脑 900 / 野怪用 CreepCallForHelp），让附近空闲友军 `TryRespondToAlarm` 加入战斗。
+- **Launcher**：`Launcher/Src/World/World.Targeting.cs:149-159` 开头 `if (caller.Player != 12) return;`，且只在主动索敌成功那一刻调用一次，遍历时还要求 `other.Player != 12`。
+- **玩家可见**：一个步兵在基地外围被集火，旁边十个待命步兵纹丝不动；进攻时野怪营地也不会联动，只有「主动索敌成功」那一下会喊。
+- **要做**：去掉玩家判定，按玩家类型取半径，受击路径也接一次。
+
+### 14. 电脑不逃跑，工人被打反而原地还手
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Components/Ai.cs:172,183-198,252-258` 受击先 `TryComputerFleeFrom`（英雄低于 200 血或 1/3、普通单位低于 150 血反向跑 200 码）再 `TryFleeFrom`，工人被排除在自动反击之外只逃跑（`Src/Orders/InjuryFleeOrder.cs`）。
+- **Launcher**：无对应实现（全仓 `flee` 只出现在生成的数据列里），最接近的是 `Src/World/World.Targeting.cs:140-147 EngageTarget`，纯锁定开打。
+- **玩家可见**：残血的大法师站着被补掉；采木的苦工被摸一下就放下工作回头对砍，更容易送掉工人。
+- **要做**：补 `InjuryFleeOrder` 与受伤逃跑判定，工人排除自动反击。
+
+### 15. 工地从 1 点血起造，任何一次攻击都能一击拆掉
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:37,45,62` 工地初始血量是 `MaxLife × startLifeFraction`（默认 0.1），随进度从 10% 涨到 100%。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Production.cs:102` `site.Hp = 1f`；`Src/World/World.MechanismMembers.cs:175` 每帧用 `MaxHp * progress` 覆盖，进度 0 时是 1 点。
+- **玩家可见**：刚放下的农场、兵营只有 1 点血，一个农民或一只野怪摸一下就塌；血量条是空的，客户端是一小截。
+- **要做**：起始血量改 `MaxHp * 0.1f`，进度换算同 `ConstructionProgress`。
+
+### 16. 合建按人数线性 1/2/3 倍，兽族与暗夜建造者不会进建筑
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:85-88` 多人速度 `1 + (人数-1) × 0.6`（1 / 1.6 / 2.2 倍），`:217` 每多一人追加 15% 造价；`:66,233-250` 兽族、暗夜把建造者 `StoreWorkerInside`（隐藏、暂停、无敌、不可选中），完工或取消再从出口放出。
+- **Launcher**：`Launcher/Src/World/World.MechanismMembers.cs:166-170` `rate = Min(builders, 3)` 直接乘到剩余工期上，不追加费用；建造者全程站在工地边上播 `Stand Work`，不进入建筑。
+- **玩家可见**：三个人族农民一起敲，工期是单人 1/3（客户端 1/2.2）且少付两次 15% 资源；兽族地洞、暗夜古树开工后苦工精灵应当消失进建筑，Launcher 里它们站在外面挨打，能被直接点掉。
+- **要做**：速度改 `1 + (n-1)*0.6`，补追加造价与 `StoreWorkerInside`。
+
+### 17. 运输船拒载英雄，还要求乘客与船同 Player
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:44-57` `CanAccept` 只排除建筑、已在别的货舱、满 10 格、成本超容量、非同盟，不排除英雄。
+- **Launcher**：`Launcher/Src/Units/CargoTransport.cs:27` `passenger.IsBuilding || passenger.IsHero` 直接拒载，`:29` 还额外要求 `passenger.Player == holder.Player`。
+- **玩家可见**：右键点自己的飞艇装英雄，什么都不会发生，飞艇空着飞走；英雄坐飞艇偷矿、逃命这套标准打法不存在。
+- **要做**：去掉 `IsHero` 判定，同队判定改成 `AreAllied`。
+
+### 18. 进入魔免不清洗身上的魔法 Buff，驱散也只看正负极性
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:21,28-39` 进入魔免时 `RemoveImmunityEntryBuffs` 移除正负两性的魔法 Buff（光环与限时生命除外）；`Src/Skills/AvatarBuff.cs:12-14` 天神下凡声明 `Magic=false, AutoDispel=false`；驱散侧按 `buff.Magic && buff.AutoDispel` 过滤。
+- **Launcher**：`Launcher/Src/Abilities/Buff.cs:220-233` 天神下凡只加属性并 `State.Add(MagicImmune)`，没有 Buff 清洗，全仓也没有这个函数；`Src/World/World.BuffMembers.cs:33` 驱散只按 `IsHarmful` 一刀切；`AvatarBuff` 用的是基类默认 `Magic=true/AutoDispel=true`。
+- **玩家可见**：中了妖术、减速、诅咒再开天神下凡，山丘之王带着一身 debuff 变魔免（客户端当场洗掉）；牧师的驱散魔法、毁灭者的吞噬魔法能把敌方天神下凡整个扒掉（客户端驱不动）。
+- **要做**：补 `RemoveImmunityEntryBuffs`，Buff 加 `Magic/AutoDispel` 标记，驱散改按标记判定。
+
+### 19. 暴击不用递进阈值，闪避按来源各掷一次
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Skills/CriticalStrike.cs:56,71` 用 `NativeProcThreshold(percent, _procAttempts)`，不暴击递增、暴击后重置；`Src/Components/Health.cs:42-50` 闪避取所有来源的最大值只掷一次（`Src/Skills/Evasion.cs` 注释写明「取最大可用来源，只掷一次，无 PRD」）。
+- **Launcher**：`Launcher/Src/Skills/CriticalStrike.cs:31` 每次独立 `RollPercent(Chance)`，抄过来的 `NativeProcThreshold` 与系数表从未被调用；`Src/Skills/Evasion.cs:22` 每个实例各掷一次，另有独立的 `BonusEvasionPct` 一路（`Src/World/World.DamageMembers.cs:226`）。
+- **玩家可见**：客户端几乎不出现「连砍 12 刀不暴击」，Launcher 会出现；闪避护符 +15% 配 3 级闪避 30%，Launcher 实际闪避率约 40.5%，客户端恒为 30%，带两个闪避来源的单位明显更肉。
+- **要做**：暴击接 `NativeProcThreshold`；闪避合成「取最大、掷一次」。
+
+### 20. 攻击后不接 Stand Ready，每次挥砍都从第 0 帧重来
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:113-126` 起手 `animation.Set("Attack", NoAnimationTags, true, preservePrimary: true)` 并 `Queue("Stand", ReadyTag, false)`，攻击结束后队列回到 `Stand Ready`。
+- **Launcher**：`Launcher/Src/Units/Unit.Combat.cs:23-31` `View?.Play("Attack", ..., restart: true)`，每次挥砍重置；`Src/World/World.cs:288-306` 射程内直接 `BeginAttack(...); return;`，起手与后摇期间没有任何 `Play`，也没有队列。
+- **玩家可见**：攻击间隔大于片段长度时单位停在末帧举着武器定格，片段长于冷却时被硬切成第 0 帧；近战成排站桩时这一帧差很明显。
+- **要做**：攻击指令改为「不重启 + 排队 Stand Ready」，结束后按是否仍有目标在 `Stand` 与 `Stand Ready` 之间切换。
+
+### 21. 变形不播 Morph 序列，直接销毁重建模型
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:210-251` 对变形技能置 `FinishMorphAnimation`，用 `Advance(dt, holdAtEnd: true)` 把 `Morph` 播到末帧再切形态。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:478-515` `OnUnitMorphed` 直接 `unit.View.Root.QueueFree()` 后按新类型重建节点，再补一个 `PolyMorphDoneGround` 特效。
+- **玩家可见**：德鲁伊变熊、石像鬼变毁灭者、剑圣分身都是模型瞬间替换加一团烟，没有原版的 Morph 过渡帧，过渡期间高度、光环、队伍色会跳。
+- **要做**：`UnitSceneComponent.SelectSequence` 已支持 `MORPH` 主标签，变形路径改为先播完再重建。
+
+### 22. 主基地升级播的是 Birth，不是 Birth Upgrade First/Second
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:306-320` 用 `production.Percent / 100f` 加 `ResolveUpgradeAnimationProperties(目标类型)` 读 `animProps`（`htow→hkee` 得 `upgrade,first`），命中 `Birth Upgrade First`。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:54-66` 只按进度取 `SetUpgradeProgress(progress)`；`Game/Presentation/UnitSceneComponent.cs:798-802` 的 `UpgradeBirth()` 传 `Array.Empty<string>()`，主标签只有 `Birth`。
+- **玩家可见**：主基地、主堡升级时播基础 Birth，观感是「重新建造一次」；部分模型的基础 Birth 与 Upgrade 变体长度不同，进度条和模型生长对不齐。
+- **要做**：把目标类型的 `animProps` 传到 `SetUpgradeProgress`，`Seek` 前合并副标签。
+
+### 23. 地面物品凭空出现，没有 Birth/Open 入场
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:1545-1579` 物品首次出现按 `SpawnAge < birthSeconds` 播 `Birth/Open`，之后转 `Stand`；离场按 `DepartAge` 缩小。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:281-297` `CreateItemNode` 只实例化、设位置缩放，没有任何 `Play`；离场在 `Presentation.cs:564-608`。
+- **玩家可见**：宝箱、符文、掉落装备直接出现（依赖模型 autoplay，多数是 Stand 首帧）；击杀野怪掉宝的瞬间观感差别明显。
+- **要做**：物品节点创建后按 `SpawnAge` 播一次 `Birth/Open`。
+
+### 24. 队伍色索引钳到 0..15，17–24 号玩家全部同色
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/CharacterRenderer.cs:2245,2294,2306` 全部 `Clamp(teamColorIndex, 0, 27)`，`ReplaceableId 1/2`（TeamColor/TeamGlow）分开解析。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs:10-11` `Clamp(index, 0, 15)` 且只加载 `TeamColor00..15`；`Game/Presentation/UnitSceneComponent.cs:420-423` 的 TeamGlow 同样钳 0..15。
+- **玩家可见**：16 人以上对局或自定义地图里，第 17–24 号玩家全部显示成 16 号色，小地图与选中圈跟着错。
+- **要做**：上限改 27，补 24 张 TeamColor/TeamGlow。
+
+---
+
+## 模块五 特效与声音
+
+> MDX 事件音、音频空间、声部管理。
+
+### 25. 缺 AnimSounds 表，单位死亡喊的是「Yes」
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:29-31` 把 `UnitAckSounds / UnitCombatSounds / AnimSounds` 合进同一张 ack 表，死亡与攻击音由 MDX 事件经 `AnimLookups → AnimSounds` 解析。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:44-48` 只 Load 5 张表，没有 `UISoundInfoAnimSounds`（生成的表其实存在：`Generated/Tables/UISoundInfoAnimSounds.g.cs`）；`War3UnitSoundset.cs:21-27` 用 `soundName + kind` 拼 label，`Scenes/War3GameScene/Presentation.cs:354-362` 死亡路径带 `fallback = "Yes"`。
+- **玩家可见**：每个单位被击杀时喊一声「Yes / 遵命」，全场听不到死亡音，脚步与整理类动画音效一并丢失。
+- **要做**：补一行 `LoadTable("UISoundInfoAnimSounds")`，死亡路径去掉 `Yes` 兜底。
+
+### 26. DistanceCutoff 解析了但没用，半个地图外都能听见伐木声
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:225-229,290-294` 用 `DistanceCutoff` 做「超出不播」的硬门，`maxDistance` 只作衰减终点。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:26,85` 解析了 `DistanceCutoff`，全仓再无读取；`War3UnitSound.cs:84-87` 只把 `MaxDistance` 传给 `AudioStreamPlayer3D.MaxDistance`。
+- **玩家可见**：以伐木音为例（表值 Min 600 / Max 10000 / Cutoff 2100），客户端 2100 外听不到，Launcher 要到 10000 才静音，在自己基地能听到半个地图外的伐木、交战、施法。
+- **要做**：`Start` 前按 `DistanceCutoff` 做一次距离门。
+
+### 27. 3D 听者绑在相机上，客户端放在镜头目标点
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Rendering.cs:283-285` 每帧 `_audio.UpdateListener(cameraPosition, cameraTarget)`；`War3AudioSystem.cs:181-195` 明确把听者放在地面目标点，理由是高空相机会把地面单位压没。
+- **Launcher**：无对应实现（全仓没有 `AudioListener3D`，也没有 `UpdateListener`）；Godot 的 3D 听者就是当前 `Camera3D`（`Game/Camera/War3Camera.cs:201-207`），默认档在目标点上方约 1370 单位。
+- **玩家可见**：所有 3D 音都比客户端更远，拉远镜头整体变小、拉近才听得见（原版缩放不改音量）；听者带 34° 俯角，声像偏「来自下方」。
+- **要做**：挂一个 `AudioListener3D` 到镜头目标点，每帧同步位置。
+
+### 28. 同帧去重键不同：按标签去重 vs 按文件名去重
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:236-239,300-305` 按解析后的文件名去重。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:178-187` 按 `SoundName` 标签去重。
+- **玩家可见**：同一条 ack 的 4 个变体在同帧最多响 3 条，不同标签指向同一文件时又不去重；成群单位同帧砍树时声音厚度和客户端不同。
+- **要做**：去重键改成解析后的文件名，声部上限与抢占优先级维持现状。
+
+---
+
+## 模块六 输入与镜头
+
+> 键鼠语义、技能瞄准、拾取判定、镜头跟手。
+
+### 29. W/A/S/D 被当镜头平移键，客户端只认方向键与小键盘
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:81-91` 平移只读 `Left/Right/Up/Down` 与 `Keypad2/4/6/8`，字母键全部留给命令卡热键。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:34-43` 把 `W/A/S/D` 并入平移，只在按下 M/P/H/A/S 进入待定指令时用一次性 `_panBlockedKey` 屏蔽（`Scenes/War3GameScene/Commands.cs:253-261,509-513`），按键抬起即解除。
+- **玩家可见**：按住 W 放水元素、疾风步时镜头同时往北漂；用 A/S/D 下指令时镜头往左、下、右滑，同一点永远对不准。
+- **要做**：删掉字母键分支。
+
+### 30. 单位或点地双模技能，落点恒为施法者脚下
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3CommandInteractionComponent.cs:316-361` 对 `Unit / UnitOrPoint / Any` 先 `PickUnit` 取单位，取不到再用 `ScreenToTerrain` 取落点，技能据此算方向。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs:82-101` 只处理 `TargetMode.Unit` 与 `TargetMode.Point`，`point` 初值是 `caster.Position`，`UnitOrPoint`（`Src/Abilities/AbilityTargetMode.cs:10`）两不沾。受影响的有腐臭蜂群、震荡波、沉默，技能侧拿到零向量后回退成 `Owner.Facing`（`GameCore/L3_Simulation/Simulation/Configuration/RuntimeCarrionSwarmAbility.cs:59-63`）。
+- **玩家可见**：腐臭蜂群、震荡波点哪里都无效，波形永远朝英雄当前朝向直喷；沉默的落点恒在自己身上。
+- **要做**：补 `UnitOrPoint / Any / Destructable` 三条取目标分支。
+
+### 31. 右键缺三类目标：可破坏物、吃树、传送门
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:809-885` 右键按序尝试 `EnterWaygate`、可破坏物采集、`Aeat` 吃树、`IssuePlayerAttackDestructable`、地面物品拾取，逐支只吃掉能干这活儿的单位。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:301-347` 只到伐木（限能砍木的工人）和地面物品，没有可破坏物攻击、没有吃树，全仓也没有 `EnterWaygate`。
+- **玩家可见**：剑士、火枪右键点树或桥不会攻击它，而是绕过走到落点，清树开路和拆桥失效；山岭巨人右键树不会吃树；带传送门的地图右键无效。
+- **要做**：按客户端顺序补齐这几支，目标类型不完备是第 30 条的同根问题。
+
+### 32. 左键点敌方或友方单位会清空当前选择
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:654-723` 拾取判据只有 `Alive && !Removed`，敌方与我方都能单选查看，只有控制权不同。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:83-104` 用 `PickUnit(position, ViewPlayer)`，其判据 `MatchesOwner`（`Game/Input/War3PickingComponent.cs:152-161`）只认自己与中立商店，其余返回 null，走到 `_selection?.Clear()`。
+- **玩家可见**：想点一下敌方英雄看装备血量，或者点友军看状态，结果自己整队选择被清空，战斗中误点一次就丢操作对象。
+- **要做**：把「能否选中查看」与「能否控制」拆开。
+
+### 33. 框选忽略飞行高度，空中单位要框到它的地面投影才中
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3PickingComponent.cs:186-196` 投影点用 `RenderPosition + RenderFlyHeight`。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Input/War3PickingComponent.cs:130-134` 投影点用 `unit.Position + View.Height * 0.5f`，既没算 `RenderFlyHeight`（模型在 `ground + RenderFlyHeight`，见 `Game/Presentation/UnitSceneComponent.cs:334`）也没用插值坐标。
+- **玩家可见**：框选狮鹫、冰龙必须把框拉到正下方地面才选得中，框住模型本身反而漏选；快速移动的单位框选边缘还慢半拍。
+- **要做**：加上 `FlyHeight`，优先用渲染插值坐标。
+
+### 34. 中键按住不动超过 0.1 秒，跟随镜头把视角抢回去
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:35-37` 每帧 `if (_dragging) _runtime.ResetCameraPanUnlockTimer();` 续期。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:19-62` 没有这条续期，只在 `BeginDrag`（`:80`）和收到移动事件时（`:106`）重置，窗口由 `Scenes/War3GameScene/CameraFollow.cs:64-79` 倒计时。
+- **玩家可见**：开着镜头总跟随时，按住中键稳住视角、手停 0.1 秒以上，镜头被被跟随单位拽走；再拖动时第一段位移被丢掉，表现为回弹。
+- **要做**：补每帧续期。
+
+### 35. 镜头居中改瞬移，还顺手关掉了跟随
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Input.cs:1226-1230` 用 `_camera.PanTo(x, y, 0.25f)`；`Game/Camera/War3Camera.cs:345-355` 的 `SetTarget` 只清目标与朝向控制器，保留软跟随，平移结束后跟随自动接回。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Input.cs:127-131` 走 `_camera.Focus(...)`，`Game/Camera/War3Camera.cs:279-297` 的 `SetTarget` 在 `:290` 直接 `_softFollowController = null`，位置立即跳变。这个入口被 Ctrl+C、双击编队、退格切城镇、小地图点选共用。
+- **玩家可见**：开总跟随后按 Ctrl+C 或点一次小地图，跟随被永久关闭；画面硬切而不是 0.25 秒滑过去。
+- **要做**：`Focus` 换成平滑 `PanTo`，保留软跟随。
+
+### 36. 开局镜头落在矿边工人锚点，不是出生点
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:727-744` 在 main 之前按 `GetPlayerStartLocationPosition` 把镜头移到出生点。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/CameraFollowTrack.cs:113-135` 取 `_startFocus[ViewPlayer]`，该值来自 `Units.cs:174` 的 `plan.Camera`，而 `GameCore/L3_Simulation/Simulation/Configuration/MeleeRules.cs:133,139` 里人类、兽族把它设成从出生点朝金矿偏 320 的 `workerAnchor`，亡灵是侍僧簇中心。
+- **玩家可见**：开局镜头中心比客户端偏 2.5 格朝矿区，主基地被推到画面偏侧；出生点在角落的地图偏移方向更明显。
+- **要做**：改 `player.StartX/StartY`；如果当初是为了让工人入画，需要先确认这个取舍。
+
+---
+
+## 模块七 界面
+
+> 加载屏、HUD、面板、提示。
+
+### 37. 加载屏背景还是四等分，客户端已经改成上 2/3 下 1/3
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:532-580` 先用加载屏模型（2×2 平面）铺背景，`:613-630` 回退直绘时 `top = Height * 2f/3f`、`bottom = Height - top`，另有 `FULL` 整幅兜底。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:292-312` 四象限按 `DesignHeight * 0.5f` 等分，没有背景模型路径，`:161-168,309` 候选不足 4 张时只画深色底，没有 `FULL` 兜底；`:510-518` 的 `DumpLayout` 却按 `2f/3f` 打印。
+- **玩家可见**：1024×768 设计画布下，客户端上带 512 下带 256（天地 2:1），Launcher 上下各 384，地平线被压到正中，四张图上下各被拉压约三成；单张 loading 图的地图在 Launcher 上是近黑底加文字。更麻烦的是调试日志会显示「已对齐」，掩盖真实差异。
+- **要做**：绘制改 2/3 分带，补背景模型与 `FULL` 兜底，`DumpLayout` 改为打印实际绘制值。
+
+### 38. 加载到 100% 后多出 0.55 秒不可操作窗口
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Hosting/GameApplication.cs:354-380` 用 `using` 管理加载屏，场景 `OnLoad` 同步跑完 13 个阶段，`Report(1f)` 后方法结束即 `Dispose`，下一帧就是可操作的游戏。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:146-161` 先 `await ProcessFrame` 让加载屏画出来，`War3LoadingScreenRenderer.cs:569-585` 再等 3 帧 settle 并做 0.5 秒 `Modulate` 淡出，期间 `LoadingBlocked` 为 true（`:521,713-715,780-794`），音乐也要等 `StartPendingMusic`。
+- **玩家可见**：进度条满了还有半秒不能操作、没有音乐；这三帧 settle 本身说明世界刚建好的头几帧是黑的。
+- **要做**：按客户端改成同步组装、硬切进游戏；如果保留淡出，需要在文档里登记为平台差异。
+
+### 39. HUD 不走 FDF 帧树，坐标是手抄常量，4 个 FDF 绑定没有生成
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/War3FdfUi.cs:38-49` 从 `ConsoleUI.fdf / ResourceBar.fdf / UpperButtonBar.fdf / InventoryCover.fdf` 装载帧树，帧引用全部走 `Generated/*.g.cs` 强类型绑定；`MeleeHudController` 在帧树上挂内容。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:37,140-142` 只用 `FdfUiFactory` 读 `GlobalStrings.fdf` 的文案，帧体全部手搭；`Generated/` 下只有 `LoadingScreenBinding.g.cs`，没有 `ResourceBarBinding / ConsoleUiBinding / UpperButtonBarBinding / InventoryCoverBinding`。`FdfScreen` 这套 FDF 装载只被 `Platform/Godot/App/LauncherApp.cs:465-474` 的调试开关 `--ui-screen` 用到。
+- **玩家可见**：资源条的图标尺寸、数字基线、四组间距由 `TopBarFrame.cs:147-167` 的常量决定，和 FDF 的右对齐贴边不同，越靠右越明显；FDF 皮肤下的按钮条与空背包遮罩不存在；维护费文案是中文「无/低/高维修费用」，客户端 FDF 路径是 `No/Low/Heavy Upkeep`。
+- **要做**：补 `ResourceBarBinding` 等生成，HUD 改成「FDF 优先、手写兜底」，两边同一套锚点。
+
+### 40. 顶栏只剩一个菜单按钮，任务日志与盟友面板整族缺失
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:39-40` 四个按钮全部可见，`MeleeHudController.cs:544-545` 绑 `OnQuestClicked/OnAlliesClicked`，`UI/QuestDialogFrame.cs:108-112` 由 F9 开关。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:17` `MenuInScope = {false,true,false,false}`，`:40-41` 只显示索引 1；`GameHudScreen.cs:167-170` 只接菜单按钮。`QuestDialogFrame`、`AllianceDialogFrame`、`LeaderboardFrame`、`MultiboardFrame`、`TimerDialogFrame`、`CinematicSceneFrame` 都没有对应文件。
+- **玩家可见**：左上角四连按钮少三个，按 F9 没有任务日志，看不到盟友资源与状态（原版 F11）；过场时 HUD 不整层隐藏。
+- **要做**：补任务与盟友两个原生面板（与 JASS 无关），其余计分类面板另立任务。
+
+### 41. Esc 菜单是自建 1600×900 遮罩，打开也不暂停
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs:36,114-129` 实例化 `EscMenuMainPanel.fdf` 帧树，主面板 368×340 锚在屏幕中心；`MeleeHudController.cs:551-552,1092` 只要 Esc 菜单或任一对齐面板可见就请求暂停。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs:16-33` 自建 `CanvasLayer + ColorRect`，遮罩 `1600×900`、面板写死 `(600,270) 400×360`，`:48-62` 用 Godot 原生 `Button`；`GameHudScreen.cs:478` `AutoPauseRequested => AboutDialogVisible`，Esc 菜单不计入；`Scenes/War3GameScene/Lifecycle.cs:60` 同样只认设置页。
+- **玩家可见**：菜单是深灰方块加系统默认按钮，和旁边石质九宫格的选项页两套风格；1920×1080 下黑幕只盖到 1600×900 右下留亮边，面板偏左 160；多出一个原版没有的「暂停游戏」项；最要紧的是开着菜单游戏还在跑，玩家在菜单里会被打死。
+- **要做**：Esc 菜单并入 `MENU` 暂停请求，外壳改 FDF 面板并按 UI 视口居中。
+
+### 42. Tooltip 跟着控件跳，客户端固定在右下信息栏
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs:774-787` 默认固定为「右缘内缩、底边压在 console 上沿」，跟锚点只是对照用的环境变量；`:397-405` 有 `ShowUnitTip`（单位名、Tip、血蓝条），`MeleeHudController.cs:381-435` 覆盖多选头像、单位信息面板、顶栏三个悬停源；`:213,584` 支持 `|T路径:尺寸|t` 内联图标。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/TooltipFrame.cs:304-321` 的 `Place` 贴在控件上方或下方；`GameHudScreen.cs:316-324` 只处理 `ButtonFrame`；`UI/Views/CommandCardView.cs:6-17` 没有 `Ext` 字段，`ShowEx` 的扩展块走不到；`UI/GodotUiRenderDevice.cs:370-410` 不识别 `|T`。
+- **玩家可见**：悬停金币图标提示框贴屏幕顶，悬停命令格又压在 console 上，位置每次都变；悬停单位信息面板与多选头像完全不弹提示；带内联图标的文案原样露出 `|T...|t`；建筑升级提示缺「需要: …」段。
+- **要做**：定位改固定右下，补三个悬停源与 `|T` 解析。
+
+### 43. 命令卡 5Hz 刷新，蓝不足不变红，待选目标不高亮
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:777-785` 命令卡与当前选择逐帧同步；`UI/CommandCardBuilder.cs:280-295` 同时写 `IconColor`（蓝不足 `0xff4040ff`）、`DimWhenDisabled`、`NumberText`、`TooltipExt`，`:208-219` 的 `UpdatePending` 按 `Kind + Payload + Slot` 高亮。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:764-772` HUD 与命令卡只在 `_hudTimer >= 0.2f` 时刷新；`UI/CommandCardBuilder.cs:167-178` 只设 `Icon/Disabled/Cooldown/Overlay`，从不写 `IconColor`；`GameHudScreen.cs:626-632` 只比对 `Kind`；`Scenes/War3GameScene/Commands.cs:35-45` 只有移动、攻击、巡逻会设 pending。
+- **玩家可见**：冷却扇形每 0.2 秒跳一格；法力不足的技能只变暗不转红；点技能进入选目标状态时命令卡那格不高亮（只有移动攻击巡逻会亮）。
+- **要做**：HUD 改逐帧刷新，补 `IconColor` 与 `Kind+Payload+Slot` 的 pending 比对。
+
+### 44. 信息面板的攻击/护甲图标恒为空白，等级徽标显示的是英雄等级
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:299-339` 按武器攻击类型与护甲类型贴图标，徽标显示攻防升级等级，伤害包含主属性、物品与科技并以绿色显示加成；`:268-270` 金矿显示剩余黄金。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:1308-1327` 攻击取 `type.Weapon.MinDamage-MaxDamage`（不含加成），`AttackLevel` 传的是 `unit.Level`，不传图标；`Game/UI/UnitInfoPanelFrame.cs:197-216` 对应三个 `TextureFrame.Texture` 从未赋值。
+- **玩家可见**：面板左侧攻击护甲图标与右侧主属性图标都是空白只剩文字；黄色小徽标显示英雄等级而不是科技等级；攻击数值普遍偏小；选中金矿不显示剩余黄金。
+- **要做**：补图标解析与科技等级，伤害改走客户端的加成口径。
+
+### 45. 每次成功下令都弹一行黄字
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:667-776` 这条通道只用于「资源不足 / 无法丢弃 / 物品栏已满」等失败原因；`MeleeHudController.cs:798-799` 转发到 `CommandErrorFrame`。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Commands.cs:92-139,240` 把「移动到…按阵型展开」「巡逻」「攻击移动」「停止/据守」「自动施法开关」全部走 `SetHint`；`GameHudScreen.cs` 的 `SetHint` 直接 `ShowCommandError`。
+- **玩家可见**：每点一次地面就刷一行，连续操作时黄字不断叠现，真正的错误提示被淹没。
+- **要做**：成功路径不再走错误通道，需要的话只在调试开关下显示。
+
+### 46. HUD 细节：队列底板是黑块、框选是绿色、多选血条没有底
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/QueueIconRowFrame.cs:36-43` 用 `human-unitqueue-border.blp` 皮肤；`MeleeHudController.cs:942-951` 框选是蓝色填充 `(0.15,0.4,1,0.15)` 加 1.5px 蓝边；`UI/SelectionGroupFrame.cs:77,84` 血蓝条黑底 `(0,0,0,1)`；`UI/PortraitFrame.cs:50-58` 永久无敌时清空生命魔法文字。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/QueueIconRowFrame.cs:30-31` 换成 `SolidColorFrame(0,0,0,.55)`；`GameHudScreen.cs:890-892` 框选是绿色 `(0.35,0.85,0.35,0.16)` 且无描边；`UI/SelectionGroupFrame.cs:73,80` `BackgroundColor = Vector4.Zero`；`UI/PortraitFrame.cs:59-68` 没有无敌判断。
+- **玩家可见**：建筑生产时出现一块纯黑矩形；框选是绿色半透明，和客户端的蓝色带亮边一眼可分；多选头像下的血条没有黑底，亮地形上看不清；无敌单位仍显示「100/100」。
+- **要做**：四处按客户端取值，队列底板走皮肤。
+
+---
+
+## 模块八 工程结构（横切）
+
+> 命名、归属与共用。放最后，避免和功能改动互相踩。
+
+### 47. 同一个类在 Launcher 有两份，命名空间按层分裂
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/Buff.cs`、`Src/Units/Unit.cs`、`Src/Core/World.cs` 等 L2 层文件统一 `namespace OpenWC3`，技能实现统一在 `GameCore/L3_Simulation/Simulation/Configuration/` 下 `namespace OpenWC3.Game`，每个类只有一个定义。
+- **Launcher**：`Launcher/Src/` 用 `namespace OpenWC3`，`Launcher/GameCore/L3_Simulation/` 用 `namespace OpenWC3.Game`，于是同名类并存：`RuntimeMeatDropAbility`（`Src/Skills/RuntimeMeatDropAbility.cs:7` 与 `GameCore/L3_Simulation/Simulation/Configuration/RuntimeMeatCargoAbilities.cs:127`）、`RuntimeMeatLoadAbility`、`RuntimeTrueshotAuraAbility`（`Src/Skills/` 与 `RuntimeCommandAuraAbility.cs:127`）、`RuntimeAntiMagicShellBuff`（`Src/Skills/` 与 `RuntimeAntiMagicShellAbility.cs:78`）。工厂只注册 `OpenWC3` 那一份（`Src/Abilities/RuntimeAbilityFactory.cs:60`）。
+- **玩家可见**：暂时看不出来，但同一技能两套实现在跑不同的数值与流程，改一处不会同步另一处；接 AI 或事件时容易挂到没被注册的那一份上。
+- **要做**：按客户端分层收敛成一层，删掉未注册的重复实现。
+
+### 48. 技能工厂与技能实现文件的结构和客户端对不上
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/` 下 `RuntimeAbilityFactory` 拆成 `Constructors / Initialization / Initializers / Specialization` 四个 partial，实现按族分文件（约 194 个 `Runtime*Ability` 文件）。
+- **Launcher**：`Launcher/Src/Abilities/RuntimeAbilityFactory.cs` 一个文件里 523 条 `["xxxx"] = () => new ...` 字典登记，实现只有 47 个 `Runtime*Ability` 文件，其余技能落在少数聚合类里；静态数据一侧叫 `AbilityCatalog/AbilityType`（`GameCore/L3_Simulation/Simulation/Configuration/AbilityCatalog.cs`），客户端叫 `ObjectDataAbility`（`Src/Abilities/ObjectDataAbility.cs`）。
+- **玩家可见**：目前体现为部分技能退化成无行为的被动；更实际的影响是新增或修一个技能时，两边的登记口不在同一处，容易只改一边。
+- **要做**：工厂按客户端的四个 partial 拆分，技能实现文件按族对齐命名，静态数据的类名改成客户端的名字。
+
+### 49. 核心类的目录归属和客户端不一致
+
+- **客户端**：`World` 在 `Src/Core/World.cs`（partial 也在 `Src/Core/`），`AbilityContainer` 在 `Src/Components/`。
+- **Launcher**：`World` 及其 29 个文件（`World.cs` 加 28 个 partial）在 `Src/World/`，`AbilityContainer` 在 `Src/Abilities/`。
+- **玩家可见**：无直接表现，但 AGENTS.md 第 5 条要求「相对路径、文件名、类名一致」，现在 grep 两侧同名类会落到不同目录，跨仓库对照检索的成本一直存在。
+- **要做**：整目录搬迁到客户端的层级，一次做完，不要分批。
+
+### 50. 缺 WorldFrameTextMetrics，聊天与文本通道各写死一套字号
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/WorldFrameTextMetrics.cs` 统一给出字号、行距、寿命、淡出等口径，聊天、信息通道、计时文本都引用它。
+- **Launcher**：全仓没有这个类。`Game/UI/ChatFrame.cs:13-24` 自己写死 `ChatLeft=8 / ChatWidth=990.4 / ChatFont=16.64 / BaseLifetime=3 / PerCharacter=0.1 / Fade=3 / Capacity=30`，其他文本面板再各写一份。
+- **玩家可见**：改了 UI 字号设置后，聊天与提示的字号不跟着变，和 HUD 其它文本不同步。
+- **要做**：把度量抽成客户端同名类，各帧改引用。
 
 ---
 
 ## 推进顺序
 
-模块顺序是从底层到表层，模块内从上往下做即可。
+模块顺序是从底层到表层，模块内从上往下做。
 
-现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 26、27、28、35、36 条** 最直观。
+现在最容易被玩家一眼看出的是 **第 4 条（迷雾遮挡）**、**第 10 条（装饰物跳光）**、**第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、10、25、29、34、45。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **37** 开始。
-- 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
-- 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
-
-> **复核评价**：「序号不复用」在多副本并行的工作流里已经落空。工作区有 `Launcher` 到 `Launcher5` 六份副本，`RunLauncher.command` 指向 `Launcher/`，而 `Launcher5` 的 git 历史里已经提交了「任务36」「任务37」，本清单最高才到 33、还写着新任务从 34 起。更麻烦的是 `Launcher5` 的「任务21/22/24」内容分别是模型丝带、闪电抖动、应答音效，与本清单第 21/22/24 条（Esc 语义、命令卡、提示语）不是一回事——同一个编号在两处指不同任务，编号就失去了追溯能力。
->
-> 建议改成用标题做锚点（本清单的标题本来就够唯一），提交信息里带标题而不是只带序号；清单内部沿用序号只作阅读顺序。
->
-> 另外「标题后的 `（V1 #xx）`」和「核对结果」这张 21 行的表属于历史变更记录，与 AGENTS.md 协作约定里的「不记录历史变更」相抵。清单只需要回答「还剩什么」，删完落地条目后这些追溯信息一并清掉更省事。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；新任务从 51 起。
+- 写进来必须带三样东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
+- 平台差异与「仅对战」的已知取舍不写：Godot 渲染与 OpenAL/GL 的差别、Launcher 自有调试工具（`Cheats.cs`、`CombatProbe*`、`Diagnostics/`）、Android 触控、JASS/战役/存档/录像、固定 gmap 路径。
