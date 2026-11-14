@@ -33,6 +33,16 @@
 
 > **复核评价**：证据成立（`PathGrid.cs` 340 行布尔网格、单位移动不写回），但这条不是一个任务，是一个项目。「先接 footprint 与放置掩码，再替换搜索」中间的验收点没有定义，做完第一半时无法判断是否「完成」，按收尾规则也就删不掉。建议拆成两条：先只做 footprint + 放置掩码，验收口径是「静态阻挡判定与客户端在两张测试图上逐格一致」；搜索替换另立一条。这样每条都能删。
 
+> **执行结论（Launcher3，待合并）**：按复核意见先完成第一半「footprint + 放置掩码」，验收口径（两张测试图逐格一致）已达成；搜索替换仍未做，任务保留等待后续。
+> - 定位：Launcher 的 `PathGrid` 只读 `war3map.wpm`，可破坏物的 `pathTex/pathTexDeath` 从未进入网格；WPM 本身不含树木，两图实测可破坏物新增阻挡 27916 / 约 1.4 万格，所以此前单位能直接穿林。放置检查也只判 Walkable，没读 WPM/overlay 的 Unbuildable。
+> - 数据：`Extract` 新增 `--pathing-codegen`，按客户端像素语义（R bit0=unwalkable、G!=0=unflyable、B bit0=unbuildable，含 TGA 原点/行列转置）解码 206 张 `PathTextures/*.tga`，生成 `Launcher3/Generated/Tables/PathingTextureMasks.g.cs`（45672 格）；已接入 `extract.command` 第 7 步。
+> - 静态阻挡：`DoodadPathingOverlays` 从 `war3map.doo` + `DestructableData.pathTex/pathTexDeath` 生成 overlay（跳过 `DOOD_FL_NONSOLID`、生死贴图、角度按客户端量化、`occH` 记录）；`PathGrid` 按客户端 `AddPathingOverlay` 的掩码行序/旋转/中心格叠加，Walk/Fly/Build 分别计数；`IsBuildableArea` 同时校验 WPM 与 overlay 的 Unbuildable，建造落点改为「可走且可建造」。
+> - 砍树：`PathGrid.RemoveDoodadPathing(creationNumber)` 按创建号撤销整块 pathTex，`TreeState.CreationNumber` 由 `war3map.doo` 带入；脚本生成、没有创建号的树退回原 `ClearArea`。
+> - 对拍：参考网格由客户端 `TerrainGrid`（WPM + `DoodadRenderer.LoadPathingOverlays`）导出，压缩存放在 `Launcher3/GameCore/L4_Composition/Game/Diagnostics/Fixtures/StaticPathing/`；`--state-probe` 的 `CheckStaticPathingParity` 逐格比较低字节（Walk/Fly/Build/Water/Blighted）。
+> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 显示 Turtle Rock 512×512、1745 个 overlay、0 格差异，BootyBay 768×384、1408 个 overlay、0 格差异，砍树撤阻挡均通过；`--combat-probe` 全部通过；`--build-test`/采集/伐木手动跑无卡死，唯一失败仍是基线 `utod`。
+> - 未完成：`PathGrid.FindPath` 仍是自研 32px A*，没有接入客户端的 footprint 接触解算、粗/细搜索与出口搜索，单位移动也还不写回网格；按复核意见这部分应另立一条，本轮未改动。
+> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --state-probe` 可直接看到两图对拍结果；游戏里可见单位不再穿过树林，砍倒树后树块区域恢复通行。
+
 ---
 
 ## 模块三 地形与环境
@@ -59,6 +69,12 @@
 - **Launcher**：`Extract/assets/shaders/water_map.gdshader:2` 是 `render_mode unshaded, blend_mix, depth_draw_always, cull_disabled, fog_disabled;`。
 - **玩家可见**：浅水区的单位阴影、选中圈、施法贴花会间歇性消失，换个视角又出现（Godot 透明排序不同）；水块之间也会互相遮挡出硬边。
 - **要做**：改 `depth_draw_never`，其余参数不动。
+
+> **执行结论（Launcher9，待合并）**：已修复。
+> - `Extract/assets/shaders/water_map.gdshader:2` 的 `depth_draw_always` 改为 `depth_draw_never`，其余 render_mode 原样保留，对齐客户端 `SetDepthWrite(false)` + `SrcAlpha/OneMinusSrcAlpha`。
+> - 验证：用 `Shader.Code` 探针确认运行时加载的就是改后源码（旧包 `depth_draw_always`、改后 `depth_draw_never`）；共享 `extract.pck` 随后被并发提取流程重打包，现包里已是 `depth_draw_never`，进图 `[WATER] 水面格 15556` 正常渲染、无着色器报错；同机位水面 A/B 截图可见渲染差异（差异区集中在水面与透明物体交界）。
+> - 复现：进任意有水地图，浅水岸边选中单位、放地面贴花，转动镜头不再出现选中圈/阴影被水面吞掉的情况。
+> - 说明：本次只改了 Extract 着色器源码，未主动覆盖约 1GB 的共享 pck；若本地包的 mtime 早于该提交，需要重跑 `--export-pack` 或 `extract.command`。
 
 ---
 
