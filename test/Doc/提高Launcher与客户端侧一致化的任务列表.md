@@ -66,24 +66,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 12. 自动索敌挂在调试开关后面，默认开局谁都不主动打
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Components/Ai.cs:48` 每个单位自带 `AutoAttack = true`，`Src/Units/Unit.Step.cs:69-77` 空闲即索敌并派 `COrderTarget`。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:416` `AutoAcquire = Aggression && (player <= 3 || player == 12)`，`Aggression` 只能由命令行 `--aggro` 打开（`Platform/Godot/App/LauncherApp.cs:556`，字段在 `Scenes/War3GameScene/Lifecycle.cs:87`）；索敌分支整段被 `if (unit.AutoAcquire)` 包住（`Src/World/World.cs:275`），受击反击同样要求它（`Src/World/World.WeaponSystem.cs:122`）。
-- **玩家可见**：不带 `--aggro` 启动，野怪站在营地被人贴着走过不打人，自己的部队在敌人旁边待命不还手，只有明确下令才动。
-- **要做**：`AutoAcquire` 改为常开，`--aggro` 保留为调试开关只影响 AI 波次。
-
-> **执行结论（Launcher2，待合并）**：自动索敌已常开，并按客户端拆开「空闲索敌」和「主动订单」。
-> - 玩家编号过滤：删掉 `player <= 3 || player == 12`，场景出生单位改为 `AutoAcquire = player != PlayerNeutralPassive`；`UnitFactory.Create` 给召唤物/幻象同样赋值。中立被动（15）保持不开，因为 Launcher 的关系判定没有客户端那种“被动单位不会被主动攻击”的分类，开了会让小动物主动咬人；玩家 0–11 与中立敌对 12 全部常开。
-> - 执行流程：`Step` 里不再让 `AutoAcquire` 抢在所有订单之前。只有野怪（12）、正在风筝/回营/回营等待的单位继续走 `StepCreep`；其余单位先处理攻击移动、现有目标、跟随、移动、巡逻，真正的空闲（无目标/无移动/无巡逻/无跟随/非攻击移动且可攻击）才调用 `FindAcquireTarget` 索敌。这样常开后不会出现“单位不执行 Move 订单、只追人”的副作用。
-> - 拴绳：删掉 `Unit.LeashRange`，`GuardDistanceExceeded` 只对中立敌对 12 用 `MaxGuardDistance`；玩家单位追出去不再被 260 距离拉回，和客户端一致。
-> - 反击：`EngageTarget` 增加 `Type.CanAttack` 与 `CanStrike` 门槛，`StepCreep` 追击前也重判 `CanStrike`，无武器工人/地面兵不会因为被远程或空中单位命中就去追。
-> - `--aggro` 仍在 `Lifecycle` 里只控制 `TickAiWaves`，不再影响单位索敌。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`--state-probe` 新增 `CheckAutoAcquire` 四项全部 OK（空闲单位自动索敌、开火造成伤害、有移动订单不抢单、移动订单继续执行）；整轮仍只剩基线已知失败 `utod 研究项`。
-> - 合并注意：改动落在 `Units.cs`、`UnitFactory.cs`、`Unit.cs`、`World.cs`、`World.Targeting.cs`，探针在 `CombatProbe.Ai.cs`；未改 Extract。
-
-> **复核评价**：证据成立，`RunLauncher.command` 确实没传 `--aggro`，`Aggression` 默认 false。但「常开」这两个字会漏掉半行：`Units.cs:416` 是 `Aggression && (player <= 3 || player == 12)`，括号里那半个条件不是开关，是玩家编号过滤。只把 `AutoAcquire` 写死成 true 而留着括号，8 人图上 4–11 号玩家仍然不索敌、不还手。动手前先定：这个括号是要删，还是改成「非中立被动」之类的语义，然后写进这一条。
-
 ### 13. 只有中立野怪会喊人，玩家单位被集火时旁边部队不动
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Components/Health.DamageCallbacks.cs:31` 每次受击都调 `CallForHelp`，`Src/Components/Ai.cs:264-285` 按玩家类型取半径（玩家 600 / 电脑 900 / 野怪用 CreepCallForHelp），让附近空闲友军 `TryRespondToAlarm` 加入战斗。
