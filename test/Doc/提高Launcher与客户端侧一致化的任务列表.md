@@ -27,7 +27,7 @@
 ## 模块二：地形与环境
 
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
-> 任务 7（装饰物死亡姿态）已落地并合并到 Launcher，编号不复用。
+> 任务 7（装饰物死亡姿态）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
 
 ### 6. 地形与悬崖不接收 MDX 动态光（V1 #47）
 
@@ -59,19 +59,11 @@
 
 > **复核评价**：证据成立，但本条与第 32 条改的是同一处（`FogOfWar` / `SceneFog` / `SceneLightRig.Apply`）。按模块顺序先做 9 再做 32，同一批材质要改两遍，而 32 的「拆开」本身就会顺带消掉这里的延迟。建议合并：先做 32 的拆分，让 `FogOfWar.Upload` 直接写进 `FogOfWarUniforms` 的接收者，本条随 32 一起销账。
 
-### 10. 建筑在雾里被拆掉后仍然立刻消失（V1 #54）
-
-- **客户端**：把「已探索但看不见」的建筑冻成 CPU 快照，被拆掉时快照还在，直到 `ScoutingMemory` 把这一格重新看见才遗忘（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/ScoutingMemory.cs`）。
-- **Launcher**：只冻结可见性（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Environment.cs:91-95` 对建筑调 `SetFogFrozen(true)`，`Launcher/GameCore/L4_Composition/Game/Presentation/UnitSceneComponent.cs:121-137` 暂停序列、关粒子），建筑阵亡后仍按单位移除流程释放模型，没有任何快照/遗忘层（全仓无 `ScoutingMemory`）。
-- **表现差异**：玩家离开后基地被拆，再探开那一格时建筑直接消失，看不到「最后看到的废墟」；客户端会保留定格直到重新看见。
-- **要做**：建筑在不可见时阵亡保留最后一次看到的定格模型，重新可见时再按 `ScoutingMemory` 口径清掉。
-
-> **执行结论（Launcher10，待合并）**：已修复。
-> - 记忆层：新增 `Launcher10/GameCore/L4_Composition/Game/Rendering/ScoutingMemory.cs`，与客户端相对路径、文件名、类名一致；按单位 ID 记录建筑最后可见位置，`Begin(fog, retired)` 在位置重新可见时把条目交给回收字典。
-> - 阵亡路径：`Unit.EnterDeath` 对进雾定格（`View.FogFrozen`）的建筑不再切 Death 序列，直接置 `DeathPresentationGone=true`，尸体计时不再隐藏模型；`War3GameScene.OnUnitDied` 把它登记进 `_buildingScouting` 并标 `FogMemorial`，节点留在原位继续吃战争迷雾压暗。
-> - 清退：`TickFog` 每次 0.2s 刷新后执行 `RefreshBuildingScouting`，同格重新可见即隐藏节点并清空记忆；没看过的建筑不建记忆，看得见时阵亡仍走原流程。
-> - 验证：`dotnet build` 0 错误；新增 `--fog-memory-probe` 覆盖 11 项（看过后进雾定格、雾中阵亡保留、尸体计时不隐藏、雾里持续保留、重新看见清退、记忆表清空、看得见时阵亡照常消失、没看过不留记忆），在 `(4)Turtle Rock.gmap` 全部通过；`--state-probe` 仅剩基线已知的 `utod` 1 项失败；`--combat-probe` 全部通过。
-> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --fog-memory-probe`。看画面：启动 Launcher10，让敌方 AI 在你视野外拆掉另一家的建筑，再带兵探回原地，建筑以灰雾定格保留，进入视野当帧消失。
+> **执行结论（Launcher9）**：已按「接收者」机制落地，未做 32 的改名/移目录，留给 32 一次搬走。
+> - `SceneFog` 增加战争迷雾接收者集合：`RegisterFogReceiver(material)` 登记材质并立刻写入当前 `fog_of_war_texture/uvp/enable`；`SetFogOfWar` 在纹理/UV/开关真正变化时立刻回写全部接收者，不再等光照刷新；`Set(War3FogConfig)` 顺带清空接收者与雾参数，避免第二张图沿用上一张图的雾纹理。
+> - `SceneLightRig` 抽出 `ForEachMaterial(Node|MeshInstance3D, action)`，`Apply` 改为复用它；`SceneFog.Write` 只负责大气雾并在末尾登记接收者。
+> - `FogOfWar` 在 `Build` 上传纹理后扫一遍场景登记已存在的材质，并在进树期间订阅 `SceneTree.NodeAdded` 登记之后新建的 MeshInstance3D 材质（训练单位、特效、丝带等）。
+> - 验证：`--shot=…@3 --day-seconds=2400`（光照刷新周期被拉长到 5 秒）时，临时探针显示 `Build` 时已登记 4595 个接收者、截图前没有任何 `LightApply`，画面仍按视野正常压黑；改回默认昼夜周期后进图即带雾。`--state-probe` 只剩基线已知的 `utod 研究项` 一条失败。
 
 ## 模块三：单位、技能与物品
 
@@ -270,7 +262,7 @@
 
 ---
 
-## 核对结果（V1 剩余 21 条）
+## 核对结果（V1 剩余 20 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -284,7 +276,6 @@
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 47 | 仍成立 | 地形/悬崖着色器无 `uDynamicLights`（`terrain_map.gdshader:9-11`） |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
-| 54 | 仍成立 | 只有可见性冻结（`Environment.cs:91-95`），无 `ScoutingMemory` |
 | 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
 | 56 | 仍成立 | 每格 `CpuParticles3D` + 跨格 `Restart`（`WeatherRenderer.cs:69-94`、`:199`） |
 | 57 | 仍成立 | `Upload` 只存静态字段（`FogOfWar.cs:185`），材质写入在 `SceneLightRig.Apply` |
