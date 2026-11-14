@@ -23,6 +23,8 @@
 > L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
 > 任务 1（V1 #51）、任务 2（V1 #53）、任务 3（V1 #49）、任务 4（V1 #50）已落地并合并到 Launcher，编号不复用。
 
+> **复核评价**：这段只交代了 1–4，正文从 6 起，5 号去哪了没写。按「落地就删、编号留空」的规则，5 号应该是第五条已落地的任务，补一句说明，省得每次读清单都要重新猜这个缺口。
+
 ## 模块二：地形与环境
 
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
@@ -55,6 +57,8 @@
 - **表现差异**：进图后地图先全亮，等下一次时辰跳变雾才突然铺上去。
 - **要做**：`FogOfWar.Upload()` 写完静态字段后立刻把 `fog_of_war_texture/uvp/enable` 重写进已创建的材质，不搭光照刷新的车。
 
+> **复核评价**：证据成立，但本条与第 32 条改的是同一处（`FogOfWar` / `SceneFog` / `SceneLightRig.Apply`）。按模块顺序先做 9 再做 32，同一批材质要改两遍，而 32 的「拆开」本身就会顺带消掉这里的延迟。建议合并：先做 32 的拆分，让 `FogOfWar.Upload` 直接写进 `FogOfWarUniforms` 的接收者，本条随 32 一起销账。
+
 ### 10. 建筑在雾里被拆掉后仍然立刻消失（V1 #54）
 
 - **客户端**：把「已探索但看不见」的建筑冻成 CPU 快照，被拆掉时快照还在，直到 `ScoutingMemory` 把这一格重新看见才遗忘（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/ScoutingMemory.cs`）。
@@ -79,6 +83,8 @@
 - **Launcher**：`RuntimeRoarAbility` 只有 `DamagePct => Data('A')`，施法时给一个只带攻击力的 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:10`、`:20`）；`RuntimeBloodlustAbility` 只有 `DataA/DataB`，同样用 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:10-11`、`:25-29`）。没有读 `BuffID`，也不绑 Buff 物编，所以没有 Buff 美术、没有护甲/回复、没有模型放大、英雄持续时间也与普通单位共用。
 - **表现差异**：咆哮只加攻击力，不给护甲和回血回蓝；嗜血不会把模型放大；两种增益在单位身上都没有对应的 Buff 图标/特效；英雄吃到的持续时间与客户端不同。
 - **要做**：按客户端补 `DataB/C/D/G`、`HeroDur`、`BuffID` 与目标规则；Buff 实例绑到 `BuffData`，让 `Buff` 的美术与名称走物编。
+
+> **复核评价**：证据成立，「要做」漏了两处客户端规则：`RefreshRoarData` 还读 `DataF`（`PreferSharedSpellRecipients`），并用「护甲或回血非零」推出 `AllowsRecipientsWithoutAttack`，让没有攻击能力的接收者也能吃到咆哮。这两条不补，改完仍会出现「一队里有些单位吃不到增益」的差异。建议在「目标规则」后面点名 `DataF` 和 `AllowsRecipientsWithoutAttack`。
 
 ### 13. 地面物品靠走近自动吸走，客户端要求右键下单
 
@@ -126,12 +132,16 @@
 - **表现差异**：远程单位对射时看不到箭/火球/投石，只有伤害数字和命中音。
 - **要做**：先确认是骨骼/Stand 动画把网格挪走，还是投射物节点/材质在运行时被改写；修好后用弓箭手对射复验箭、火球、投石三类飞弹。
 
+> **复核评价**：表现差异有证据，修法还没有，这类条目容易被当成能直接下手的任务。建议标题标 `（待定位）`，定位结论写回本条再动手。定位可以先量 `_projectiles` 节点的运行时 AABB：放大 12 倍时 AABB 一起变大，说明网格在、只是被裁或全透明；AABB 塌成一点，说明骨骼/动画把网格移出了包围盒。
+
 ### 19. 音乐无缝连播，也没有脚步和建筑循环音（V1 #25）
 
 - **客户端**：曲间有 20 秒间隔（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:3`），支持主题音乐叠加、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；`War3LoopingSoundService` 按 `MovementSoundLabel` 播脚步并跟随位置，建筑建造时播 `BuildingSoundLabel`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3LoopingSoundService.cs:7`）；`War3AudioSystem` 24 个系统声部、同文件最多 3 个、按 channel 配额/优先级抢占，每条声音用自己的 Min/MaxDistance。
 - **Launcher**：`War3MusicPlayer` 播完立刻下一首，固定 `-10dB`，没有间隔、淡入淡出和脚本接口（`Launcher/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:14`、`:26`、`:69-74`）；没有循环音服务；`War3AudioSystem` 只有 16 个 3D + 8 个 2D 固定播放器，`UnitSize = 900`、`MaxDistance = 4500` 写死（`War3AudioSystem.cs:12-42`），表里的 Min/MaxDistance 没有使用；没有音量设置；客户端加载 11 张声音表（ack/combat/anim/ui/ambience/ability/dialog/midi/environment/EAX/portrait，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:26-44`），Launcher 只有 5 张（`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:44-48`）。
 - **表现差异**：音乐一直接一首、没有呼吸感；行军完全没有脚步声，建筑建造没有循环施工音；远处/近处声音衰减一致，声部抢占规则不同。
 - **要做**：曲间间隔与淡入淡出、脚步/建造循环音；声部按 channel 配额和优先级；音量设置与第 21 条的选项界面一起做。
+
+> **复核评价**：本条依赖第 21 条的选项界面，而 21 在模块五，「模块内从上往下」会先把 19 做到一半卡住。建议把 19 一并放进「提前插队」名单，或者把「音量设置」整段挪进 21 条。
 
 ### 20. 城镇被攻击、英雄阵亡这几类事件音还没接（V1 #62）
 
@@ -146,6 +156,8 @@
 - **Launcher**：上述五个类（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs`、`RuntimeCloudOfFogAbility.cs`、`RuntimeMonsoonAbility.cs`、`RuntimeSentinelAbility.cs`、`RuntimeVolcanoAbility.cs`）只结算伤害/状态，没有 `Art`、`Effect`、`Spawn` 相关的美术字段与生成循环；全仓也没有 `RuntimeMeteorRainAbility` 对应类。
 - **表现差异**：烈焰风暴只有伤害数字没有柱状余烬，云雾没有雾团遮挡，季风没有雨幕和落点闪电，哨兵没有停在树上的猫头鹰，火山没有喷发和熔岩弹；陨石雨技能整个缺失。
 - **要做**：逐个按客户端补美术字段、`RuntimePreloadArts` 与生成/销毁循环；火山和陨石雨还要补对应的 `Effect`/`Missile` 类。
+
+> **复核评价**：五个技能那半成立，陨石雨这半越界。`ANme` 在 `test/war3-unpack/Units/AbilityData.slk` 里没有行（大小写都查过），`UnitAbilities.slk` 里没有任何单位携带，全仓只出现在战役脚本和 `Blizzard.j`；客户端 `RuntimeAbilityFactory.Constructors.cs:167` 的注册在 1.27 数据下是死代码。按本清单范围「只有脚本能触发的效果不进清单」，陨石雨应从本条删除，`RuntimeMeteorRainAbility` 不必补。另外编号 33 夹在 20 和 21 之间，破坏了「模块内从上往下」的读法，技能美术应排到模块三末尾。
 
 ## 模块五：输入与镜头
 
@@ -197,6 +209,8 @@
 - **表现差异**：小地图没有野怪营地图标（野怪只按单位点显示）、没有物品和出生点图标，中立建筑只按玩家色画方块而没有中立图标；Alt+G/T/A 没反应；因为没有营地图标，野怪过滤没有实际对象；阵型按钮不改变移动阵型。
 - **要做**：补全 `Classify` 与营地图标；把 `HandleAltShortcut` 接到输入、把阵型开关接到移动阵型；配色/野怪按钮现有的颜色与显隐逻辑保留；腐地保持现状。
 
+> **复核评价**：「只认 4 个金矿 id」与代码不符：`MinimapUnitView.cs:43-54` 现在是 3 个金矿（`ugol`/`egol`/`ngol`）加 3 个圈地（`ncop`/`ncp2`/`ncp3`），圈地图标已经在用。补 `Classify` 的时候别把圈地这几个分支一起重写成新表。
+
 ### 27. 单位信息面板没有 Buff 图标栏
 
 - **客户端**：`UnitInfoPanelFrame` 有 8 个 `BuffIcon0..7`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:41-43`、`:126-128`），`UpdateBuffIcons` 按选中单位的 Buff 填图标、剩余时间和光环/增益标记（`:534-573`），悬停显示 `Bufftip/BuffUbertip`。
@@ -210,6 +224,8 @@
 - **Launcher**：`PortraitViewport.Show` 只加载选中单位模型并 `Play("Stand")`（`Launcher/GameCore/L4_Composition/Game/Rendering/PortraitViewport.cs:51-70`），没有 Portrait 序列选择、没有待机轮换、没有应答时说话动画；`GameHudScreen` 选中变化时只调 `Show(selected)`（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:205-214`）。
 - **表现差异**：头像永远循环同一个 Stand，站立动作整齐、缺少原版的手势/说话表现；点单位听到应答时头像嘴不动。
 - **要做**：按客户端补 `PortraitAnimator`（Portrait/Portrait+TALK、待机重摇、按身份重播种），在 ack 时触发 Talk，时长取语音实际长度。
+
+> **复核评价**：本条顺手欠着一笔规则 5 的账。`PortraitViewport.cs` 客户端在 `L4_Composition/Game/UI/`，Launcher 在 `L4_Composition/Game/Rendering/`。既然本来就要重写这个类，一起搬回 `Game/UI/`。全仓 273 个同名 C# 文件里，相对路径对不上的只有这一处。
 
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
@@ -243,6 +259,8 @@
 - **表现差异**：玩家看到的雾暂时一致，但两类雾的生命周期被绑在一起（第 9 条的延迟就是它造成的），后续任一渲染器改雾参数都会牵动全局。
 - **要做**：拆开。战争迷雾改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
 
+> **复核评价**：命名与归属那一半属规则 5，成立。「各渲染器自己在材质创建处传参」属于行为重构，落在规则 1/3 上，超出了规则 5 的题面，方向是对的，保留。做的时候和第 9 条一起收，顺序是先拆后修。
+
 ---
 
 ## 核对结果（V1 剩余 21 条）
@@ -271,6 +289,8 @@
 | 63 | 仍成立 | 弹道仍是实例化后直线/弧线飞行（`Presentation.cs:33-79`），根因未定位 |
 | 64 | 仍成立 | `ContainerAbility` 无赋值（`Ability.cs:714-715`），无 `RuntimeSpellBookAbility`/`OpenSpellBook` |
 
+> **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
+
 ---
 
 ## 已排除的候选（不写进清单）
@@ -287,6 +307,8 @@
 | AI 的战术选择 | “仅对战”的已知取舍；Launcher 的 AI 不是客户端 melee AI 的移植对象 |
 | CAMS 模型自带镜头、UberSplat 建筑光晕 | 1.27 数据/客户端运行时没有可对齐的实现 |
 
+> **复核评价**：这张表当「防重复立项的对照表」用是有价值的，但 AGENTS.md 规则 7 写的是「平台差异和『仅对战』的已知取舍不再列出」，「AI 的战术选择」这一行就是纯粹的仅对战取舍。要么在表头点明这是对照表而不是清单内容，要么把这一行去掉。
+
 ---
 
 ## 推进顺序
@@ -296,6 +318,8 @@
 1. **第 21、22、24 条**是「按了没反应/看不到提示」的功能性缺陷，可以提前插队。
 2. **第 6、8、9 条与第 17 条**共用环境/雾/天气代码，建议连着做，避免来回改同一批着色器与加载时序。
 
+> **复核评价**：这条串法只对一半。17 是 `war3_particle.gdshader` 引入雾项，和 9 确实同批；6 是地形/悬崖顶点光照接动态光，8 是天气粒子改实例化，各自改的是不同着色器文件，跟 17 没有共用面。把 17 单独和 9 绑在一起，6 和 8 留在模块二按序做，改动面更小。
+
 底层里最容易被玩家一眼看出的是 **第 11 条（转身）**、**第 12 条（Buff 技能）**、**第 13–15 条（物品）**；特效与声音里 **第 18 条（飞弹）** 和 **第 19 条（音乐/脚步）** 最直观。
 
 ## 收尾规则
@@ -303,3 +327,9 @@
 - 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **34** 开始。
 - 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
+
+> **复核评价**：「序号不复用」在多副本并行的工作流里已经落空。工作区有 `Launcher` 到 `Launcher5` 六份副本，`RunLauncher.command` 指向 `Launcher/`，而 `Launcher5` 的 git 历史里已经提交了「任务36」「任务37」，本清单最高才到 33、还写着新任务从 34 起。更麻烦的是 `Launcher5` 的「任务21/22/24」内容分别是模型丝带、闪电抖动、应答音效，与本清单第 21/22/24 条（Esc 语义、命令卡、提示语）不是一回事——同一个编号在两处指不同任务，编号就失去了追溯能力。
+>
+> 建议改成用标题做锚点（本清单的标题本来就够唯一），提交信息里带标题而不是只带序号；清单内部沿用序号只作阅读顺序。
+>
+> 另外「标题后的 `（V1 #xx）`」和「核对结果」这张 21 行的表属于历史变更记录，与 AGENTS.md 协作约定里的「不记录历史变更」相抵。清单只需要回答「还剩什么」，删完落地条目后这些追溯信息一并清掉更省事。
