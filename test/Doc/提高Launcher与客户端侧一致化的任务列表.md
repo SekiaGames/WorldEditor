@@ -76,41 +76,6 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 
 ## 六、单位实体
 
-## 15. 血条、选中圈、影子三块贴片都挂错了地方
-
-- **血条**：客户端按 `SelectionDiameter` 换算成屏幕像素宽、按包围盒决定高度，所有可见存活非无敌单位都画，敌人恒红、有蓝条；Launcher 是世界尺寸 Quad（56 / 建筑 90），只有受伤或被选中才画，没有蓝条，颜色是两档离散色。而且 `BarRoot` 挂在已经缩放的 `Root` 下，模型缩放不是 1 的单位血条离头顶太远；建筑条宽 90，填充偏移却按 28 算，掉血时填充会往右漂。
-- **选中圈**：客户端读 `SelectionRadius/Height`，用原版 `SelectionCircleMed.blp` 铺在地形三角面上，坡地贴合，敌红友绿；Launcher 是固定 32 段程序化圆环，颜色恒为 `3ce03c`，`y=6` 固定在 `Root` 下，所有兵种一样大，坡上会插地或悬空。
-- **影子**：客户端是世界坐标轴对齐的地面贴花、逐顶点贴地，建筑按 30%/70% 锚点偏移；Launcher 的影子是 `Root` 的子节点，`Root` 每帧按朝向旋转，单位一转身影子跟着转；SLK 里没写尺寸的单位会回退成 64+ 世界单位的巨大黑影。
-
-要做的三块都已完成（血条、选中圈、影子），条目等合并后再删。
-
-**已完成**（2026-11-14，血条）：
-
-1. `UnitType.SelectionDiameter = unitUI.scale × MiscData [SelectionCircle] ScaleFactor`（缺省 72），血条宽度走 `UnitStatusBarGeometry.Pixels` 换算屏幕像素，不再用 56 / 建筑 90 的世界 Quad。
-2. 血条改屏幕空间：`BattleOverlayRenderer`（与客户端同名同路径）挂在 CanvasLayer 20，按模型顶投影画矩形，HUD(45) 仍压在它上面，相机俯仰不再把它拉变形。
-3. 全部可见存活单位都画（去掉「受伤或被选中才显示」和 Alt 逻辑），敌方恒红、其余按血量走绿黄红连续色，补了蓝条（厚度系数 0.0028，贴在血条正下方）。
-4. 填充用 `human-healthbar-fill.blp` 按血量截 UV + 顶点色，黑底用矩形；不再有两档离散色和填充右漂。
-5. 顺带修 `MeasureHeight`：只统计可见 mesh，隐藏的升级形态 geoset 不再把血条顶高（Necropolis 708 → 417）。
-6. 删掉 `UnitSceneComponent` 的 `BarRoot/BarFill/SetHp/SetBarVisible`，以及 20 处 `SetHp` 调用。
-
-**已完成**（2026-11-14，选中圈）：
-
-1. 半径改 `SelectionDiameter × 0.5`，不再按「建筑 3.2 / 其它 0.9」固定缩放。
-2. 贴图换成 `SelectionCircleMed.blp`，`SelectionCircleRenderer` 按 8×8 细分铺在地形三角面上，逐顶点取高度，坡地跟着起伏。
-3. 抬升 = 客户端 `GroundSplatOffset(1) + SelectionCircleBaseZ(16)`。
-4. 敌红 `(1,.15,.15)`、友绿 `(.2,1,.25)`，与客户端 `SelectionRingColor` 同色。
-5. 新增 `MapWorldBuilder.SurfaceHeightAt`：按地形网格的三角面（含 LayerHeight/RampLift）插值，替掉双线性 `HeightAt` —— 双线性在 tile 内部会落到网格下方。
-6. 选中状态留在 `UnitSceneComponent.Selected`，圈由场景按 `_selected` 统一画，`Ring` 与程序化圆环网格删除。
-
-**已完成**（2026-11-14，影子）：
-
-1. 影子脱离 `Root`，改由场景层 `UnitShadowRenderer`（新文件）统一画世界坐标轴对齐的贴地贴花，单位转身不再带影子转。
-2. 贴图/尺寸/锚点按客户端 `Presentation.RenderUnitShadows` 两个分支：建筑吃 `buildingShadow` 贴图、边长 = 贴图像素 × 32、锚点 (30%,30%)；普通单位吃 `unitUI` 的 `shadowW/H/X/Y`，宽高为 0 就不画（不再回退成巨大的 64+ 黑影）。
-3. 几何按 128 世界单位地形格细分，逐顶点取 `SurfaceHeightAt`，抬升 `UnitShadowOffset(3)`；地图平面 (x 右, y 上) 与 Godot 世界是 `mapX = -worldX`、`mapY = worldZ`，贴图 V 轴跟随客户端 splat 翻转。
-4. 复用项目里的 `shadow_map.gdshader`（顶点色 × 贴图 alpha），黑 `(0,0,0)`、alpha 0.5，与客户端 `uOpacity 0.5` 同口径；`Shadow.png` 是纯黑 RGB + alpha 0.75 的柔和椭圆。
-5. 删掉 `UnitSceneComponent.ApplyShadow` 与 `Units.ApplyUnitShadow`（原来挂在 `Root` 下的 `QuadMesh` 子节点）。
-6. 迷雾外/已死亡的单位不画，贴图组这一帧没人用时收起节点，不会留残影。
-
 ## 16. 队伍色回绕，幻象不变色，虚无没反应
 
 - 客户端队伍色用 `TeamColorXX.blp`（0–27 号），`TeamGlowXX` 跟着玩家色变；Launcher 只内置 12 个纯色，`ColorOf(player)` 取 `player % 12`，于是 12–23 号（中立、野怪）会回绕成玩家亮色——野怪变成鲜红或亮蓝。队伍色区域在 shader 里被平涂成纯色，没有原版明暗纹理；光晕固定一种颜色。
