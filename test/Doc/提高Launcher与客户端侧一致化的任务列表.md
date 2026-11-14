@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 60，下一条新任务从 61 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 61，下一条新任务从 62 起。**
 
 ## 范围
 
@@ -32,41 +32,7 @@
 
 ---
 
-## 六、单位实体
-
-## 19. 死亡、建造、升级的动作断在半路
-
-- **死亡**：客户端 Death 播完按 `DeathAnimTime` 接 `Decay`（Flesh/Bone）或英雄的 `Dissipate`；Launcher 只 `Play("Death")`，非循环停在末帧，88 秒后直接隐藏。
-- **建造**：客户端有 `FindConstructionBirthSequence`（避免暗夜主城误选 `stand work ... birth`）；Launcher 是 `PickAnimation("Birth")`，精确匹配不到就取任意以 Birth 开头的。
-- **升级**：客户端按目标类型选 `Birth Upgrade First/Second` 并按进度 Seek；Launcher 升级期间外观完全不变，进度条走完才整栋换掉。
-- **金矿**：客户端按缠绕金矿里的采集者数量选 `Stand Work First..Fifth`，显示 1–5 个小精灵；Launcher 没有这段。
-- **关键帧插值**：客户端支持 step/linear/Hermite/Bezier，Launcher 转换只写 TRS 轨道，Godot 走线性，贝塞尔缓入缓出丢了。
-- **时间缩放**：客户端有 `AnimationTimeScale` 参与时钟；Launcher 没有。
-
-要做：死亡链、升级生长、金矿小精灵先补；切线信息属于 Extract 导出，单独排一条。
-
-**已完成**（2026-11-14）：
-
-1. 死亡链：`Unit.Lifecycle.cs` 补了客户端 `Death` 组件那套字段——`DeathAnimTime`（UnitData 的 `death` 列）、`DecayTime`/`BoneDecayTime`/`DissipateTime`（MiscData，`War3GameplayConfig` 加了同名的四个字段）、`DeathElapsed`/`IsBone`/`DeathPresentationGone`/`PresentationAlpha`；`TickCorpse` 按 `Death.UpdateDead` 的三段边界推进：Death → Decay Flesh → Decay Bone → 消失，英雄是 Death → Dissipate 并在最后 2.5 秒淡出。播放侧新增 `Scenes/War3GameScene/Animation.cs`（与客户端同名同路径）里的 `UpdateDeathAnimation`，用 `UnitSceneComponent.PlayTimed`（对标 `UnitAnimationController.Fit`：整段裁剪到指定秒数、非循环停末帧）驱动；淡出走 `PresentationAlpha` 乘进 `SyncAppearance` 的模型透明。
-2. 升级生长：`UpdateUpgradeAnimation` 按订单进度 `SetUpgradeProgress` 定位 Birth 序列；新增 `Unit.Upgrading`，让模拟层不再每 tick 把动画打回待机；取消升级复位 Stand。
-3. 金矿小精灵：`World.StepCargoWork` + `EntangledMineOccupants`，按挂在缠绕金矿名下的采集者数量播 `Stand Work First..Fifth`（模型里五个变体各自关掉「人数还不够」的 Wisp 附件，选对序列就够）。
-4. 建造 Birth 序列选择补了缓存（`ConstructionBirth`），口径与客户端 `FindConstructionBirthSequence` 一致（只认以 Birth 开头，优先纯 `Birth`）。
-
-实测：临时探针（已移除）跑 Turtle Rock——步兵 death=3.04s，2.25s 时仍播 Death、5.40s 切 Decay Bone 且 `IsBone=true`；英雄 1.50s 后切 Dissipate、4.55s 透明归零并隐藏；htow→hkee 期间持续播 Birth；egol 挂 3 个小精灵时 `Stand Work Third`。`--state-probe` 新增 6 条尸体分段校验全通过。
-
-**还差**：升级变体的 `First/Second` 形态标签来自物编 `animProps`（`uani`），1.27a 的 `Units\UnitUI.slk` 没有这一列，现在落到基础 Birth（客户端同一份数据也是这个结果）；等 Extract 侧能导出该字段再补。
-
----
-
 ## 七、特效与声音
-
-## 21. 粒子、丝带和模型事件都缺
-
-- **粒子**：客户端逐实例模拟位置/速度/重力/寿命/模型空间，支持替换贴图、实例染色、队伍色粒子；Launcher 转换时烘成 `GPUParticles3D`，数量硬夹 512，参数取待机帧快照，没有队伍色/实例色。
-- **丝带**：客户端有完整运行时丝带（发射时钟、历史点、上下高度、重力、颜色、纹理行列）；Launcher 只给 `gravity>0` 的丝带烘一张静态扫掠网格，其余只留 `metadata/war3_ribbon_*`，而且没有代码消费这些元数据——剑刃拖尾、魔法轨迹基本不出现。
-- **模型事件**：`SPN` 生成子特效、`FPT` 脚步特效仍未派发，出生帧特效和脚印全没有（对应的声音在 24 条）；地面溅射 `SPL`/`UBR` 已接。
-
-要做：丝带优先（视觉损失最大），然后粒子参数和实例色，最后模型事件（要动 Extract 侧）。
 
 ## 22. 闪电是 20Hz 随机折线，弹道不俯仰、不裁剪
 
@@ -113,6 +79,27 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 - **音高**：客户端 `RANDOMPITCH` + `PitchVariance` 有自然变化，Launcher 解析了 `RandomPitch` 却没用，种子还写死。
 
 要做：应答先改回 2D 并补节流，再按材质补命中音、补界面音效。
+
+**已完成**（2026-11-14）：
+
+1. 播放器：`War3AudioSystem` 拆 2D/3D 两条通道（16 个 `AudioStreamPlayer3D` + 8 个 `AudioStreamPlayer`），`Play2D`/`Play3D` 都返回实际时长；`Now` 改用 `Time.GetTicksMsec()`，冷却不再是「只在调用时往前走」的假时钟。`War3SoundTables` 解出 `RandomPitch`/`PitchVariance`/`MinDistance`/`MaxDistance`/`Flags`，`War3UnitSound` 按音高换算时长、在 `FileNames` 里随机挑变体。
+2. 应答：新增 `NativeUnitAckState`（连续选择计数、Pissed 索引、每单位「语音时长 + 250ms」冷却、`NODUPEUSERNAMES` 同名去重）与 `War3AckSoundService.PlaySelection/PlayOrderAck/PlayReady`，全部改 `Play2D`，并把时长回传给头像 `Talk`。
+3. 命中音：`UnitFactory` 读物编 `armor`/`unitSound`，`CombatCodes.ParseWeaponSound` 解析 `weaponSound`；`PlayCombatHit` 按 `WeaponSound + ArmorSound` 拼键（如 `MetalMediumSliceMetal`），Flesh/Metal/Wood/Ethereal/Stone 全覆盖。
+4. 施法音：`PlaySpellCast` 先查 `Aas/Asp/Ahe/Acs/Acst/Sounds/Ubz`，查不到落 `SpellSoundFallback`（rawcode → wav），不再把施法当成选择语音播 What。
+5. 界面音效：新增 `War3UiSoundService`（冷却表 + 种族前缀 + Generic 回退），挂上 InterfaceClick、SubGroupSelectionChange、InterfaceError、ItemGet/ItemDrop、JobDone、UpgradeComplete、ResearchComplete、NoGold/NoLumber/NoFood/NoMana、CantPlace、InventoryFull；`World` 补 `ItemDropped` 事件（丢格、丢地、死亡掉落三条路）与 `ItemPickedUp` 接进场景层，买物/转交背包满时播 InventoryFull。
+
+实测（BootyBay，`--skill-probe` / `--item-probe` / `--attack-probe` 的 `[AUDIO]` 日志）：
+
+| 场景 | 日志 | 结论 |
+|---|---|---|
+| 连点同一英雄 5 次 | 只 1 条 `HeroPaladinWhat 2D 时长1.30s`，应答计数 1 | 节流生效，不再叠音 |
+| 点敌方单位 | `InterfaceClick 2D` | 不可控走点击音，不念应答 |
+| 步兵打步兵 | `MetalMediumSliceMetal` | 材质不再是固定 Flesh/Wood |
+| 圣骑士/山丘施法 | `AHtb`、`AHtc`、`AHbz`、`AEbl` 各一条 | 施法音按技能走 |
+| 拾取/丢弃物品 | `ItemGet 2D 时长0.20s`、`ItemDrop 2D 时长0.49s` | 两个界面音接通 |
+| 建造完成 | `JobDoneSoundHuman` | 种族前缀拼接生效 |
+
+**还差**：MapPing（等任务 42 的地图标记交互）、TownAttack/UnderAttack（城镇被攻击还没有事件源）、HeroDies/AllyHeroDies（要在死亡事件里区分英雄与同盟）。
 
 ## 25. 音乐无缝连播，也没有脚步和建筑循环音
 
@@ -216,7 +203,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 18 | 2 | 已完成，等合并后删 |
 | 19 | 2 | 三块已完成，等合并后删 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
-| 21 | 2 | 保留：粒子、丝带、事件 |
 | 22 | 2 | 保留：闪电与弹道 |
 | 23 | 2 | 保留：飘字样式 |
 | 24 | 2、3 | 保留：应答、命中音、界面音效 |
@@ -262,7 +248,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **61** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **62** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -365,3 +351,12 @@ Launcher 写成 `GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的 
 Extract 的 MDX 转换只写 TRS 轨道关键帧的位置/旋转/缩放数值，切线信息整条丢掉，Godot 一律按线性插值。玩家看到：所有带缓入缓出的动作（起手、收招、建筑生长、死亡倒地）都变成匀速，动作发飘、缺少原版的重量感。
 
 要做：Extract 导出时把切线按 Godot `Animation` 支持的曲线表达出来（`Transform3D` 轨道只能是线性，得改成可承载自定义插值的轨道形式或按切线重采样成更密的线性关键帧），Launcher 侧不需要改。
+
+## 61. 粒子参数还是待机帧快照，数量也夹在 512
+
+客户端的 `ParticleEmitter2` 每帧按当前动画帧求 `KP2S`（速度）、`KP2L`（纬度）、`KP2G`（重力）、`KP2E`（发射率）、`KP2W`/`KP2N`（宽/长）、`KP2V`（可见度），粒子的位置/速度/重力和寿命都在运行时逐实例推进。
+
+Launcher 在 Extract 侧把发射器烘成 `GPUParticles3D`：参数取待机帧那一帧的快照，`amount = ceil(emissionRate * lifeSpan) + 8` 再硬夹到 8..512，所以发射率随动画变化的特效（呼吸、爆发、蓄力）全程按待机速率出粒子，粒子多的特效被削到一半。
+
+要做：把上述轨道按片段导出，运行时按 `AnimationPlayer` 当前位置驱动 `ParticleProcessMaterial` 的对应参数，并按整段最大发射率给 `amount`。
+
