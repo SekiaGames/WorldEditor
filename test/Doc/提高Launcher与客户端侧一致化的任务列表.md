@@ -93,33 +93,16 @@
 ## 模块七：工程结构（横切）
 
 > 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
-> 任务 31（坡面姿态归属）已落地并合并到 Launcher，编号不复用。
-
-### 32. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾（V1 #58）
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/FogOfWarUniforms.cs` 只管战争迷雾的 `Texture/Uvp/Enabled` 加 `Publish/Reset/Upload`；大气雾由各渲染器按 `FogSettings` 自己传 `uFogColor/uFogParams`。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/SceneFog.cs` 同时装大气雾 `fog_color/fog_params` 和战争迷雾 `fog_of_war_*`，`SceneLightRig.Apply` 一次写两样（`Launcher/GameCore/L4_Composition/Game/Environment/SceneLighting.cs:297`）；路径、类名都和客户端对不上。
-- **表现差异**：玩家看到的雾暂时一致，但两类雾的生命周期被绑在一起（第 9 条的延迟就是它造成的），后续任一渲染器改雾参数都会牵动全局。
-- **要做**：拆开。战争迷雾改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
-
-> **复核评价**：命名与归属那一半属规则 5，成立。「各渲染器自己在材质创建处传参」属于行为重构，落在规则 1/3 上，超出了规则 5 的题面，方向是对的，保留。做的时候和第 9 条一起收，顺序是先拆后修。
-
-> **执行结论（Launcher2，待合并）**：两类雾已拆开，命名与路径对齐客户端。
-> - 战争迷雾：删除 `Game/Environment/SceneFog.cs`，新增 `Game/Rendering/FogOfWarUniforms.cs`，只保留 `Texture/Uvp/Enabled` 与 `Publish/Reset/Register/Upload`，只写 `fog_of_war_texture/uvp/enable`；`FogOfWar` 改为调用 `Publish`/`Register`，水面在材质创建时注册为接收者，删掉 `BindWaterFogOfWar` 与每 0.2 秒的单独下发。
-> - 大气雾：留在 `War3FogConfig`，新增 `Current/SetCurrent/Apply/ApplyTo`；`LoadTextures` 从 w3i 取值后 `SetCurrent` 并 `Reset` 战争迷雾状态，地形、悬崖、水面、装饰物、单位、变形、技能特效、弹道、丝带、集结点旗帜、岸浪、天空都在材质创建处写 `fog_color`/`fog_params`（`SceneLightRig.Apply` 不再碰雾）。
-> - `SceneLightRig.Apply` 现在只写 `war3_scene_direction/color/ambient`，不再顺带写两种雾。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 新增 `[FOG]` 材质检查，Turtle Rock/BootyBay 上地形、悬崖、单位、水面四类材质均为 `fog_of_war=1` 且 `fog_params` 与当前配置一致；`--state-probe` 仍只剩基线已知失败 `utod 研究项`。两张自带地图的 w3i 都是 `useTerrainFog=0`，非零大气雾数值无法在这两张图上肉眼验收，代码路径与材质检查已覆盖。运行时截图因 Metal fence 超时全黑（并行 Godot 占用 GPU），不作为画面证据。
-> - 合并注意：改动面覆盖 `SceneLighting.cs`、`War3FogConfig.cs`、`MapWorldBuilder*`/`TerrainGridFactory.cs`、`WaterRenderer.cs`、`DoodadRenderer.cs`、`UnitSceneComponent.cs`、`Units.cs`、`Presentation.cs`、`MdxRibbonRenderer.cs`、`ShorelineWaveRenderer.cs`、`SkyDomeRenderer.cs`、`RallyPointDisplay.cs`、`FogOfWar.cs`、`Lifecycle.cs`/`Environment.cs`，与其它 Launcher 副本冲突概率高；未改 Extract，无需重建 `extract.pck`。
+> 任务 31（坡面姿态归属）、任务 32（战争迷雾/大气雾拆分）已落地并合并到 Launcher，编号不复用。
 
 ---
 
-## 核对结果（V1 剩余 4 条）
+## 核对结果（V1 剩余 3 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
-| 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
 
 > **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
