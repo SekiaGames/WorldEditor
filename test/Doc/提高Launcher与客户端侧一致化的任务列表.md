@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 61，下一条新任务从 62 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 62，下一条新任务从 63 起。**
 
 ## 范围
 
@@ -41,38 +41,6 @@
 - **占位与引导**：客户端模型缺失只记日志；Launcher 丢一颗金色 `SphereMesh`。客户端引导技能用技能自己的 `AreaEffectArt`；Launcher 自己画一个半透明蓝圆盘。
 
 要做：闪电改成确定性抖动 + UV 滚动；弹道补俯仰和迷雾裁剪；把黄球和蓝盘去掉。
-
-## 24. 单位应答变成 3D 音，命中音只认木头和肉
-
-- **应答**：客户端 `War3AckSoundService` 有完整节流——连续选择计数、Pissed 索引、每单位「语音时长 +250ms」冷却、同名去重，并返回时长给头像做说话动作；应答是 `Play2D`。Launcher 只有「12 秒内点 4 次切 Pissed」，没有节流，语音会叠在一起；而且走 `AudioStreamPlayer3D` 放在单位坐标 +80 高，点远处单位时又小又偏声道。
-- **命中音**：客户端按 `weaponSound + 目标 ArmorType` 选 Flesh/Metal/Wood/Ethereal/Stone；Launcher 只有 `target.IsBuilding ? "Wood" : "Flesh"`。
-- **施法音**：客户端按 `AbilitySounds.slk` 的 `Aas/Asp/Ahe/Acs/Acst` 查；Launcher 没有实现，反而每次施法播一遍 What 选择语音。
-- **界面音效**：客户端有 InterfaceClick、MapPing、SubGroupSelectionChange、InterfaceError、ItemGet/ItemDrop、JobDone、UpgradeComplete、NoGold/NoLumber/NoFood/NoMana、CantPlace、InventoryFull、TownAttack；Launcher 只剩 `InterfaceError`、`ResearchComplete{Race}`、`UpgradeComplete{Race}`。
-- **冷却**：Launcher 的 `_clock += 0.016f` 只在调用 `Play` 时推进，0.08s 冷却实际是「每 5 次调用响一次」。
-- **音高**：客户端 `RANDOMPITCH` + `PitchVariance` 有自然变化，Launcher 解析了 `RandomPitch` 却没用，种子还写死。
-
-要做：应答先改回 2D 并补节流，再按材质补命中音、补界面音效。
-
-**已完成**（2026-11-14）：
-
-1. 播放器：`War3AudioSystem` 拆 2D/3D 两条通道（16 个 `AudioStreamPlayer3D` + 8 个 `AudioStreamPlayer`），`Play2D`/`Play3D` 都返回实际时长；`Now` 改用 `Time.GetTicksMsec()`，冷却不再是「只在调用时往前走」的假时钟。`War3SoundTables` 解出 `RandomPitch`/`PitchVariance`/`MinDistance`/`MaxDistance`/`Flags`，`War3UnitSound` 按音高换算时长、在 `FileNames` 里随机挑变体。
-2. 应答：新增 `NativeUnitAckState`（连续选择计数、Pissed 索引、每单位「语音时长 + 250ms」冷却、`NODUPEUSERNAMES` 同名去重）与 `War3AckSoundService.PlaySelection/PlayOrderAck/PlayReady`，全部改 `Play2D`，并把时长回传给头像 `Talk`。
-3. 命中音：`UnitFactory` 读物编 `armor`/`unitSound`，`CombatCodes.ParseWeaponSound` 解析 `weaponSound`；`PlayCombatHit` 按 `WeaponSound + ArmorSound` 拼键（如 `MetalMediumSliceMetal`），Flesh/Metal/Wood/Ethereal/Stone 全覆盖。
-4. 施法音：`PlaySpellCast` 先查 `Aas/Asp/Ahe/Acs/Acst/Sounds/Ubz`，查不到落 `SpellSoundFallback`（rawcode → wav），不再把施法当成选择语音播 What。
-5. 界面音效：新增 `War3UiSoundService`（冷却表 + 种族前缀 + Generic 回退），挂上 InterfaceClick、SubGroupSelectionChange、InterfaceError、ItemGet/ItemDrop、JobDone、UpgradeComplete、ResearchComplete、NoGold/NoLumber/NoFood/NoMana、CantPlace、InventoryFull；`World` 补 `ItemDropped` 事件（丢格、丢地、死亡掉落三条路）与 `ItemPickedUp` 接进场景层，买物/转交背包满时播 InventoryFull。
-
-实测（BootyBay，`--skill-probe` / `--item-probe` / `--attack-probe` 的 `[AUDIO]` 日志）：
-
-| 场景 | 日志 | 结论 |
-|---|---|---|
-| 连点同一英雄 5 次 | 只 1 条 `HeroPaladinWhat 2D 时长1.30s`，应答计数 1 | 节流生效，不再叠音 |
-| 点敌方单位 | `InterfaceClick 2D` | 不可控走点击音，不念应答 |
-| 步兵打步兵 | `MetalMediumSliceMetal` | 材质不再是固定 Flesh/Wood |
-| 圣骑士/山丘施法 | `AHtb`、`AHtc`、`AHbz`、`AEbl` 各一条 | 施法音按技能走 |
-| 拾取/丢弃物品 | `ItemGet 2D 时长0.20s`、`ItemDrop 2D 时长0.49s` | 两个界面音接通 |
-| 建造完成 | `JobDoneSoundHuman` | 种族前缀拼接生效 |
-
-**还差**：MapPing（等任务 42 的地图标记交互）、TownAttack/UnderAttack（城镇被攻击还没有事件源）、HeroDies/AllyHeroDies（要在死亡事件里区分英雄与同盟）。
 
 ## 25. 音乐无缝连播，也没有脚步和建筑循环音
 
@@ -221,7 +189,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **62** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **63** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -333,3 +301,10 @@ Launcher 在 Extract 侧把发射器烘成 `GPUParticles3D`：参数取待机帧
 
 要做：把上述轨道按片段导出，运行时按 `AnimationPlayer` 当前位置驱动 `ParticleProcessMaterial` 的对应参数，并按整段最大发射率给 `amount`。
 
+## 62. 城镇被攻击、英雄阵亡这几类事件音还没接
+
+客户端 `War3UiSoundService` 里有 `TownAttack`、`UnderAttack`（城镇/建筑被打）和 `HeroDies`、`AllyHeroDies`（自己或盟友英雄阵亡），都靠模拟层的事件源驱动；`MapPing` 那张等地图标记交互做完才有事件。
+
+Launcher 的 `War3UiSoundService` 已经建好冷却表与种族前缀，但上述四个键没有调用点：建筑被攻击不报警，英雄阵亡也不出声，玩家在混战里少一层听觉提示。
+
+要做：在 `World` 的建筑受伤路径上区分「城镇」与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。`MapPing` 并进第 42 条的地图标记交互一起做。
