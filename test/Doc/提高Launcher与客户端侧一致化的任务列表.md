@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 54，下一条新任务从 55 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 56，下一条新任务从 57 起。**
 
 ## 范围
 
@@ -477,3 +477,13 @@ Launcher `UnitFactory.cs:353` 是 `TurnSpeed = Mathf.Clamp(turnRate * 6f, 1.5f, 
 玩家看到：点攻击后单位往往跑到贴脸才开始转身，侧身追人、绕圈时像在滑行；`NeedsAttackFacing` 的朝向窗口满足得晚，攻击前摇整体被拉长；编队齐转时更像整体平移而不是各自转身。
 
 要做：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完必须回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项——这条动的是战斗节奏，不只是表现。
+
+## 56. 天气粒子还在用 CpuParticles3D，跨格重启会把整窗雨打回起点
+
+先把结论放前面：**tail 几何不用补。** 客户端 `docs/weather-atmosphere-rendering.md:54` 记着几何是「面向相机的 ±1 方片 × `scale` 轨道」，按 `|veloc|*taillen` 把方片拉成雨丝试过并撤回——`rainTail.blp` 实测 32×16（2:1），长条形态由纹理本体提供，拉伸只会让 2:1 贴图变形。客户端 `WeatherDefinition` 因此只把 `head/tail/taillen` 当诊断字段，`Weather.vert.glsl` 里没有任何拉长指令。
+
+Launcher 的几何口径也已经对齐：`WeatherRenderer` 用 2×2 `QuadMesh`，`weather.gdshader` 里 `VERTEX.xy *= weather_timeline(weather_scale, life)`，与客户端 `uCameraRight*aCorner.x + uCameraUp*aCorner.y` 同一个 ±1 方片 × scale。
+
+差的是提交与相位：客户端 `WeatherRenderer` 一次 `DrawElementsInstanced` 画整个 7×7 窗格，相位由 `CellSeed(weather, col, row)` 确定性生成，跨格只在 `RebuildVisibleWindow` 里重传实例缓冲；Launcher 是 7×7 个 `CpuParticles3D`，`AcquireWindow` 每跨一格就 `emitter.Restart()`，`Preprocess = LifeSpan` 再跑一遍，整窗雨的相位被重置，窗口滑动时雨会整片跳一次。发射域也偏了：Launcher 用 `EmissionShapeEnum.Box`（`512×1×512` 的水平盒），客户端 `ScatterOffset` 让散布平面随 `angx/angy` 一起倾斜。
+
+要做：天气粒子改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲、不重启发射器；散布按 `angx/angy` 倾斜平面；几何继续方片，不按 `taillen` 拉伸。验证：`--path . --rendering-driver opengl3 -- --play="(4)Turtle Rock.gmap" --shot=...@N`，看跨格滑动时雨有没有整片断档。
