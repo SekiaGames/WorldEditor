@@ -127,7 +127,15 @@ Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹�
 
 Launcher 的 `Play` 里有 `if (found == CurrentAnimation) return;`，站桩连续攻击时第一刀之后一直停在攻击末帧，伤害照常结算；`SpeedScale` 只在 `Walk` 时设置；没有 `Stand Ready`，切换硬切；`SelectSequence` 返回第一个匹配项，同兵种待机完全同步、永远是同一个 `Stand` 变体（客户端按 rarity 随机）。
 
-要做：`Play` 允许重播同一序列，攻速接上，补 Ready 和姿态混合，待机变体加随机。
+已完成（2026-11-14），条目等合并后再删。
+
+**已完成**（2026-11-14）：
+
+1. `Play(kind, rate, restart)` 新增 `restart`：`Attack` 走 `restart = true`，连续出手每刀都从头播；同一序列且当前动画仍在候选集里时（待机、行走）保持不切换，避免每帧重播。
+2. `SpeedScale` 不再只给 `Walk`：任意序列都按传入 rate 设置。攻击传 `World.AttackSpeedFactor(unit)`（= `clamp(1 + 全部攻速加成, 0.2, 5)`），从 `AttackCooldownOf` 里抽出来共用，动作节奏与伤害节奏同一口径。
+3. 待机分支按是否有存活目标选 `Stand Ready` / `Stand`（对应客户端 `ready ? ReadyTag : NoTags`）；模型没有 Ready 变体时 `SelectSequence` 自然回退到普通 Stand。
+4. `SelectSequence` 增加 `candidates` 输出：只收集与「最佳序列同 form」的一组（不会把 `Stand Defend`、`Stand Victory` 混进来），切换时在这组里随机取，待机变体不再是同兵种整齐划一。
+5. 切序列用 `AnimationPlayer.Play(name, 0.1)` 做 0.1 秒姿态混合，替代硬切。
 
 ## 19. 死亡、建造、升级的动作断在半路
 
@@ -360,7 +368,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 15 | 2 | 三块已完成，等合并后删 |
 | 16 | 2 | 已完成，等合并后删 |
 | 17 | 2 | 已完成，等合并后删 |
-| 18 | 2 | 保留：动画优先级 |
+| 18 | 2 | 已完成，等合并后删 |
 | 19 | 2 | 保留：死亡/升级/金矿 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
 | 21 | 2 | 保留：粒子、丝带、事件 |
