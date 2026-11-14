@@ -8,7 +8,7 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..35，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **36** 起，做完一条删一条，序号不复用。
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..36，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **37** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
@@ -47,14 +47,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
-
-### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
-
-- **客户端**：把 `PixelOffsetX` 和 `ActivePixelWidth` 传给渲染设备，`War3UiViewport.FitPixelWidth` 把 HUD 限制在居中 16:9（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/War3UiViewport.cs:24`、`Scenes/War3GameScene/Rendering.cs:46`）。`UiFontScale` 读用户设置并在倍率变化时 `InvalidateLayout()`。
-- **Launcher**：`GameHudScreen._Draw` 用 `viewport.X / DesignWidth`、`viewport.Y / DesignHeight` 直接拉伸（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:515-535`），没有 `FitPixelWidth`/`PixelOffsetX`；`UiFontScale` 默认 1.2，但全仓没有一处 `Set`（`Launcher/GameCore/L2_Core/UI/UiFontScale.cs:18`），依赖它的选项界面也不存在。
-- **表现差异**：2560×1080 下 HUD 被横向拉宽三成，小地图变扁、命令卡格变宽、圆形按钮变椭圆；字号无法调。
-- **要做**：HUD 改用 `War3UiViewport`（选图页、加载屏已经在用），删掉重复常量；字号接选项设置。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 29（超宽屏居中/UI 字号）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
 
 ### 35. 命令卡悬停说明没有结构化成本图标（新增）
 
@@ -70,6 +63,13 @@
 > - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 日志确认训练 `0,135,0,2`、建造 `0,385,205,0`、研究 `0,125,175,0`、技能 `65,0,0,0`；截图悬停建造页「城镇大厅」显示金/木两个图标与 385/205，正文不再重复成本文字；`--card-probe` 回归 0 条 SCRIPT ERROR。
 > - 查看：合并后进图选农民开建造页、选兵营/铁匠铺开训练研究页，悬停对应按钮即可看到图标成本；技能卡悬停则显示法力图标。
 
+### 36. Esc 菜单与胜负面板固定 1600×900，超宽屏不居中（新增）
+
+- **客户端**：Esc 菜单走 FDF `EscMenuMainPanel`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs`，`War3FdfUi` 装载），和 HUD 一样使用 `War3UiViewport` 的居中 16:9 设计坐标；胜负结算也在同一套 UI 视口里。
+- **Launcher**：`EscMenuFrame` 与 `GameOverPanel` 是独立 `CanvasLayer + ColorRect`，遮罩 `Size = 1600×900`、面板坐标写死（`Launcher/GameCore/L4_Composition/Game/UI/EscMenuFrame.cs:16-29`、`GameOverPanel.cs:17-29`）；HUD 已改 `War3UiViewport`，这两层没有跟着换算。
+- **表现差异**：2560×1080/3440×1440 下 Esc 菜单和胜负面板贴左或留黑边，和居中的 HUD 不一致。
+- **要做**：让两层使用 `War3UiViewport` 的设计坐标与 `PixelOffsetX/ActivePixelWidth`（或搬进 HUD 帧体系），面板按设计单位居中；不改客户端 FDF 外观。
+
 ## 模块七：工程结构（横切）
 
 > 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
@@ -77,11 +77,10 @@
 
 ---
 
-## 核对结果（V1 剩余 2 条）
+## 核对结果（V1 剩余 1 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
 
 > **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
@@ -110,11 +109,11 @@
 
 模块顺序是从底层到表层，模块内从上往下做即可。
 
-现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 26、27、28、34、35 条** 最直观。
+现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 26、27、28、35、36 条** 最直观。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **36** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **37** 开始。
 - 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
