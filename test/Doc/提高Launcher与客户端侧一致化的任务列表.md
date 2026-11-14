@@ -56,7 +56,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 27（Buff 图标栏）已落地并合并到 Launcher，编号不复用。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）已落地并合并到 Launcher，编号不复用。
 
 ### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
 
@@ -74,22 +74,6 @@
 > - 阵型：新增场景 `FormationMovementEnabled`（默认开），小地图阵型按钮经 `FilterChanged` 写入；`PlayerCommandProcessor` 的 Move/AttackMove/Patrol 在关闭时不再套 `GroupFormation.Layout`、不再限速与组路径。
 > - 物品/出生点：客户端 `MinimapUnitView.Classify` 实际没有 Item/StartLocation 分支，这两类只是贴图/配色枚举，由 JASS 自定义图标注入；Launcher 不跑 JASS，按客户端口径不生成。
 > - 验证：`dotnet build` 0 错误；Turtle Rock 运行日志出现「营地图标 19」；在 `extract.pck` 内校验修正后的 CreepLoc PNG 路径存在、旧路径不存在。
-
-### 28. 头像只循环 Stand，没有 Portrait/Talk 动作
-
-- **客户端**：`PortraitAnimator` 待机时每段 `Portrait` 序列播完重摇下一段（不循环同一段、不定格），收到单位应答时切 `Portrait+TALK`，播到语音时长结束再回待机（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/PortraitAnimator.cs:3-7`、`:127-138`）；换单位/换类型会重建头像并重摇种子（`:61-79`）。
-- **Launcher**：`PortraitViewport.Show` 只加载选中单位模型并 `Play("Stand")`（`Launcher/GameCore/L4_Composition/Game/Rendering/PortraitViewport.cs:51-70`），没有 Portrait 序列选择、没有待机轮换、没有应答时说话动画；`GameHudScreen` 选中变化时只调 `Show(selected)`（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:205-214`）。
-- **表现差异**：头像永远循环同一个 Stand，站立动作整齐、缺少原版的手势/说话表现；点单位听到应答时头像嘴不动。
-- **要做**：按客户端补 `PortraitAnimator`（Portrait/Portrait+TALK、待机重摇、按身份重播种），在 ack 时触发 Talk，时长取语音实际长度。
-
-> **复核评价**：本条顺手欠着一笔规则 5 的账。`PortraitViewport.cs` 客户端在 `L4_Composition/Game/UI/`，Launcher 在 `L4_Composition/Game/Rendering/`。既然本来就要重写这个类，一起搬回 `Game/UI/`。全仓 273 个同名 C# 文件里，相对路径对不上的只有这一处。
-
-> **执行结论（Launcher8，待合并）**：头像已改用 `*_Portrait` 模型，并接入 Portrait/Talk 状态机。
-> - 根因：`PortraitViewport.Show` 加载的是主模型（如 `peasant`/`Footman` 只有 `Stand` 变体），头像模型 `peasant_Portrait.tscn`/`Footman_Portrait.tscn` 才有 `Portrait`/`Portrait Talk`。客户端 `GetPortraitRenderer` 先找 `<模型>_Portrait.mdx`，再退回主模型。
-> - 修复：`PortraitViewport` 搬到 `Game/UI/`（规则 5），加载时按 `stem_Portrait` → `stemPortrait` → 主模型顺序做大小写不敏感查找；新增 `Game/UI/PortraitAnimator.cs`，待机随机选 `Portrait` 变体（避免连续同一段、按 `SimulationId` 重播种，类型/Animprops 变化重建），Talk 选 `Portrait+TALK`，按 ack 语音时长播放后回待机，见提交 `d714284`。
-> - 接线：`UnitSceneComponent` 暴露 Portrait 选段/播放/时长；HUD 每帧推进头像；选择 ack、下令 ack、英雄复活 Ready 都取 `War3AckSoundService` 返回的实际语音时长调 `Talk`。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；headless `--train-test` 日志 `show hpea model=...peasant_Portrait.tscn`、待机 `Portrait - 2`、ack 1.10s 后 `Portrait Talk -1`、随后回待机；OpenGL 截图左下头像显示农民半身像而不是主模型全身。
-> - 未覆盖：各族/英雄的 `_Portrait` 资源未逐个取图，缺失时按主模型回退；正式 Forward+ 截图仍受 Metal fence 影响，画面证据来自 OpenGL 兼容渲染器。
 
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
