@@ -102,6 +102,12 @@
 - **玩家可见**：进图后树木比站在里面的步兵更亮或更冷；游戏时间走过约 0.05 小时，整片森林亮度突变一次。
 - **要做**：`Lifecycle.cs:315` 第二个参数改 `Units`。
 
+> **执行结论（Launcher10，待合并）**：已修复。
+> - 定位：`LoadTerrainPresentation` 用 `SceneLightRig.Apply(_worldRoot, Terrain, Terrain)`，装饰物模型材质（`war3_model_*`）拿到的是地形光；实测 8 点 `(4)Turtle Rock.gmap` 下地形环境光 `0.168/0.168/0.196`，单位环境光 `0.252/0.252/0.294`，`TickClock` 走过 0.05 小时后重刷成单位光，森林整体跳一次。
+> - 修复：开局第二个参数改为 `_sceneLighting.Units`，装饰物与单位同光；后续 `TickClock` 仍按 0.05 小时步进刷新，不再改变光源口径。
+> - 验证：新增 `--doodad-light-probe`，读取 `_worldRoot` 下第一个模型材质的 `war3_scene_color`/`war3_scene_ambient` 与 `Units` 比对。把参数临时改回 `Terrain` 时环境光不符（材质 `0.168` vs 单位 `0.252`），恢复后三项全过。
+> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --doodad-light-probe`。
+
 ### 11. 地面阴影按均匀网格细分，斜坡上会陷进去或浮起来
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/ShadowRenderer.cs:195-242` 按 128 世界单位的整格切片，保持地形完整三角面（含 TL–BR 对角线），`DecalAlphaMask` 逐格剔除全透明块，纹理外扩 1 像素再用 shader 重映射 UV。
