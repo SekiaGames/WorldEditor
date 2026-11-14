@@ -50,6 +50,13 @@
 - **表现差异**：镜头跨格滑动时整窗雨/雪会跳一次相位；斜风雨的落点分布和客户端不同。
 - **要做**：改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲；散布按 `angx/angy` 倾斜；几何继续用方片，不按 `taillen` 拉伸。
 
+> **执行结论（Launcher8，待合并）**：天气改成单个 `MultiMesh` 实例缓冲。
+> - 着色器：`Extract/assets/shaders/weather.gdshader`、`weather_add.gdshader` 从 `INSTANCE_CUSTOM.xyz` 读速度、`.w` 读相位，按 `TIME` 求年龄、位移与 accel，用相机基向量把 2×2 方片做成 billboard；颜色/UV/大气雾继续走 `weather.gdshaderinc`。该改动已随 Extract 本地提交 `e84fa08fb` 进入版本库（与任务 6 同一提交）。
+> - 渲染：`Launcher8/GameCore/L4_Composition/Game/Environment/WeatherRenderer.cs` 去掉每格 `CpuParticles3D` 与跨格 `Restart()`，改成单个 `MultiMeshInstance3D`；容量 = 窗口格数 × 每格粒子数，`CellSeed(weather,col,row)` 生成每格固定随机种子，实例变换存出生点、`INSTANCE_CUSTOM` 存速度与相位；只在相机跨 512 格时重建实例缓冲。
+> - 散布：`ScatterOffset` 按 SLK `angx/angy` 旋转散布平面并换算到 Launcher 世界轴；几何保持 2×2 方片，不读 `taillen`。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；强制 RAhr 时日志为 `cells=5x5 perCell=90 capacity=2250`，跨格日志 `重建实例 2250，容量 2250`；用独立 `SceneTree` 场景加载 pck 内 `weather_add.gdshader` 与 rainTail 贴图，2000 实例正常出雨。全图截图仍受并行任务占满 GPU 的 Metal fence 超时影响，未作为画面证据。
+> - 合并注意：`extract.pck` 已在本地重打包；合并 Launcher8 提交 `d428e56` 时需一起带入 Extract 提交 `e84fa08fb` 里的两个天气着色器。
+
 ### 11. 单位转身比客户端慢五倍多（V1 #55）
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.TypeData.cs:139-140` 把 SLK 的 `turnRate` 当弧度/秒，`TurnRate = TurnSpeed(turnRate) / Period`，`Period = 0.03`（`Open-Warcraft3_Wiki/Src/Core/Pathing/NativeMirror/Combat/NativeTimedFacing.cs:7`），步兵约 20 rad/s。
