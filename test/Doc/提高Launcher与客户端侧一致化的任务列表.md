@@ -4,6 +4,8 @@
 
 **按模块分组，模块从底层到表层，模块内也从上往下做。** 每条都写三件事：客户端在哪、Launcher 在哪、玩家看到什么。编号 1..45 是阅读顺序，做完一条删一条，序号不复用。
 
+> **复核评价**：正文实际到 50 条，收尾规则也写着「新任务从 51 起」，这句「1..45」是上一版留下的。改成 1..50，或者干脆不写区间，只写「编号即阅读顺序」。
+
 ## 范围
 
 - 起点是地图选择界面；客户端首屏（公告、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表不在范围内。
@@ -42,6 +44,8 @@
 - **Launcher**：`Launcher/Src/Core/Pathing/Search/PathGrid.cs` 340 行，一张 `CellWorld = 32f` 的布尔网格 + `FindPath`；`Launcher/Src/Core/NativeMathShim.cs` 自述是临时替身；全仓搜 `NativeMirror`、`TerrainGrid`、`PathingFlags`、`VisionLevel` 均为 0 命中。单位移动不写回网格，只有建筑放置与移除会 `AddBlocker/RemoveBlocker`（`Launcher/Src/World/World.UnitLookup.cs:90,97`）。
 - **玩家可见**：单位能否挤过建筑和树林之间的缝、绕建筑拐角的走法、被围住时能否蹭出去，都和客户端不同；窄口会出现「客户端能过、Launcher 判定不可达」，或者反向的卡位。
 - **要做**：按整体接入立项，两条路径系统没有可逐点对齐的公共语义，先接 footprint 与放置掩码，再替换搜索。
+
+> **复核评价**：证据成立（`PathGrid.cs` 340 行布尔网格、单位移动不写回），但这条不是一个任务，是一个项目。「先接 footprint 与放置掩码，再替换搜索」中间的验收点没有定义，做完第一半时无法判断是否「完成」，按收尾规则也就删不掉。建议拆成两条：先只做 footprint + 放置掩码，验收口径是「静态阻挡判定与客户端在两张测试图上逐格一致」；搜索替换另立一条。这样每条都能删。
 
 ---
 
@@ -117,6 +121,8 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:416` `AutoAcquire = Aggression && (player <= 3 || player == 12)`，`Aggression` 只能由命令行 `--aggro` 打开（`Platform/Godot/App/LauncherApp.cs:556`，字段在 `Scenes/War3GameScene/Lifecycle.cs:87`）；索敌分支整段被 `if (unit.AutoAcquire)` 包住（`Src/World/World.cs:275`），受击反击同样要求它（`Src/World/World.WeaponSystem.cs:122`）。
 - **玩家可见**：不带 `--aggro` 启动，野怪站在营地被人贴着走过不打人，自己的部队在敌人旁边待命不还手，只有明确下令才动。
 - **要做**：`AutoAcquire` 改为常开，`--aggro` 保留为调试开关只影响 AI 波次。
+
+> **复核评价**：证据成立，`RunLauncher.command` 确实没传 `--aggro`，`Aggression` 默认 false。但「常开」这两个字会漏掉半行：`Units.cs:416` 是 `Aggression && (player <= 3 || player == 12)`，括号里那半个条件不是开关，是玩家编号过滤。只把 `AutoAcquire` 写死成 true 而留着括号，8 人图上 4–11 号玩家仍然不索敌、不还手。动手前先定：这个括号是要删，还是改成「非中立被动」之类的语义，然后写进这一条。
 
 ### 13. 只有中立野怪会喊人，玩家单位被集火时旁边部队不动
 
@@ -208,6 +214,8 @@
 
 > MDX 事件音、音频空间、声部管理。
 
+> **复核评价**：模块名叫「特效与声音」，正文 25–28 四条全是音频，没有一条特效。上一版里那条「粒子参数是待机帧快照」并没有修好：`Extract/src/Core/Tools/ModelBundle.cs:1996-2001` 的速度、纬度、重力、宽、长、可见度仍走 `SnapshotValue(..., idle, ...)`，取的是待机帧单值，运行时也不随动画帧更新（Launcher 侧没有任何 `ParticleProcessMaterial` 驱动）。同一批里「512 上限」和「粒子吃雾」已经落地（`amount` 现在夹在 8..20000，`:2296`；`war3_particle.gdshader:4` 已引 `atmosphere.gdshaderinc`、`:91` 调 `war3_apply_fog`），只剩「参数随帧变化」这一半悬着。建议按收尾规则补一条 51 号，否则这一层等于被跳过了。
+
 ### 25. 缺 AnimSounds 表，单位死亡喊的是「Yes」
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:29-31` 把 `UnitAckSounds / UnitCombatSounds / AnimSounds` 合进同一张 ack 表，死亡与攻击音由 MDX 事件经 `AnimLookups → AnimSounds` 解析。
@@ -298,6 +306,8 @@
 - **玩家可见**：开局镜头中心比客户端偏 2.5 格朝矿区，主基地被推到画面偏侧；出生点在角落的地图偏移方向更明显。
 - **要做**：改 `player.StartX/StartY`；如果当初是为了让工人入画，需要先确认这个取舍。
 
+> **复核评价**：差异成立（`MeleeRules.cs:131,139` 把 `plan.Camera` 设成 `workerAnchor`），但「要做」自带一个未决问题，这种条目执行到一半就会停下来问。开工前先把结论写进这条：客户端出生点相机是 `GetPlayerStartLocationPosition`，没有「工人入画」这层，`MeleeRules` 的偏移就是 Launcher 自加的行为，按规则 6 直接改掉、不留取舍。改完顺手看 `plan.Camera` 这个字段还有没有别的用处，没有就删。
+
 ---
 
 ## 模块七 界面
@@ -325,12 +335,16 @@
 - **玩家可见**：资源条的图标尺寸、数字基线、四组间距由 `TopBarFrame.cs:147-167` 的常量决定，和 FDF 的右对齐贴边不同，越靠右越明显；FDF 皮肤下的按钮条与空背包遮罩不存在；维护费文案是中文「无/低/高维修费用」，客户端 FDF 路径是 `No/Low/Heavy Upkeep`。
 - **要做**：补 `ResourceBarBinding` 等生成，HUD 改成「FDF 优先、手写兜底」，两边同一套锚点。
 
+> **复核评价**：方向成立，证据有两处要修。一是落盘位置：绑定生成到 `GameCore/L4_Composition/Game/UI/Generated/`（`FdfBindGen.cs:56-58`），不是顶层 `Generated/`，那个目录里只有表数据。二是目标数量：`FdfBindGen.Targets` 现在是 6 个（`ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`LoadingScreenBinding`、`MainMenuBinding`、`EscMenuMainPanelBinding`），成品只有 `LoadingScreenBinding.g.cs` 一个。清单只点了 4 个，漏了 `EscMenuMainPanelBinding` 和 `MainMenuBinding`；而第 41 条要把 Esc 菜单换成 FDF 面板，正需要 `EscMenuMainPanelBinding`。这条把「补哪些绑定」写全，41 才有得依赖。
+
 ### 40. 顶栏只剩一个菜单按钮，任务日志与盟友面板整族缺失
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:39-40` 四个按钮全部可见，`MeleeHudController.cs:544-545` 绑 `OnQuestClicked/OnAlliesClicked`，`UI/QuestDialogFrame.cs:108-112` 由 F9 开关。
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:17` `MenuInScope = {false,true,false,false}`，`:40-41` 只显示索引 1；`GameHudScreen.cs:167-170` 只接菜单按钮。`QuestDialogFrame`、`AllianceDialogFrame`、`LeaderboardFrame`、`MultiboardFrame`、`TimerDialogFrame`、`CinematicSceneFrame` 都没有对应文件。
 - **玩家可见**：左上角四连按钮少三个，按 F9 没有任务日志，看不到盟友资源与状态（原版 F11）；过场时 HUD 不整层隐藏。
 - **要做**：补任务与盟友两个原生面板（与 JASS 无关），其余计分类面板另立任务。
+
+> **复核评价**：盟友面板成立，任务日志这半越界。「与 JASS 无关」这个判断只在盟友面板上成立；`QuestDialogFrame` 的数据模型就是 JASS 对象——`_objectives` 的类型是 `JassGameNatives.QuestItemView`（`QuestDialogFrame.cs:25`），`SyncDetails` 全部从 `_selected.Items` 取（`:156-164`），任务列表本身由 `JassGameNatives` 维护（`JassGameNatives.cs:547-567`）。Launcher 不跑 JASS，就没有 quest 对象，面板补出来是空壳，只有全局失败条件的追加那一路有内容。按范围第 10 条「脚本才能触发的表现不进清单」，任务日志应删掉，只留盟友面板；如果要保留，至少要写明「内容来自地图脚本，melee 图下会显示空列表」并确定这算不算要修。
 
 ### 41. Esc 菜单是自建 1600×900 遮罩，打开也不暂停
 
@@ -387,6 +401,8 @@
 - **玩家可见**：暂时看不出来，但同一技能两套实现在跑不同的数值与流程，改一处不会同步另一处；接 AI 或事件时容易挂到没被注册的那一份上。
 - **要做**：按客户端分层收敛成一层，删掉未注册的重复实现。
 
+> **复核评价**：同名类并存成立（`RuntimeMeatDropAbility`、`RuntimeTrueshotAuraAbility`、`RuntimeAntiMagicShellBuff` 都是一份在 `Src/Skills/`、一份在 `GameCore/L3_Simulation/.../Configuration/`）。和第 48 条是同一件事的两半：本条管「重复的类」，48 管「文件怎么分」。建议合并成一条做，先去重再拆文件，否则拆完发现有一半要删。另外「删掉未注册的重复实现」要先确认工厂真的没注册——`RuntimeMeatCargoAbilities.cs:127` 那两份里有名字带 `s` 的聚合类，删之前按 `RuntimeAbilityFactory.Map` 逐条对一遍。
+
 ### 48. 技能工厂与技能实现文件的结构和客户端对不上
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/` 下 `RuntimeAbilityFactory` 拆成 `Constructors / Initialization / Initializers / Specialization` 四个 partial，实现按族分文件（约 194 个 `Runtime*Ability` 文件）。
@@ -394,12 +410,18 @@
 - **玩家可见**：目前体现为部分技能退化成无行为的被动；更实际的影响是新增或修一个技能时，两边的登记口不在同一处，容易只改一边。
 - **要做**：工厂按客户端的四个 partial 拆分，技能实现文件按族对齐命名，静态数据的类名改成客户端的名字。
 
+> **复核评价**：523 条登记和客户端 194 个实现文件都对得上（`grep -oE '^\s*\["'` 数出 523；`Configuration/Runtime*Ability*.cs` 数出 194）。但「实现只有 47 个 `Runtime*Ability` 文件」只数了 `Src/Skills/`：`GameCore/L3_Simulation/Simulation/Configuration/` 下另有 131 个，两处合计 178，和客户端的 194 只差 16。所以「其余技能落在少数聚合类里」这个说法站不住，聚合类只占一小部分，真实情况是两棵并行的技能树（也正是第 47 条在说的事）。这条和第 47 条合并后再动手，数字也要按 131 + 47 重写。
+
 ### 49. 核心类的目录归属和客户端不一致
 
 - **客户端**：`World` 在 `Src/Core/World.cs`（partial 也在 `Src/Core/`），`AbilityContainer` 在 `Src/Components/`。
 - **Launcher**：`World` 及其 29 个文件（`World.cs` 加 28 个 partial）在 `Src/World/`，`AbilityContainer` 在 `Src/Abilities/`。
 - **玩家可见**：无直接表现，但 AGENTS.md 第 5 条要求「相对路径、文件名、类名一致」，现在 grep 两侧同名类会落到不同目录，跨仓库对照检索的成本一直存在。
 - **要做**：整目录搬迁到客户端的层级，一次做完，不要分批。
+
+> **复核评价**：文件数对（`Src/World/` 共 31 个 .cs：`World.cs` + 28 个 partial + `TreeState.cs`、`UnitList.cs`），但「整目录搬迁」按现在的写法执行不下去。客户端 `Src/Core/` 里只有 13 个 World 文件（`World.cs` + 12 个 partial），Launcher 有 28 个 partial，其中只有 10 个同名（`DamageMembers`、`HeroSelectionOrder`、`MechanismMembers`、`MovementEvents`、`Rally`、`RelationMembers`、`RepulseMembers`、`Targeting`、`UiMembers`、`UnitLookup`）。剩下 18 个（`Abilities`、`Blight`、`BuffMembers`、`Channels`、`CorpseRevive`、`CreepSleep`、`DeathTriggers`、`FogRevealMembers`、`GroundSpells`、`GroupMovement`、`HeroRevive`、`Illusions`、`Items`、`Morph`、`Orders`、`PhoenixEgg`、`Repair`、`WeaponSystem`）在客户端根本没有同名文件，职责散在 `Src/Units/Unit.Items.cs`、`Src/Components/WeaponSystem.cs`、`OrderQueue.cs`、`AbilityContainer*.cs` 里。搬目录只能搬那 10 个，其余 18 个要先决定「并回 Unit/Component 还是留在 World」，这是设计决定，不是搬家。
+>
+> 建议把本条改成两步：先出一张 28 → 客户端归属的映射表（含「不搬」的理由），确认后再动文件。另外客户端有 `World.Spatial.cs`、`World.Recording.cs` 两个 Launcher 没有的 partial，前者可能是真缺（空间索引），`Recording` 属不做范围，顺带确认一下。
 
 ### 50. 缺 WorldFrameTextMetrics，聊天与文本通道各写死一套字号
 
