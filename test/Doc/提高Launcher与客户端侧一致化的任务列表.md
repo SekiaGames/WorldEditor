@@ -1,8 +1,6 @@
-# 提高 Launcher 与客户端侧一致化的任务列表
+# 提高 Launcher 与客户端侧一致化的任务列表 V2
 
-这份清单只记真正会造成流程、画面或行为差异的地方。判定标准就是 AGENTS.md 里那五条，末尾再加上两条执行规则：
-
-**判定标准**
+这份清单只记真正会造成流程、画面或行为差异的地方。判定标准沿用 AGENTS.md：
 
 1. 客户端和 Launcher 做同一件事，但执行流程不一样。
 2. 客户端和 Launcher 看到的效果不一样，尤其是动画、特效、加载和镜头。
@@ -10,306 +8,298 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**执行规则**
-
-6. 做完一条就删掉它，序号不复用，新任务往后续。
-7. 一切以客户端行为为准，不写「我们这样更好」的要求。
-
-读完一条就动手，不要先全面铺开。每条都标了客户端在哪、Launcher 在哪，照着路径能直接翻到。
-
-**排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
-
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 62，下一条新任务从 63 起。**
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..33，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **34** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
-- 起点是地图选择界面。客户端首屏（公告页、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表都不在本轮范围内，Launcher 保持固定地图路径，地图只从 `test/map_gmap` 读。
-- Launcher 不跑 JASS 与触发器，所以「只有脚本能触发」的效果不进清单，这一条在文末「已排除的候选」里有对照。
+- 起点是地图选择界面。客户端首屏（公告页、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表不在本轮范围内，Launcher 固定从 `test/map_gmap` 读地图。
+- Launcher 不跑 JASS 与触发器，只有脚本能触发的效果不进清单。
+- 默认环境：macOS，`RunLauncher.command` 启动；地图用 `(4)Turtle Rock.gmap`、`(2)BootyBay.gmap`。
 
 ---
 
-## 五、战争迷雾
+## 模块一：数据、资源与导出
+
+> L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
+> 任务 1（V1 #51）、任务 2（V1 #53）、任务 3（V1 #49）、任务 4（V1 #50）已落地并合并到 Launcher，编号不复用。
+
+## 模块二：地形与环境
+
+> 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
+
+### 6. 地形与悬崖不接收 MDX 动态光（V1 #47）
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Terrain.vert.glsl:25-35`、`Cliff.vert.glsl:13` 都有 `uDynamicLights` / `dynamicLightFactor`，把火把、法术特效的动态光按距离衰减累加进顶点光照。
+- **Launcher**：`Extract/assets/shaders/terrain_map.gdshader:9-11`、`cliff_map.gdshader` 只吃 `war3_scene_direction/color/ambient`，没有 `war3_light_data`；动态光只进了模型着色器（`Extract/assets/shaders/war3_model.gdshaderinc:30`）。
+- **表现差异**：单位脚下的地面和悬崖不会被火光/技能光照亮，火把、献祭、火焰雨只有模型亮、地面不亮。
+- **要做**：把 `war3_light_data` 也传进地形、悬崖、水面三个世界着色器，按客户端公式累加。
+
+### 7. 树和装饰物死亡瞬间隐藏，没有倒地/死亡姿态
+
+- **客户端**：`DoodadRenderer` 启动时保留 `life <= 0` 的实例并记录死亡计数（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/DoodadRenderer.cs:342-355`），死亡/被砍时解析 `death` 序列（`:106-108`、`:684-692`），非循环序列播到末帧；看不到时按 `TreeKnowledge` 记忆保留。
+- **Launcher**：加载时直接跳过 `Dead` 和 `Hidden` 的装饰物（`Launcher/GameCore/L4_Composition/Game/Environment/DoodadRenderer.cs:30-39`）；树被砍倒时 `TreeState.Chop` 只做 `Node.Visible = false`（`Launcher/Src/World/TreeState.cs:17-21`），采伐 `ConsumeTree` 同样瞬间隐藏（`Launcher/Src/World/World.UnitLookup.cs:46-52`）。
+- **表现差异**：树被砍倒没有倒地/枯木过渡，模型一帧消失；地图开局就已毁坏的装饰物完全不显示，而客户端保留死亡姿态。
+- **要做**：装饰物实例补 `death` 序列播放与定格，死亡后按可见性记忆保留；初始已毁的实例也要建出来并播死亡姿态。
+
+### 8. 天气粒子还是每格一个 CpuParticles3D，跨格重启整窗雨（V1 #56）
+
+- **客户端**：一次 `DrawElementsInstanced` 画整个窗格（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WeatherRenderer.cs:328`），相位由 `CellSeed(weather,col,row)` 确定性生成（`:350`），跨格只 `RebuildVisibleWindow` 重传实例缓冲（`:368`），并让散布平面随 `angx/angy` 倾斜。
+- **Launcher**：`_cellsPerSide × _cellsPerSide` 个 `CpuParticles3D`（`Launcher/GameCore/L4_Composition/Game/Environment/WeatherRenderer.cs:69-94`），`AcquireWindow` 跨格时 `emitter.Restart()`（`:199`），`Preprocess = LifeSpan` 再跑一遍；发射域是水平 `Box`（`:85-87`），不随风向倾斜。
+- **表现差异**：镜头跨格滑动时整窗雨/雪会跳一次相位；斜风雨的落点分布和客户端不同。
+- **要做**：改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲；散布按 `angx/angy` 倾斜；几何继续用方片，不按 `taillen` 拉伸。
+
+### 9. 雾纹理参数搭着光照刷新才下发，进图后有一段时间没雾（V1 #57）
+
+- **客户端**：`FogOfWarRenderer.Draw` 每帧算完淡变就 `FogOfWarUniforms.Publish(...)`；六个接收者在各自 draw 里 `Upload(shader)`，纹理更新同一帧生效。
+- **Launcher**：`FogOfWar.Upload()` 只调 `SceneFog.SetFogOfWar(...)` 存静态字段（`Launcher/Src/Core/FogOfWar.cs:185`），真正写材质在 `SceneLightRig.Apply` 里的 `SceneFog.Write`（`SceneLighting.cs:297`），而 `Apply` 只在 `LoadTerrainPresentation` 调一次（`Lifecycle.cs:294`），之后靠时辰跳变触发；`_fog.Build()` 要到 `LoadPathing` 才跑（`Lifecycle.cs:381-386`）。
+- **表现差异**：进图后地图先全亮，等下一次时辰跳变雾才突然铺上去。
+- **要做**：`FogOfWar.Upload()` 写完静态字段后立刻把 `fog_of_war_texture/uvp/enable` 重写进已创建的材质，不搭光照刷新的车。
+
+### 10. 建筑在雾里被拆掉后仍然立刻消失（V1 #54）
+
+- **客户端**：把「已探索但看不见」的建筑冻成 CPU 快照，被拆掉时快照还在，直到 `ScoutingMemory` 把这一格重新看见才遗忘（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/ScoutingMemory.cs`）。
+- **Launcher**：只冻结可见性（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Environment.cs:91-95` 对建筑调 `SetFogFrozen(true)`，`Launcher/GameCore/L4_Composition/Game/Presentation/UnitSceneComponent.cs:121-137` 暂停序列、关粒子），建筑阵亡后仍按单位移除流程释放模型，没有任何快照/遗忘层（全仓无 `ScoutingMemory`）。
+- **表现差异**：玩家离开后基地被拆，再探开那一格时建筑直接消失，看不到「最后看到的废墟」；客户端会保留定格直到重新看见。
+- **要做**：建筑在不可见时阵亡保留最后一次看到的定格模型，重新可见时再按 `ScoutingMemory` 口径清掉。
+
+## 模块三：单位、技能与物品
+
+> 模拟层的单位行为、Buff 技能与地面物品。
+
+### 11. 单位转身比客户端慢五倍多（V1 #55）
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.TypeData.cs:139-140` 把 SLK 的 `turnRate` 当弧度/秒，`TurnRate = TurnSpeed(turnRate) / Period`，`Period = 0.03`（`Open-Warcraft3_Wiki/Src/Core/Pathing/NativeMirror/Combat/NativeTimedFacing.cs:7`），步兵约 20 rad/s。
+- **Launcher**：`Launcher/GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.cs:357-358` 是 `Mathf.Clamp(turnRate * 6f, 1.5f, 14f)`，`Launcher/Src/World/World.MovementEvents.cs:155` 每仿真步最多转 `Mathf.Max(1.5f, TurnSpeed) * 0.05`；同一条 `turnRate` 只走出客户端五分之一到六分之一，1.5 的下限还会把慢速单位一起抬快。
+- **表现差异**：点攻击后单位跑到贴脸才开始转身，侧身追人/绕圈像滑行；攻击前摇被拉长，编队齐转像整体平移。
+- **要做**：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项。
+
+### 12. Buff 类技能只消耗部分物编字段，护甲/回复/缩放/Buff 美术都没生效
+
+- **客户端**：以 Roar 为例读取 `DataA`（攻击）、`DataB`（护甲）、`DataC`（回血）、`DataD`（回蓝）、`DataG`（目标上限）、`BuffID`（Buff 美术/名称）和 `HeroDur`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:27-48`）；Bloodlust 还读 `DataC`（模型缩放）与 `BuffID`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:24-47`），并生成对应 Buff 对象数据。
+- **Launcher**：`RuntimeRoarAbility` 只有 `DamagePct => Data('A')`，施法时给一个只带攻击力的 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:10`、`:20`）；`RuntimeBloodlustAbility` 只有 `DataA/DataB`，同样用 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:10-11`、`:25-29`）。没有读 `BuffID`，也不绑 Buff 物编，所以没有 Buff 美术、没有护甲/回复、没有模型放大、英雄持续时间也与普通单位共用。
+- **表现差异**：咆哮只加攻击力，不给护甲和回血回蓝；嗜血不会把模型放大；两种增益在单位身上都没有对应的 Buff 图标/特效；英雄吃到的持续时间与客户端不同。
+- **要做**：按客户端补 `DataB/C/D/G`、`HeroDur`、`BuffID` 与目标规则；Buff 实例绑到 `BuffData`，让 `Buff` 的美术与名称走物编。
+
+### 13. 地面物品靠走近自动吸走，客户端要求右键下单
+
+- **客户端**：拾取是显式订单：`IssuePlayerPickupItem`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.cs:800-819`）由右键/交互层下发（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:268`）；接受半径读 `Misc.PickupItemRange`（默认 250，`Open-Warcraft3_Wiki/Src/Configuration/War3GameplayConfig.cs:274`），单位走到物品旁再执行拾取。
+- **Launcher**：每 tick 由 `TickItemPickup` 扫描所有地面物品，任何 `CanCarryItems` 且有空格、距离小于硬编码 `PickupRange = 150f` 的单位都会被直接塞进背包（`Launcher/Src/World/World.Items.cs:14`、`:282-303`、`:351-367`）；右键物品只是下一条「走到物品位置」的移动单（`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:323-333`），真正的拾取仍由走近触发。
+- **表现差异**：单位路过就自动吸走物品，甚至可以抢走敌方单位附近的掉落；客户端不右键就不会捡，且拾取距离由 `PickupItemRange` 决定。玩家会看到掉落物莫名其妙进背包。
+- **要做**：去掉按距离自动拾取，改成明确的拾取订单；半径读 `Misc.PickupItemRange`，通过寻路走到物品旁再结算。
+
+### 14. Powerup 物品（经验书/属性书/符文）不会自动使用
+
+- **客户端**：`powerup` 字段为 1 的物品，拾取时走自动使用管线（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.OrdersAndItems.cs:409-411`、`:517-561`），执行子技能后消耗（`:993-1020`；`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.ItemUseRuntime.cs:47-57`）。
+- **Launcher**：`ItemType.PowerUp` 只在 UI 里显示「一次性」（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/ItemCatalog.cs:28`、`:104`；`Launcher/GameCore/L4_Composition/Game/UI/MeleeHudController.cs:171`），没有运行时消费方；拾取后作为普通物品进背包（`Launcher/Src/Units/Unit.Items.cs:57` 的 `AddItem`），`ItemUseRules` 也没有 powerup 分支。
+- **表现差异**：捡到经验书/属性书会占一个背包格且无法使用，符文也不会在踩上去时立即生效；客户端是拾取即用、不占格。
+- **要做**：读取物编 `powerup`，在拾取路径上先执行物品技能再消耗，不进入背包；补齐 `PowerupSound`/拾取事件。
+
+### 15. 地面物品没有影子，Powerup 没有金色光圈，离场也没有缩小
+
+- **客户端**：地面物品统一用 `ReplaceableTextures\Shadows\Shadow.blp` 投影，尺寸取模型包围盒，普通物品 alpha 0.45、Powerup 用金色 0.75（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:2121-2160`）；`Departing` 的物品（离场缩小）不投影。
+- **Launcher**：`CreateItemNode` 只加载模型、设缩放（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:281-294`），没有物品投影，也没有 Powerup 光圈/离场状态。
+- **表现差异**：地上物品“浮”在地表，没有影子；Powerup 与普通物品视觉上无法区分；物品被拾取/消失是瞬间消失，没有缩小过渡。
+- **要做**：补地面物品阴影与 Powerup 金色光圈；给物品加离场缩小状态并在离场期间停止投影。
+
+## 模块四：特效与声音
+
+> MDX 粒子、丝带、弹道与音乐、事件音。
+
+### 16. 粒子参数还是待机帧快照，数量夹在 512（V1 #61）
+
+- **客户端**：`ParticleEmitter2` 每帧按当前动画帧求 `KP2S`、`KP2L`、`KP2G`、`KP2E`、`KP2W/KP2N`、`KP2V`，运行时逐实例推进（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MdxParticle2Renderer.cs:249-277`）。
+- **Launcher**：Extract 侧把发射器烘成 `GPUParticles3D`，速度/纬度/重力/宽/长/可见度取待机帧快照（`Extract/src/Core/Tools/ModelBundle.cs:1559-1566`）；`amount` 已用整段最大发射率计算（`:1562`、`:1855`），但仍硬夹到 8..512，运行时不再随动画帧更新。
+- **表现差异**：发射率、速度、重力随动画变化的特效（呼吸、爆发、蓄力）全程按待机参数出粒子；粒子多的特效被削到 512。
+- **要做**：把上述轨道按片段导出，运行时按 `AnimationPlayer` 当前位置驱动 `ParticleProcessMaterial` 参数；`amount` 按整段最大发射率给，去掉 512 上限或按客户端上限。
+
+### 17. MDX 粒子不吃大气雾（V1 #52，部分修复）
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/MdxParticle2.frag.glsl` 按 `useFog` 把 `uFogColor/uFogParams` 传进粒子，丝带同样。
+- **Launcher**：天气已经改用 `weather.gdshaderinc` 并调 `war3_apply_fog`（`Extract/assets/shaders/weather.gdshaderinc:42`），丝带也已接上（`war3_ribbon.gdshader:23`、`war3_ribbon_add.gdshader:23`）；但 `war3_particle.gdshader` 没有包含 `atmosphere.gdshaderinc`，`fragment()` 里没有雾项（`Extract/assets/shaders/war3_particle.gdshader:69-91`）。
+- **表现差异**：远处的技能粒子/环境粒子在浓雾图里保持原色，和地形、模型、丝带的雾感不一致。
+- **要做**：`war3_particle.gdshader` 引入 `atmosphere.gdshaderinc`，片元里按视深调 `war3_apply_fog`。
+
+### 18. 飞弹模型几乎不可见（V1 #63）
+
+- **客户端**：弹道用 `CharacterRenderer` 画模型，箭、火球、投石在游戏里都看得很清楚。
+- **Launcher**：`OnMissileFired` 实例化模型、设位置、加进 `_projectiles`（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:33-79`）。Turtle Rock 实测弓箭手的 `earc` 弹道节点存在、位置在相机视野中心、`Visible=true`，模型放大 4 倍和 12 倍后截图里仍没有箭；场景结构 `Node3D → Model/Skeleton3D → geoset0`，材质 `war3_model_opaque`（`alpha_cutoff 0.75`、贴图 `ArrowMissile.png`）完整，问题在渲染侧而不是导出。
+- **表现差异**：远程单位对射时看不到箭/火球/投石，只有伤害数字和命中音。
+- **要做**：先确认是骨骼/Stand 动画把网格挪走，还是投射物节点/材质在运行时被改写；修好后用弓箭手对射复验箭、火球、投石三类飞弹。
+
+### 19. 音乐无缝连播，也没有脚步和建筑循环音（V1 #25）
+
+- **客户端**：曲间有 20 秒间隔（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:3`），支持主题音乐叠加、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；`War3LoopingSoundService` 按 `MovementSoundLabel` 播脚步并跟随位置，建筑建造时播 `BuildingSoundLabel`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3LoopingSoundService.cs:7`）；`War3AudioSystem` 24 个系统声部、同文件最多 3 个、按 channel 配额/优先级抢占，每条声音用自己的 Min/MaxDistance。
+- **Launcher**：`War3MusicPlayer` 播完立刻下一首，固定 `-10dB`，没有间隔、淡入淡出和脚本接口（`Launcher/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:14`、`:26`、`:69-74`）；没有循环音服务；`War3AudioSystem` 只有 16 个 3D + 8 个 2D 固定播放器，`UnitSize = 900`、`MaxDistance = 4500` 写死（`War3AudioSystem.cs:12-42`），表里的 Min/MaxDistance 没有使用；没有音量设置；客户端加载 11 张声音表（ack/combat/anim/ui/ambience/ability/dialog/midi/environment/EAX/portrait，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:26-44`），Launcher 只有 5 张（`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:44-48`）。
+- **表现差异**：音乐一直接一首、没有呼吸感；行军完全没有脚步声，建筑建造没有循环施工音；远处/近处声音衰减一致，声部抢占规则不同。
+- **要做**：曲间间隔与淡入淡出、脚步/建造循环音；声部按 channel 配额和优先级；音量设置与第 21 条的选项界面一起做。
+
+### 20. 城镇被攻击、英雄阵亡这几类事件音还没接（V1 #62）
+
+- **客户端**：`War3UiSoundService` 有 `TownAttack`、`UnderAttack`、`HeroDies`、`AllyHeroDies`，由模拟层事件源驱动（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3UiSoundService.cs:65-67`；`MeleeHudController` 里按事件派发）。
+- **Launcher**：冷却表和种族前缀已经建好（`Launcher/GameCore/L4_Composition/Game/Audio/War3UiSoundService.cs:10-41`），但上述四个键没有任何调用点（全仓只有定义和生成文本）；建筑被攻击不报警，英雄阵亡也不出声。
+- **表现差异**：混战里少了「基地被打」和「英雄阵亡」的听觉提示。
+- **要做**：在 `World` 的建筑受伤路径上区分城镇与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。
+
+### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
+
+- **客户端**：这五个技能都把 `EfctID` 解析出的模型接进生成循环：烈焰风暴余烬取 Buff 的 `EffectArt`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs:51`、`:73-80`），云雾取 `Effectart` 常驻雾团（`RuntimeCloudOfFogAbility.cs:46`、`:69-76`），季风取雨幕与闪电落点（`RuntimeMonsoonAbility.cs:32`、`:85-87`），哨兵在树上生成猫头鹰（`RuntimeSentinelAbility.cs:29-31`、`:50-52`），火山生成喷发视觉与熔岩弹（`RuntimeVolcanoAbility.cs:127`、`:151`、`:226`）；另外客户端有独立的 `RuntimeMeteorRainAbility.cs`。
+- **Launcher**：上述五个类（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs`、`RuntimeCloudOfFogAbility.cs`、`RuntimeMonsoonAbility.cs`、`RuntimeSentinelAbility.cs`、`RuntimeVolcanoAbility.cs`）只结算伤害/状态，没有 `Art`、`Effect`、`Spawn` 相关的美术字段与生成循环；全仓也没有 `RuntimeMeteorRainAbility` 对应类。
+- **表现差异**：烈焰风暴只有伤害数字没有柱状余烬，云雾没有雾团遮挡，季风没有雨幕和落点闪电，哨兵没有停在树上的猫头鹰，火山没有喷发和熔岩弹；陨石雨技能整个缺失。
+- **要做**：逐个按客户端补美术字段、`RuntimePreloadArts` 与生成/销毁循环；火山和陨石雨还要补对应的 `Effect`/`Missile` 类。
+
+## 模块五：输入与镜头
+
+> 键鼠语义、Esc/菜单与快捷键。
+
+### 21. Esc 语义、顶部按钮和选项界面（V1 #40，部分修复）
+
+- **客户端**：Esc 分层取消（取消待定命令 → 关菜单；2026-10-22 起不再开菜单），菜单开关是 F10（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Input.cs:1349-1351`）；Backspace 循环主城（`:1306`）、PageUp/Down 缩放（`:1340`）、Ctrl+C/Alt+C 居中、Alt+F 阵型、Alt+G/T/A 小地图；Esc 菜单用 FDF `EscMenuMainPanel`；`AboutDialogFrame` 有镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/AboutDialogFrame.cs`）。
+- **Launcher**：Esc 现在会先取消施法、再关菜单、最后开菜单（`Launcher/GameCore/L4_Composition/Game/Input/War3InputComponent.cs:41-47`），但放置建筑时 `_placingId` 不在取消分支里，Esc 会弹菜单且幽灵建筑还在；没有 F10/Backspace/PageUp/PageDown/Ctrl+C/Alt+F，Alt+G/T/A 也没有调用者。`TopBarFrame` 暴露了 `MenuButton/QuestButton/AlliesButton`（`TopBarFrame.cs:31`），但没有任何 `.Clicked +=`，顶部按钮可点没反应；Esc 菜单和胜负面板是 `ColorRect + Label + Button` 手搓，坐标写死在 1600×900；没有选项界面。
+- **表现差异**：放置时按 Esc 关不掉幽灵建筑；想开菜单只能按 Esc；编队/镜头快捷键缺失；顶部菜单/任务/盟友按钮点了没反应；没有任何画质/音量/镜头设置。
+- **要做**：把放置建筑也纳入「取消优先」，补 F10；顶部菜单按钮接 Esc 菜单（任务/盟友按范围隐藏）；选项界面和音量一起做。
+
+## 模块六：界面
+
+> 命令卡、提示、小地图、头像与 HUD 布局。
+
+### 22. 命令卡的槽位、热键和可用性判定（V1 #38）
+
+- **客户端**：`FindNativeSlot` 是「向 11 找空位、再往 0 回退、满卡就丢」（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs:426`）；热键按按钮真正显示的 `Hotkey` 分发（`:90` 的 `CommandAtHotkey`），训练/研究/建造/升级都能用键盘；可用性走 `NativeManaAdmission` / `NativeSpellOrderAdmission` / `NativeSelectionCommandPolicy`。
+- **Launcher**：`TrySelectionHotkey` 完全不看命令卡，只认 `ability.Hotkey` 和硬编码的 M/S/H/A/P（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs:411-417`、`:449-457`），遇到建筑直接返回 false；槽位算法是「从请求位往后找第一个空位，找不到就 break」；可用性判定写死在 `QuickCast.cs` 里。
+- **表现差异**：同一份物编，两边第 3/8/11 格可能放不同技能；命令卡上的热键字母是装饰，建筑训练/研究不能用键盘；带法力修正符的单位会出现「亮着却放不出」。
+- **要做**：先把热键改成读按钮 `Hotkey`，再改槽位算法和可用性判定；冷却闪光、自动施法高亮、禁用变暗在第 30 条。
+
+### 23. 法术书没有页面，子技能进不了命令卡（V1 #64）
+
+- **客户端**：法术书是命令卡的一个页面：`OpenSpellBook(selected, book)` / `BackFromSpellBook()`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs:59-64`），`CollectAbilityCommands` 在 `spellBook != null` 时只收 `ContainerAbility` 与这本书同源的子技能（`CommandCardBuilder.Abilities.cs:25-26`），子技能序号当格号落在 0..10、第 12 格放「返回」；书的主人死亡、书被移除或子技能不可用时自动 `_menus.Back()`。
+- **Launcher**：`Ability` 只有 `ContainerRawcode` / `ContainerAbility` 两个字段，全仓没有一处赋值（`Launcher/Src/Abilities/Ability.cs:714-715`），也没有 `RuntimeSpellBookAbility`；物编里的法术书物品（`sbok` / `Aspb`）用出去什么都不发生。
+- **表现差异**：拿到法术书点使用没有任何页面打开，书里的子技能永远进不了命令卡，物品等于失效。
+- **要做**：补 `RuntimeSpellBookAbility`（物编 MenuOrderId + 子技能 `Requires` 链），在 `CommandCardBuilder` 的菜单栈里加 `MenuKind.Book` 与 `OpenSpellBook` / `BackFromSpellBook`，子技能按容器过滤并把序号当格号，点开/关页条件与客户端一致。
+
+### 24. 提示语和悬停说明石沉大海（V1 #39）
+
+- **客户端**：`CommandErrorFrame` 黄字、在 console 上方、3 秒 + 每字符 0.1 秒；`SetHint` 等提示都有真实读者；信息面板悬停按帧名分派（金币/木材/人口/维修费、攻击力/护甲、三围、经验条、8 个 Buff 图标）；`TooltipFrame` 有 `ShowEx(ext/costs)`、四个成本图标槽、分段富文本、跟随锚点、屏幕边缘内缩、单位血蓝条（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs` 1227 行）。
+- **Launcher**：`MeleeHudController.SetHint` 只做 `_hint = text`（`MeleeHudController.cs:150`），`_hint` 没有读者；`SetQueue(string)`、`SetClock(string)` 是空方法（`:72`、`:139`），`SetPlayerInfo`、`SetBuffs`、`SetUnitSummary` 只写字段没人读（`:74`、`:141`、`:147`）。全仓没有 `CommandErrorFrame`；`TooltipFrame.cs` 只有 112 行，固定 280 宽纯色底 + 按 34 字符硬折行。
+- **表现差异**：资源不足点建造、修理由非农民点残血建筑、Ctrl+1 存编队、子组切换、放置失败等 70 多处调用，一句提示都看不到；悬停资源/数值/Buff 没有说明；长文本用固定宽度硬折行。
+- **要做**：先补客户端的 `CommandErrorFrame`（不要造等价物，就用这个名字和这套行为），再补信息面板悬停，最后升级 `TooltipFrame`；Buff 图标本身缺失另见第 27 条。
+
+### 25. 聊天和控制组各写了一套（V1 #41）
+
+- **客户端**：`ChatFrame` 是 HUD 里的帧，行会淡出、自动换行、解析 `|c` 颜色、有 `AppendHistory`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/ChatFrame.cs`）；屏幕左下有 1–9 编队按钮 `ControlGroupFrame`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/ControlGroupFrame.cs`），支持双击居中。
+- **Launcher**：`ChatFrame` 同名不同物，是独立 `CanvasLayer` 里的 `Label + LineEdit`，固定 `224,560 / 620×110`，不随 UI 缩放、不淡出、不换行（`Launcher/GameCore/L4_Composition/Game/UI/ChatFrame.cs:23-28`）；没有 `ControlGroupFrame`，只有键盘 0–9。
+- **表现差异**：聊天窗口和 HUD 不同步缩放、超长消息被裁；看不到编队按钮，也不能双击居中。
+- **要做**：聊天挪回 HUD 帧体系并补换行/淡出；补 1–9 编队按钮。
+
+### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
+
+- **客户端**：`MinimapUnitView.Classify` 认金矿、缠绕金矿、闹鬼金矿、中立建筑、圈地、物品、野怪营地、出生点（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/MinimapUnitView.cs:58`）；野怪营地还有 `MinimapCampTracker`（按迷雾和等级画两种图标，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:1338`）；`MinimapFilter` 和 `Alt+G/T/A` 都接到真实状态；腐地用 `MinimapBlightTexture` 缓存（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MinimapBlightTexture.cs:10`）。
+- **Launcher**：`Classify` 只认 4 个金矿 id（`Launcher/GameCore/L4_Composition/Game/UI/MinimapUnitView.cs:43-54`），`SimulationId` 恒为 0，`ColorIndex = unit.Player`；`_minimapIcons` 声明后从未 `Add`（`Scenes/War3GameScene/Ui.cs:199`、`Lifecycle.cs:520-521`），`DrawMinimapCamp` 直接 `return false`（`GodotUiRenderDevice.cs:157`）。`HandleAltShortcut` 没有调用者（`MinimapFrame.cs:190`），`MinimapFilter` 只赋值没人读（`Ui.cs:203`）；阵型按钮只改自己的开合状态，不改变移动阵型。腐地已经改用 `MinimapBlightTexture` 缓存（`Ui.cs:186-242`），这部分已修复。
+- **表现差异**：小地图没有野怪营地图标（野怪只按单位点显示）、没有物品和出生点图标，中立建筑只按玩家色画方块而没有中立图标；Alt+G/T/A 没反应；因为没有营地图标，野怪过滤没有实际对象；阵型按钮不改变移动阵型。
+- **要做**：补全 `Classify` 与营地图标；把 `HandleAltShortcut` 接到输入、把阵型开关接到移动阵型；配色/野怪按钮现有的颜色与显隐逻辑保留；腐地保持现状。
+
+### 27. 单位信息面板没有 Buff 图标栏
+
+- **客户端**：`UnitInfoPanelFrame` 有 8 个 `BuffIcon0..7`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:41-43`、`:126-128`），`UpdateBuffIcons` 按选中单位的 Buff 填图标、剩余时间和光环/增益标记（`:534-573`），悬停显示 `Bufftip/BuffUbertip`。
+- **Launcher**：`UnitInfoPanelFrame` 只有名字/经验/攻击/护甲/三围/状态标签（`Launcher/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:24-39`），没有 Buff 控件；`MeleeHudController.SetBuffs` 只把列表存进 `_buffs`（`MeleeHudController.cs:141-145`），`GameHudScreen` 没有任何读取方。
+- **表现差异**：选中单位后看不到身上的增益/减益图标和剩余时间，也看不到悬停说明；玩家无法判断减速、嗜血、光环还剩多久。
+- **要做**：在 `UnitInfoPanelFrame` 补 8 个 Buff 图标槽与剩余时间/光环标记，数据从 `SetBuffs` 接入；悬停说明与第 24 条一起做。
+
+### 28. 头像只循环 Stand，没有 Portrait/Talk 动作
+
+- **客户端**：`PortraitAnimator` 待机时每段 `Portrait` 序列播完重摇下一段（不循环同一段、不定格），收到单位应答时切 `Portrait+TALK`，播到语音时长结束再回待机（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/PortraitAnimator.cs:3-7`、`:127-138`）；换单位/换类型会重建头像并重摇种子（`:61-79`）。
+- **Launcher**：`PortraitViewport.Show` 只加载选中单位模型并 `Play("Stand")`（`Launcher/GameCore/L4_Composition/Game/Rendering/PortraitViewport.cs:51-70`），没有 Portrait 序列选择、没有待机轮换、没有应答时说话动画；`GameHudScreen` 选中变化时只调 `Show(selected)`（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:205-214`）。
+- **表现差异**：头像永远循环同一个 Stand，站立动作整齐、缺少原版的手势/说话表现；点单位听到应答时头像嘴不动。
+- **要做**：按客户端补 `PortraitAnimator`（Portrait/Portrait+TALK、待机重摇、按身份重播种），在 ack 时触发 Talk，时长取语音实际长度。
+
+### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
+
+- **客户端**：把 `PixelOffsetX` 和 `ActivePixelWidth` 传给渲染设备，`War3UiViewport.FitPixelWidth` 把 HUD 限制在居中 16:9（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/War3UiViewport.cs:24`、`Scenes/War3GameScene/Rendering.cs:46`）。`UiFontScale` 读用户设置并在倍率变化时 `InvalidateLayout()`。
+- **Launcher**：`GameHudScreen._Draw` 用 `viewport.X / DesignWidth`、`viewport.Y / DesignHeight` 直接拉伸（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:515-535`），没有 `FitPixelWidth`/`PixelOffsetX`；`UiFontScale` 默认 1.2，但全仓没有一处 `Set`（`Launcher/GameCore/L2_Core/UI/UiFontScale.cs:18`），依赖它的选项界面也不存在。
+- **表现差异**：2560×1080 下 HUD 被横向拉宽三成，小地图变扁、命令卡格变宽、圆形按钮变椭圆；字号无法调。
+- **要做**：HUD 改用 `War3UiViewport`（选图页、加载屏已经在用），删掉重复常量；字号接选项设置。
+
+### 30. 界面渲染能力缺几项，FDF 生成的绑定没人用（V1 #44）
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UiRenderDevice.cs:367` 的 `DrawCooldownSweep` 用 `cooldown.blp` 画扇形，`DrawCooldownCompletion` / `DrawAutoCast` / `DrawTexturedQuadAdd` 都有真实实现（`:382`、`:389`、`:496`，含 ADD 混合）。`War3FdfUi` 真的用 `ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`EscMenuMainPanelBinding` 切换 `_console.Visible` 和 `SetChromeVisible`（`War3FdfUi.cs:11-56`）。
+- **Launcher**：`DrawCooldownSweep` 是纯色扇形（`GodotUiRenderDevice.cs:132`），`DrawCooldownCompletion` / `DrawAutoCast` 返回 false（`:155`、`:159`），`DrawTexturedQuadAdd` 退化成普通 alpha（`:98`）；`FdfBindGen` 生成了 5 个绑定（`Launcher/GameCore/L4_Composition/Game/Diagnostics/FdfBindGen.cs:17-44`），但只有 `LoadingScreenBinding` 有调用者（`Launcher/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:95`），HUD 走手写 `TopBarFrame + ConsoleSkinFrame`。
+- **表现差异**：冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、ADD 高亮/光晕偏暗；FDF 皮肤改了也不会反映到 HUD。
+- **要做**：先补三个渲染能力和 ADD 混合，再决定 FDF 绑定是接上还是删掉。
+
+## 模块七：工程结构（横切）
+
+> 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
+
+### 31. 坡面姿态在客户端是场景 partial 方法，Launcher 抽成了独立类（V1 #59）
+
+- **客户端**：`ComputeUnitTerrainTilt` 挂在 `War3GameScene` 的 partial class 上（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489`），同目录诊断也直接调它。
+- **Launcher**：写成 `Launcher/GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的独立静态类，算法逐行一致但归属与目录都不对。
+- **表现差异**：玩家看不到差别，但任何按客户端路径找坡面姿态的改动都会落空，后续场景层改动容易漏改这份独立实现。
+- **要做**：搬回 `War3GameScene` 的 partial（可放 `Scenes/War3GameScene/Presentation.cs` 同目录新 partial），调用点经场景转调；如果拿场景引用不方便，至少放到 `Scenes/War3GameScene/` 下并在类名上体现归属。
+
+### 32. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾（V1 #58）
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/FogOfWarUniforms.cs` 只管战争迷雾的 `Texture/Uvp/Enabled` 加 `Publish/Reset/Upload`；大气雾由各渲染器按 `FogSettings` 自己传 `uFogColor/uFogParams`。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/SceneFog.cs` 同时装大气雾 `fog_color/fog_params` 和战争迷雾 `fog_of_war_*`，`SceneLightRig.Apply` 一次写两样（`Launcher/GameCore/L4_Composition/Game/Environment/SceneLighting.cs:297`）；路径、类名都和客户端对不上。
+- **表现差异**：玩家看到的雾暂时一致，但两类雾的生命周期被绑在一起（第 9 条的延迟就是它造成的），后续任一渲染器改雾参数都会牵动全局。
+- **要做**：拆开。战争迷雾改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
 
 ---
 
-## 七、特效与声音
+## 核对结果（V1 剩余 21 条）
 
-## 25. 音乐无缝连播，也没有脚步和建筑循环音
-
-- **音乐**：客户端曲间有 20 秒间隔，支持主题音乐叠加、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；Launcher 播完立刻下一首，固定 `-10dB`，没有淡入淡出、没有脚本接口。
-- **循环音**：客户端的 `War3LoopingSoundService` 按 `MovementSoundLabel` 播脚步并跟随位置，建筑建造时播 `BuildingSoundLabel`；Launcher 没有循环音服务，行军完全没有脚步声。
-- **声部**：客户端 24 个系统声部、同文件最多 3 个、按 channel 配额和优先级抢占、每条声音有自己的 Min/MaxDistance；Launcher 16 个固定播放器，参数写死，表里读出来的 Min/MaxDistance 从来没用。
-- **音量**：客户端有 `SoundVolume` / `MusicVolume` 并按通道分；Launcher 没有任何音量设置。
-- **表覆盖**：客户端加载 12 类，Launcher 合并成 5 张，`AnimSounds` 和 `Dialog` 没有源。
-
-要做：曲间间隔和淡入淡出，脚步循环音，然后音量设置（和 40 的选项界面一起做）。
-
----
-
-## 九、加载流程
-
-## 十、界面
-
-## 38. 命令卡的槽位、热键和可用性判定
-
-- **槽位**：客户端 `FindNativeSlot` 是「向 11 找空位、再往 0 回退、满卡就丢」；Launcher 是「从请求位往后找第一个空位，找不到就 break」。同一份物编配置，两边第 3/8/11 格放的可能是不同技能。
-- **热键**：客户端按按钮上真正显示的 `Hotkey` 分发（`CommandAtHotkey`），训练、研究、建造、升级都能用键盘；Launcher 的 `TrySelectionHotkey` 完全不看命令卡，只认 `ability.Hotkey` 和硬编码的 M/S/H/A/P，遇到建筑直接 `return false`。命令卡上的字母是纯装饰。
-- **可用性**：客户端有 `NativeManaAdmission`、`NativeSpellOrderAdmission`、`NativeSelectionCommandPolicy`；Launcher 的判断写死在 `QuickCast.cs` 里，带法力修正符的单位会出现「亮着却放不出」。
-
-要做：先把热键改成读按钮 `Hotkey`，再改槽位算法和可用性判定。冷却闪光、自动施法高亮、禁用变暗属于渲染设备能力，在 44 条。
-
-## 39. 所有提示语都石沉大海
-
-`MeleeHudController.SetHint` 只做 `_hint = text`，而 `_hint` 全工程除了声明和这一行赋值没有任何读者；`SetQueue(string)`、`SetClock(string)` 是空方法体，`SetPlayerInfo`、`SetBuffs`、`SetUnitSummary` 只写字段没人读。
-
-结果是：资源不足点建造、修理由非农民点残血建筑、Ctrl+1 存编队、子组切换、放置失败——73 处调用，一句提示都看不到。客户端对应位置是 `CommandErrorFrame`（黄字、在 console 上方、3 秒 + 每字符 0.1 秒）。
-
-信息面板的悬停说明也缺：客户端按帧名分派（金币/木材/人口/维修费、攻击力/护甲、三围、经验条、8 个 Buff 图标），Launcher 的悬停处理只认 `ButtonFrame`，而资源图标、数值标签、Buff 图标都不是 `ButtonFrame`。`TooltipFrame` 本身也退化了：客户端有 `ShowEx(title, body, ext, costs)`、四个成本图标槽、分段富文本、跟随锚点、屏幕边缘内缩、单位血蓝条，Launcher 是固定 280 宽纯色底 + 按 34 字符硬折行。
-
-要做：先把 `CommandErrorFrame` 补上（不要造等价物，就用客户端这个名字和这套行为），再补信息面板悬停，最后升级 `TooltipFrame`。
-
-## 40. Esc 语义相反，顶部按钮点了没反应，也没有选项界面
-
-- **Esc**：客户端 Esc 是分层取消（取消待定命令 → 退出学习页），菜单开关是 F10；Launcher 里 Esc 第一件事就是 `_escMenu.Open()`，而且没有 F10。正在放置建筑时按 Esc，客户端取消放置，Launcher 弹菜单、关掉菜单后幽灵建筑还在。Backspace（循环主城）、PageUp/Down（缩放）、Ctrl+C/Alt+C（居中）、Alt+F（阵型）、Alt+G/T/A（小地图）也都没有。
-- **Esc 菜单本体**：客户端是 FDF 的 `EscMenuMainPanel` 强类型绑定，隐藏存档/读档/帮助/重开，保留选项/结束游戏/返回游戏；Launcher 用 `ColorRect + Label + Button` 手搓，只有「继续/暂停/返回列表」，坐标还写死在 1600×900。
-- **顶部按钮**：`TopBarFrame` 暴露了 `MenuButton` / `QuestButton` / `AlliesButton`，全仓没有一处 `.Clicked +=`，所以顶部按钮可点但完全没反应。任务和盟友面板不在本轮范围（见文末），这两个按钮按范围取舍隐藏；菜单按钮接 Esc 菜单。
-- **选项**：客户端的 `AboutDialogFrame` 有镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率滑块，关掉时 `UserSettings.Save`；Launcher 没有任何设置界面。
-
-要做：Esc 改回取消优先并补 F10；菜单按钮接上；选项界面和 25 的音量一起做。
-
-## 41. 聊天和控制组各写了一套
-
-- **聊天**：客户端 `ChatFrame` 是 HUD 里的帧，行会淡出、自动换行、解析 `|c` 颜色、有 `AppendHistory`；Launcher 的 `ChatFrame` 同名不同物，是独立 `CanvasLayer` 里的 `Label` + `LineEdit`，固定 `224,560 / 620×110`，不随 UI 缩放、不淡出、不换行，`Send` 只 `Add("[玩家] ...")` 加 `GD.Print`。多人频道（全体/盟友）不做，这里只对齐显示与排版。
-- **控制组**：客户端屏幕左下有一排 1–9 编队按钮，支持双击居中；Launcher 只有键盘 0–9。
-
-要做：聊天挪回 HUD 帧体系并补换行/淡出；编队按钮补上。
-
-## 42. 小地图少了图标，滤镜点了没效果
-
-- **图标**：客户端 `MinimapUnitView.Classify` 认金矿、缠绕金矿、闹鬼金矿、中立建筑、圈地、物品、野怪营地、出生点；野怪营地还有 `MinimapCampTracker`（按迷雾和等级画两张图标，位置走 MDX 模型）。Launcher 的 `MinimapUnitView` 只认几个硬编码 id，`SimulationId` 恒为 0，`ColorIndex` 直接等于 `unit.Player`；营地图标列表 `_minimapIcons` 从来没 `Add` 过，`DrawMinimapCamp` 直接 `return false`。小地图上没有野怪营地、没有物品、没有出生点，中立建筑也不显示中立色。
-- **滤镜**：`MinimapFilter` 只被赋值没人读，`SetFilterState` / `HandleAltShortcut` 都没有调用者。点「野怪/配色/阵型」按钮图标会变，游戏里没有任何效果；Alt+G/T/A 没反应；阵型按钮不改变移动阵型。
-- **腐地**：客户端有 `MinimapBlightTexture` 带缓存；Launcher 在 `Ui.cs` 里内联重算，腐地一变就整图重传并新建贴图。
-
-要做：`Classify` 补全 + 营地图标，滤镜接上，腐地改用缓存那块。
-
-## 43. 界面拉满整窗，超宽屏不居中
-
-客户端把 `PixelOffsetX` 和 `ActivePixelWidth` 传给渲染设备，`War3UiViewport.FitPixelWidth` 把 HUD 限制在居中 16:9；Launcher 的 `GameHudScreen._Draw` 用 `viewport / 1024` 直接铺满，`_offsetX` 传 0。2560×1080 下 HUD 被横向拉宽三成，小地图变扁、命令卡格变宽、圆形按钮变椭圆。`GameHudScreen` 还自己又定义了一份 `DesignWidth/DesignHeight`。
-
-`UiFontScale` 也没接：共用 `UiFontScale` 默认 1.2，Launcher 全仓没有一处 `Set`；客户端读用户设置并在倍率变化时 `InvalidateLayout()`（依赖 40 的选项界面）。
-
-要做：`War3UiViewport` 用起来（选图页、加载屏已经在用），删掉重复常量，字号接设置。
-
-## 44. 界面渲染能力缺几项，FDF 生成的绑定没人用
-
-`GodotUiRenderDevice` 里：`DrawCooldownSweep` 是纯色扇形（客户端用 `cooldown.blp` 画），`DrawCooldownCompletion` / `DrawAutoCast` / `DrawTexturedQuadAdd` 分别返回 false 或退化成普通 alpha（所有 ADD 混合的贴图偏暗）。所以冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、高亮和光晕偏暗。
-
-另一件事：Launcher 生成了 `ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`EscMenuMainPanelBinding`、`MainMenuBinding`，但除了 `LoadingScreenBinding` 之外没有任何调用者，HUD 走的是手写 `TopBarFrame` + `ConsoleSkinFrame`。客户端 `War3FdfUi` 是真的用这些绑定切换 `_console.Visible` 和 `SetChromeVisible`。
-
-要做：先补三个渲染能力和 ADD 混合（都是小改动），再决定 FDF 绑定是接上还是删掉。
-
----
-
-## 核对结果
-
-按 AGENTS.md 的 1–5 条逐条对照，依据列里的数字就是条款号。
-
-| # | 依据 | 结论 |
+| V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 2 | 2 | 保留：尺寸算错，烘焙阴影等于全废 |
-| 3 | 2 | 保留：地表花纹、斜坡、破面 |
-| 4 | 2、3 | 保留：客户端并进阴影图，Launcher 另做黑片 |
-| 8 | 2 | 保留：偶发大浪 |
-| 10 | 2、3 | 保留：客户端有 SceneLighting/DynamicLight，Launcher 没有 |
-| 12 | 2、3 | 保留：日月、选天空依据 |
-| 15 | 2 | 三块已完成，等合并后删 |
-| 16 | 2 | 已完成，等合并后删 |
-| 17 | 2 | 已完成，等合并后删 |
-| 18 | 2 | 已完成，等合并后删 |
-| 19 | 2 | 三块已完成，等合并后删 |
-| 20 | 2、3 | 保留：手写表 vs 数据驱动 |
-| 23 | 2 | 保留：飘字样式 |
-| 24 | 2、3 | 保留：应答、命中音、界面音效 |
-| 25 | 2、3 | 保留：音乐、循环音、声部 |
-| 26 | 3 | 保留：客户端有 CAMS，Launcher 空接口 |
-| 27 | 2、4 | 保留：跟随、设置、取景 |
-| 28 | 1、3 | 保留：两套子组、点头像清队 |
-| 29 | 1 | 保留：右键分支 |
-| 30 | 1、3 | 保留：拖拽、拾取、地面物品详情 |
-| 37 | 2、3 | 保留：命令卡结构 |
-| 38 | 2、3 | 保留：槽位、热键、可用性 |
-| 39 | 2、3 | 保留：提示语与悬停说明 |
-| 40 | 1、3 | 保留：Esc 语义、顶部按钮、选项 |
-| 41 | 2、3 | 保留：聊天框、编队按钮 |
-| 42 | 2、3 | 保留：小地图图标、滤镜 |
-| 43 | 2、4 | 保留：超宽屏、字号设置 |
-| 44 | 3、4 | 保留：渲染能力、FDF 绑定 |
-| 45 | 5 | 保留：命名与职责错位 |
+| 25 | 仍成立 | 音乐无间隔/淡变（`War3MusicPlayer.cs:26`），无循环音服务，16+8 固定播放器（`War3AudioSystem.cs:12-42`） |
+| 38 | 仍成立 | 无 `CommandAtHotkey`/`FindNativeSlot`；`QuickCast.cs:411-417` 只认物编热键 |
+| 39 | 仍成立 | `SetHint` 只赋值（`MeleeHudController.cs:150`），无 `CommandErrorFrame`；Buff 图标另立第 27 条 |
+| 40 | 部分修复 | Esc 已先取消施法/关菜单（`War3InputComponent.cs:41-47`）；放置取消、F10、快捷键、顶栏、选项仍缺 |
+| 41 | 仍成立 | 聊天独立 CanvasLayer（`ChatFrame.cs:23-28`），无 `ControlGroupFrame` |
+| 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
+| 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
+| 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
+| 47 | 仍成立 | 地形/悬崖着色器无 `uDynamicLights`（`terrain_map.gdshader:9-11`） |
+| 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
+| 54 | 仍成立 | 只有可见性冻结（`Environment.cs:91-95`），无 `ScoutingMemory` |
+| 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
+| 56 | 仍成立 | 每格 `CpuParticles3D` + 跨格 `Restart`（`WeatherRenderer.cs:69-94`、`:199`） |
+| 57 | 仍成立 | `Upload` 只存静态字段（`FogOfWar.cs:185`），材质写入在 `SceneLightRig.Apply` |
+| 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
+| 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
+| 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
+| 61 | 仍成立（修正） | 参数取待机帧快照；`amount` 已用最大发射率但仍夹 8..512（`ModelBundle.cs:1559-1566`、`:1855`） |
+| 62 | 仍成立 | 四个事件音键无调用点（`War3UiSoundService.cs:10-41`） |
+| 63 | 仍成立 | 弹道仍是实例化后直线/弧线飞行（`Presentation.cs:33-79`），根因未定位 |
+| 64 | 仍成立 | `ContainerAbility` 无赋值（`Ability.cs:714-715`），无 `RuntimeSpellBookAbility`/`OpenSpellBook` |
 
-## 已排除的候选（不再写进清单）
+---
 
-| 原编号 | 内容 | 排除理由 |
-|---|---|---|
-| 12 | 地形高度变形 | 客户端只有脚本会调 `TerrainDeformCrater`（`TerrainDeformationTrigger` 注释写明「没有任何技能调用它」），Launcher 不跑 JASS，这条永远不会触发；等接 JASS 再一起做 |
-| 37 | 任务、盟友、排行榜、多面板、脚本对话框、过场遮罩、秘籍面板 | 全部来自 `_jassRuntime?.GetQuests()` 这类触发器数据，属于 Launcher 明确不做的 JASS/触发器范围；其中「地面物品详情」已并入 30 |
-| 46 | 没有调用者的接口清单 | 不属于 1–5 任何一条，是代码卫生；其中会影响玩家的（`SetHint`、顶栏按钮、营地图标、`MinimapFilter`）已分别写进 39、40、42。排查时先 grep 调用者仍是个好习惯，但不当任务列 |
-| 36 子项 | F4–F7 选英雄 | 单人最多 3 个英雄，永远用不到 |
-| 38 子项 | 全体/盟友聊天频道 | 多人频道不做 |
-| 43 子项 | 电影模式隐藏 HUD | 过场本身来自脚本，同 37 的理由 |
-| 19 子项 | 动画时间缩放 `AnimationTimeScale` | 客户端只由 JASS `SetUnitTimeScale` 改这一个字段，Launcher 不跑 JASS，永远不会被设成非 1 |
+## 已排除的候选（不写进清单）
+
+| 内容 | 排除理由 |
+|---|---|
+| 任务/盟友面板、排行榜、多面板、脚本对话框、过场遮罩、秘籍面板 | 全部来自触发器/JASS 数据，Launcher 不跑 JASS |
+| 电影模式隐藏 HUD、`AnimationTimeScale` | 只由 JASS 触发，Launcher 永远不会遇到 |
+| 地形高度变形 `TerrainDeformCrater` | 只有脚本会调，等接 JASS 再一起做 |
+| Android 自动拾取指令、返回上一个选择、镜头锁定/遥杆 | 客户端安卓触控套件专属，Launcher 没有触控套件 |
+| 多人聊天频道、共享单位控制、联机大厅 | Launcher 固定单人+AI，不做多人 |
+| F4–F7 选英雄 | 单人最多 3 个英雄，永远用不到 |
+| 非英雄背包 / 物品合成 | 客户端 C# 没有对应实现，不在对齐范围 |
+| AI 的战术选择 | “仅对战”的已知取舍；Launcher 的 AI 不是客户端 melee AI 的移植对象 |
+| CAMS 模型自带镜头、UberSplat 建筑光晕 | 1.27 数据/客户端运行时没有可对齐的实现 |
 
 ---
 
 ## 推进顺序
 
-编号已经是自底向上的顺序，从上往下做即可，但有两个例外：
+模块顺序是从底层到表层，模块内从上往下做即可。两个例外：
 
-1. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
+1. **第 21、22、24 条**是「按了没反应/看不到提示」的功能性缺陷，可以提前插队。
+2. **第 6、8、9 条与第 17 条**共用环境/雾/天气代码，建议连着做，避免来回改同一批着色器与加载时序。
 
-底层那一批里，**第 2、3、10** 是「一改就能并排看出差别」的，建议先啃这三个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
-
-单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 21 的丝带和弹道链路最容易被玩家看出来。
+底层里最容易被玩家一眼看出的是 **第 11 条（转身）**、**第 12 条（Buff 技能）**、**第 13–15 条（物品）**；特效与声音里 **第 18 条（飞弹）** 和 **第 19 条（音乐/脚步）** 最直观。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **64** 开始。
-- 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
-- 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
-
-## 47. 地形与悬崖不接收 MDX 动态光
-
-客户端 `Terrain.vert.glsl` 和 `Cliff.vert.glsl` 里各有一段 `dynamicLightFactor`，把单位的动态光（火把、法术特效）按距离/衰减累加进顶点光照；Launcher 的地形、悬崖、水面着色器只吃方向光和环境光。
-
-要做：把 `war3_light_data` 也传进三个世界着色器，按客户端公式累加。
-
-## 49. `EfctID` 那条艺术链没接
-
-客户端 `War3EffectArtResolver` 把 `EfctID`（`X***`）解析成 `Effects\*.mdl`，挂到单位身上做常驻表现；Launcher 只读了 `CasterArt` / `TargetArt` / `SpecialArt` / `EffectArt` / `AreaEffectArt` 五个字段，`EfctID` 完全没读，Extract 也没导出过 `Effects/` 目录。
-
-要做：Extract 先导出 `Effects/` 目录，再在 `AbilityArt` 里补 `EfctID` 这条解析。
-
-## 50. 两条技能美术资源 Extract 没导出
-
-`--effect-probe` 实测物编 976 条、美术引用 656、可加载 654，缺两条：`Arsp` 的 `Abilities\Spells\Other\Stampede\MissileDeath.mdl`、`AIga` 的 `Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdl`。
-
-要做：Extract 补导出这两个模型，跑 `--effect-probe` 应变成「缺 0」。
-
-## 51. `Ability.Arts` 没并进物编合并
-
-客户端在 `LoadStandardTypedData` 里把 `Units*AbilityFunc` 这些 txt 并进同一份 `War3TypeData`，技能和 Buff 共用一份数据；Launcher 的 `AbilityArt` 单独读一张合并过的文本表，等于多了一层旁路。
-
-要做：把技能美术字段并进 `War3ObjectData` 的物编合并，之后 `AbilityArt` 可以退化成按字段名取值。
-
-## 52. 天气和特效粒子不吃雾
-
-客户端 `Weather.frag` 按 `useFog` 把 `uFogColor/uFogParams` 传进天气粒子，MDX 粒子/丝带也一样（`MdxParticle2.frag`、`MdxRibbon.frag`）。
-
-Launcher 的天气用 `StandardMaterial3D` + `DisableFog`，而全场景没有开 Godot 的 `Environment.FogEnabled`，`useFog` 等于空转；`war3_particle.gdshader`、`war3_ribbon*.gdshader` 也没有雾 uniform。地形、悬崖、水面、模型已接上 `atmosphere.gdshaderinc`。
-
-要做：天气材质换成自定义着色器并吃 `atmosphere.gdshaderinc` 的雾；粒子和丝带在片元里调 `war3_apply_fog`。
-
-## 53. w3i 子记录名和客户端还不一致
-
-客户端 `MapInfoParser.cs` 里玩家/势力叫 `MapPlayerInfo` / `MapForceInfo`，雾、天气、水色、光照 tileset 这些环境字段直接平铺在 `MapInfo` 上；Launcher 现在叫 `W3iPlayer` / `W3iForce`，环境单独一层 `W3iEnvironment` 子对象，`War3WaterConfig` / `SkyboxRenderer` / `SceneLighting` 都按 `map.Info.Environment.X` 取值。
-
-要做：两个记录改成客户端名字；环境字段平铺进 `MapInfo`，去掉 `W3iEnvironment` 这层，调用点同步。
-
-## 54. 建筑在雾里被拆掉后仍然立刻消失
-
-客户端把「已探索但看不见」的建筑冻成 CPU 快照，被拆掉时快照还在，直到 `ScoutingMemory` 把这一格重新看见才遗忘。
-
-Launcher 现在会冻结序列和粒子（`UnitSceneComponent.SetFogFrozen`），模型也吃迷雾压暗，但建筑阵亡后没有「冻结快照」：模型停止推进、继续留在地上，重新看见时也不会按客户端逻辑遗忘。
-
-要做：建筑在不可见时阵亡要保留最后一次看到的定格模型，重新可见时再按 `ScoutingMemory` 口径清掉。
-
-## 55. 单位转身比客户端慢五倍多
-
-客户端 `UnitFactory.TypeData.cs:139-140` 把 SLK 的 `turnRate` 直接当弧度/秒用：`DefaultTurnSpeed = turnRate`，`TurnRate = NativeTimedFacing.TurnSpeed(turnRate) / Period`（`Period = 0.03`），即每 0.03 秒转过 `turnRate` 弧度；`NativeTimedFacing.TurnSpeed` 只做 `max(0.001, …)`，没有额外下限或上限。步兵这一档换算出来约 20 rad/s，也就是 0.3 秒转一整圈。
-
-Launcher `UnitFactory.cs:353` 是 `TurnSpeed = Mathf.Clamp(turnRate * 6f, 1.5f, 14f)`，`World.MovementEvents.ApplyFacing` 每仿真步最多转 `Mathf.Max(1.5f, TurnSpeed) * 0.05` 弧度。同一条 `turnRate` 只走出客户端五分之一到六分之一，而且 `1.5` 的下限会把慢速单位（攻城器械、建筑类转向）一起抬快。
-
-玩家看到：点攻击后单位往往跑到贴脸才开始转身，侧身追人、绕圈时像在滑行；`NeedsAttackFacing` 的朝向窗口满足得晚，攻击前摇整体被拉长；编队齐转时更像整体平移而不是各自转身。
-
-要做：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完必须回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项——这条动的是战斗节奏，不只是表现。
-
-## 56. 天气粒子还在用 CpuParticles3D，跨格重启会把整窗雨打回起点
-
-先把结论放前面：**tail 几何不用补。** 客户端 `docs/weather-atmosphere-rendering.md:54` 记着几何是「面向相机的 ±1 方片 × `scale` 轨道」，按 `|veloc|*taillen` 把方片拉成雨丝试过并撤回——`rainTail.blp` 实测 32×16（2:1），长条形态由纹理本体提供，拉伸只会让 2:1 贴图变形。客户端 `WeatherDefinition` 因此只把 `head/tail/taillen` 当诊断字段，`Weather.vert.glsl` 里没有任何拉长指令。
-
-Launcher 的几何口径也已经对齐：`WeatherRenderer` 用 2×2 `QuadMesh`，`weather.gdshader` 里 `VERTEX.xy *= weather_timeline(weather_scale, life)`，与客户端 `uCameraRight*aCorner.x + uCameraUp*aCorner.y` 同一个 ±1 方片 × scale。
-
-差的是提交与相位：客户端 `WeatherRenderer` 一次 `DrawElementsInstanced` 画整个 7×7 窗格，相位由 `CellSeed(weather, col, row)` 确定性生成，跨格只在 `RebuildVisibleWindow` 里重传实例缓冲；Launcher 是 7×7 个 `CpuParticles3D`，`AcquireWindow` 每跨一格就 `emitter.Restart()`，`Preprocess = LifeSpan` 再跑一遍，整窗雨的相位被重置，窗口滑动时雨会整片跳一次。发射域也偏了：Launcher 用 `EmissionShapeEnum.Box`（`512×1×512` 的水平盒），客户端 `ScatterOffset` 让散布平面随 `angx/angy` 一起倾斜。
-
-要做：天气粒子改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲、不重启发射器；散布按 `angx/angy` 倾斜平面；几何继续方片，不按 `taillen` 拉伸。验证：`--path . --rendering-driver opengl3 -- --play="(4)Turtle Rock.gmap" --shot=...@N`，看跨格滑动时雨有没有整片断档。
-
-## 57. 雾纹理参数搭着光照刷新才下发，进图后有一段时间没雾
-
-客户端 `FogOfWarRenderer.Draw` 每帧算完淡变就 `FogOfWarUniforms.Publish(_texture, FogOfWarUvp, true)` 写进共享状态，六个接收者（地形/悬崖/水/岸浪/单位/公告板）在各自的 draw 里 `FogOfWarUniforms.Upload(shader)`，纹理一更新同一帧就生效。
-
-Launcher 的 `FogOfWar.Upload()` 只调 `SceneFog.SetFogOfWar(...)` 存静态字段，真正写进材质是在 `SceneLightRig.Apply` 里的 `SceneFog.Write`——而 `Apply` 只有 `LoadTerrainPresentation` 调一次，之后靠 `TickClock` 的「时辰变化 ≥0.05 小时」触发。`_fog.Build()` 在 `LoadPathing`（加载末尾）才跑，那一刻 `_fogOfWar` 还是 null，材质里根本没有 `fog_of_war_texture/uvp/enable`。
-
-玩家看到：进图后地图先全亮，等下一次时辰跳变（约 1 秒）雾才突然铺上去。实测 5.6 秒截图已经有雾，窗口短，但违反「纹理更新即生效」。
-
-要做：`FogOfWar.Upload()` 写完 `SceneFog.SetFogOfWar` 之后立刻把三项参数重写进已创建的材质，别再搭光照刷新的车。
-
-## 58. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾
-
-客户端 `GameCore/L4_Composition/Game/Rendering/FogOfWarUniforms.cs` 是「战争迷雾 uniform 的统一上传入口」，只管雾：`Texture` / `Uvp` / `Enabled` 三个状态加 `Publish` / `Reset` / `Upload(IShaderProgram)`。大气雾不在这里，客户端是各渲染器自己按 `FogSettings` 传 `uFogColor` / `uFogParams`。
-
-Launcher 把两件事塞进了同一个类：`GameCore/L4_Composition/Game/Environment/SceneFog.cs`——名字、路径都和客户端对不上，类里同时有 `fog_color` / `fog_params`（大气雾）和 `fog_of_war_*`（战争迷雾），`SceneLightRig.Apply` 里一次调两样。
-
-要做：拆开。战争迷雾那半改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关三项；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
-
-## 59. 坡面姿态在客户端是场景 partial 方法，Launcher 抽成了独立类
-
-客户端 `GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489` 是 `internal static (float Pitch, float Roll) ComputeUnitTerrainTilt(Vec2 position, float facing, float sampleRadius, float maxPitchDegrees, float maxRollDegrees, Func<float,float,float> heightAt)`——挂在 `War3GameScene` 这个 partial class 上，同目录的 `Diagnostics/UnitPresentationDataRegression.cs:299` 也直接调它。
-
-Launcher 写成 `GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的 `internal static class UnitTerrainTilt.Compute(...)`。算法逐行一致（四点采样、`atan2(前-后, 2r)`、`clamp` 到 `maxPitch/maxRoll`、负角度当固定倾角），差的是归属与位置：客户端在场景 partial 里，Launcher 单开一个类还放进了 `Rendering/`。
-
-要做：按客户端归位——方法搬进 `War3GameScene` 的 partial（可以放在 `Scenes/War3GameScene/Presentation.cs` 同目录的新 partial 文件里，类名仍是 `War3GameScene`），调用点从 `UnitSceneComponent` 改成经场景转调；如果确认 Godot 侧 `UnitSceneComponent` 拿场景引用不方便，退一步也要放到 `GameCore/L4_Composition/Game/Scenes/War3GameScene/` 下而不是 `Rendering/`，并在类名上体现它是场景的一部分。
-
-## 60. 转成 Godot 动画时丢掉了关键帧切线
-
-客户端 `MdxTimelineSampling` 按序列区间求值，关键帧插值支持 step / linear / Hermite / Bezier 四种（`MdxAnimation` 的 `InterpType`），贝塞尔还会取 inTan/outTan 做缓入缓出。
-
-Extract 的 MDX 转换只写 TRS 轨道关键帧的位置/旋转/缩放数值，切线信息整条丢掉，Godot 一律按线性插值。玩家看到：所有带缓入缓出的动作（起手、收招、建筑生长、死亡倒地）都变成匀速，动作发飘、缺少原版的重量感。
-
-要做：Extract 导出时把切线按 Godot `Animation` 支持的曲线表达出来（`Transform3D` 轨道只能是线性，得改成可承载自定义插值的轨道形式或按切线重采样成更密的线性关键帧），Launcher 侧不需要改。
-
-## 61. 粒子参数还是待机帧快照，数量也夹在 512
-
-客户端的 `ParticleEmitter2` 每帧按当前动画帧求 `KP2S`（速度）、`KP2L`（纬度）、`KP2G`（重力）、`KP2E`（发射率）、`KP2W`/`KP2N`（宽/长）、`KP2V`（可见度），粒子的位置/速度/重力和寿命都在运行时逐实例推进。
-
-Launcher 在 Extract 侧把发射器烘成 `GPUParticles3D`：参数取待机帧那一帧的快照，`amount = ceil(emissionRate * lifeSpan) + 8` 再硬夹到 8..512，所以发射率随动画变化的特效（呼吸、爆发、蓄力）全程按待机速率出粒子，粒子多的特效被削到一半。
-
-要做：把上述轨道按片段导出，运行时按 `AnimationPlayer` 当前位置驱动 `ParticleProcessMaterial` 的对应参数，并按整段最大发射率给 `amount`。
-
-## 62. 城镇被攻击、英雄阵亡这几类事件音还没接
-
-客户端 `War3UiSoundService` 里有 `TownAttack`、`UnderAttack`（城镇/建筑被打）和 `HeroDies`、`AllyHeroDies`（自己或盟友英雄阵亡），都靠模拟层的事件源驱动；`MapPing` 那张等地图标记交互做完才有事件。
-
-Launcher 的 `War3UiSoundService` 已经建好冷却表与种族前缀，但上述四个键没有调用点：建筑被攻击不报警，英雄阵亡也不出声，玩家在混战里少一层听觉提示。
-
-要做：在 `World` 的建筑受伤路径上区分「城镇」与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。`MapPing` 并进第 42 条的地图标记交互一起做。
-
-## 63. 飞弹模型几乎不可见
-
-客户端弹道用 `CharacterRenderer` 画模型，箭、火球、投石在游戏里都看得很清楚。
-
-Launcher 侧 `ArrowMissile`（弓箭手 earc）在 Turtle Rock 上实测看不到：弹道节点存在、位置在相机视野中心、`Visible=true`，模型 `scale` 放大 4 倍和 12 倍后截图里依然没有箭；模型场景结构是 `Node3D → Model/Skeleton3D → geoset0`，材质 `war3_model_opaque`（`alpha_cutoff 0.75`、贴图 `ArrowMissile.png`）完整，所以问题在渲染这一侧而不是导出。
-
-要做：先确认是骨骼/Stand 动画把网格挪走、还是 `MapWorldBuilder.ApplyUnitTextureFilter` 换了材质，修好后用弓箭手对射复验箭、火球、投石三类飞弹。
-
-## 64. 法术书没有页面，子技能进不了命令卡
-
-客户端把法术书做成命令卡的一个页面：`OpenSpellBook(selected, book)` / `BackFromSpellBook()`，
-`CollectAbilityCommands` 在 `spellBook != null` 时只收 `ContainerAbility` 与这本书同源的子技能
-（`book.SharesMenuWith(parent)`），子技能序号当格号落在 0..10、第 12 格放「返回」；
-`UpdateMenuSelection` 会在书的主人死亡、书被移除或子技能不可用时自动 `_menus.Back()`。
-
-Launcher 侧 `Ability` 只有 `ContainerRawcode` / `ContainerAbility` 两个字段，全仓没有一处赋值，
-`RuntimeSpellBookAbility` 也没有，所以法术书物品（sbok / Aspb）用出去什么都不发生。
-
-要做：补 `RuntimeSpellBookAbility`（物编 MenuOrderId + 子技能 `Requires` 链），在
-`CommandCardBuilder` 的菜单栈里加 `MenuKind.Book` 与 `OpenSpellBook` / `BackFromSpellBook`，
-`AddAbilityCommands` 的收子分支按容器过滤并把序号当格号，点开/关页条件与客户端一致。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **34** 开始。
+- 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
+- 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
