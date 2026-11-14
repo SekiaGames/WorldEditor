@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 56，下一条新任务从 57 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 58，下一条新任务从 59 起。**
 
 ## 范围
 
@@ -487,3 +487,21 @@ Launcher 的几何口径也已经对齐：`WeatherRenderer` 用 2×2 `QuadMesh`�
 差的是提交与相位：客户端 `WeatherRenderer` 一次 `DrawElementsInstanced` 画整个 7×7 窗格，相位由 `CellSeed(weather, col, row)` 确定性生成，跨格只在 `RebuildVisibleWindow` 里重传实例缓冲；Launcher 是 7×7 个 `CpuParticles3D`，`AcquireWindow` 每跨一格就 `emitter.Restart()`，`Preprocess = LifeSpan` 再跑一遍，整窗雨的相位被重置，窗口滑动时雨会整片跳一次。发射域也偏了：Launcher 用 `EmissionShapeEnum.Box`（`512×1×512` 的水平盒），客户端 `ScatterOffset` 让散布平面随 `angx/angy` 一起倾斜。
 
 要做：天气粒子改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲、不重启发射器；散布按 `angx/angy` 倾斜平面；几何继续方片，不按 `taillen` 拉伸。验证：`--path . --rendering-driver opengl3 -- --play="(4)Turtle Rock.gmap" --shot=...@N`，看跨格滑动时雨有没有整片断档。
+
+## 57. 雾纹理参数搭着光照刷新才下发，进图后有一段时间没雾
+
+客户端 `FogOfWarRenderer.Draw` 每帧算完淡变就 `FogOfWarUniforms.Publish(_texture, FogOfWarUvp, true)` 写进共享状态，六个接收者（地形/悬崖/水/岸浪/单位/公告板）在各自的 draw 里 `FogOfWarUniforms.Upload(shader)`，纹理一更新同一帧就生效。
+
+Launcher 的 `FogOfWar.Upload()` 只调 `SceneFog.SetFogOfWar(...)` 存静态字段，真正写进材质是在 `SceneLightRig.Apply` 里的 `SceneFog.Write`——而 `Apply` 只有 `LoadTerrainPresentation` 调一次，之后靠 `TickClock` 的「时辰变化 ≥0.05 小时」触发。`_fog.Build()` 在 `LoadPathing`（加载末尾）才跑，那一刻 `_fogOfWar` 还是 null，材质里根本没有 `fog_of_war_texture/uvp/enable`。
+
+玩家看到：进图后地图先全亮，等下一次时辰跳变（约 1 秒）雾才突然铺上去。实测 5.6 秒截图已经有雾，窗口短，但违反「纹理更新即生效」。
+
+要做：`FogOfWar.Upload()` 写完 `SceneFog.SetFogOfWar` 之后立刻把三项参数重写进已创建的材质，别再搭光照刷新的车。
+
+## 58. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾
+
+客户端 `GameCore/L4_Composition/Game/Rendering/FogOfWarUniforms.cs` 是「战争迷雾 uniform 的统一上传入口」，只管雾：`Texture` / `Uvp` / `Enabled` 三个状态加 `Publish` / `Reset` / `Upload(IShaderProgram)`。大气雾不在这里，客户端是各渲染器自己按 `FogSettings` 传 `uFogColor` / `uFogParams`。
+
+Launcher 把两件事塞进了同一个类：`GameCore/L4_Composition/Game/Environment/SceneFog.cs`——名字、路径都和客户端对不上，类里同时有 `fog_color` / `fog_params`（大气雾）和 `fog_of_war_*`（战争迷雾），`SceneLightRig.Apply` 里一次调两样。
+
+要做：拆开。战争迷雾那半改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关三项；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
