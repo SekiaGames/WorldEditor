@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 52，下一条新任务从 53 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 53，下一条新任务从 54 起。**
 
 ## 范围
 
@@ -340,33 +340,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 十一、代码结构
 
-## 45. 同名不同物的文件
-
-这些文件路径一样、类名一样，但职责完全不同，按名字对照会看错：
-
-| 文件 | 客户端 | Launcher |
-|---|---|---|
-| `Game/Presentation/UnitSceneComponent.cs` | 94 行，Unit 与场景图对象的代理 | 548 行，模型实例化 + 血条 + 选中圈 + 影子 + 动画选择 |
-| `Game/Scenes/War3GameScene/Presentation.cs` | 2311 行，单位/特效/弹道/影子/雾记忆总成 | 458 行，只剩弹道、语音、攻击音、引导圆盘 |
-| `Game/Environment/War3Paths.cs` | 找游戏安装目录 | 装的是 `MapWorldBuilder.TriangleHeightAt` |
-| `Game/Environment/CliffRenderer.cs` | GPU pass | 静态模型加载缓存 |
-| `Game/Environment/CliffSurface.cs` | 逐顶点高度/法线准备器 | 悬崖网格构建器 |
-| `Game/Scenes/War3GameScene/Terrain.cs` | 纹理数组、高度采样、水面高度 | 三个坐标转换函数 |
-| `Game/Scenes/War3GameScene/Lobby.cs` | 客户端没有这个文件 | 座位、同盟、`PlayerSlot` |
-| `Game/Hosting/GameHostContext.cs` | 完整宿主上下文与 4 个接口 | 只有 `MeleeAiPreset` 枚举 |
-| `Src/World/FogOfWar.cs` | 客户端在 `Src/Core/FogOfWar.cs`（纯逻辑） | 逻辑 + 场景节点合体 |
-| `Game/UI/MeleeHudController.cs` | 1096 行，持有 28 个帧并实现 `Render` | 181 行，转发壳 + 空实现 |
-| `Game/UI/CommandCardBuilder.cs` | 5 个 partial + 15 个 Native/Admission 类 | 103 行刷槽 |
-| `Game/UI/ChatFrame.cs` / `EscMenuFrame.cs` | FDF 帧 | Godot Control |
-| `Game/UI/MapSelectionScreen.cs` | `IMenuScreen` + FDF `Skirmish` 宿主 | `Control` + FDF 宿主（36 条已对齐这一步） |
-| `Game/Audio/War3AudioSystem.cs` | 1022 行，24 声部 + 配额 + 抢占 | 75 行，16 个播放器 |
-| `Game/Scenes/War3GameScene/Ui.cs` | HUD 装配 + 文本标签 | 命令卡条目 + 商店 + 放置 + 小地图 |
-| `Game/Scenes/War3GameScene/CameraFollowTrack.cs` | 跟随状态机 | 4 个取景函数 |
-
-解析类名也对不上：`W3iInfo` vs `MapInfo`、`W3eTerrain` vs `TerrainData`、`W3mPathing` vs `PathingData`；`TeamColorIndex` 在 Launcher 里是 `Player` 的别名。
-
-要做：改名或改路径，让「同名」等于「同职责」。
-
 ## 46. 各自写了一份的东西
 
 明明可以共用却各写一份的：`WeatherDefinition` / `WeatherType`（近乎逐字复制）、`AnimationTagCache` 的 `SplitProperties`（私有复制了一份）、`ShorelineWaveRenderer` 的角落判定、`MinimapBlightTexture`（内联进 `Ui.cs`）。
@@ -449,11 +422,11 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 加载流程（**32–35**）要动 `LauncherApp` 和加载编排，和渲染改动冲突小，适合在不方便跑图的时候做。
 
-结构清理（**45、46**）什么时候做都行，但每接一条新功能之前先看一眼 45，能省一次找错文件。
+结构清理（**46**）什么时候做都行，但每接一条新功能之前先看一眼 46，能省一次找错文件。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **53** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **54** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -488,3 +461,9 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 Launcher 的天气用 `StandardMaterial3D` + `DisableFog`，而全场景没有开 Godot 的 `Environment.FogEnabled`，`useFog` 等于空转；`war3_particle.gdshader`、`war3_ribbon*.gdshader` 也没有雾 uniform。地形、悬崖、水面、模型已接上 `atmosphere.gdshaderinc`。
 
 要做：天气材质换成自定义着色器并吃 `atmosphere.gdshaderinc` 的雾；粒子和丝带在片元里调 `war3_apply_fog`。
+
+## 53. w3i 子记录名和客户端还不一致
+
+客户端 `MapInfoParser.cs` 里玩家/势力叫 `MapPlayerInfo` / `MapForceInfo`，雾、天气、水色、光照 tileset 这些环境字段直接平铺在 `MapInfo` 上；Launcher 现在叫 `W3iPlayer` / `W3iForce`，环境单独一层 `W3iEnvironment` 子对象，`War3WaterConfig` / `SkyboxRenderer` / `SceneLighting` 都按 `map.Info.Environment.X` 取值。
+
+要做：两个记录改成客户端名字；环境字段平铺进 `MapInfo`，去掉 `W3iEnvironment` 这层，调用点同步。
