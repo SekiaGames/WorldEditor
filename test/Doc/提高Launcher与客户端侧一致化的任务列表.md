@@ -101,20 +101,6 @@
 - **玩家可见**：开了地形雾的地图，天空被染成地面雾色；天空亮度由地图原点那一格的探索状态决定，该格未探索时整片天空发黑，走过一次又突然变亮。
 - **要做**：天空单独一个不吃 fog/fow 的模型 shader。
 
-### 8. 天气贴图在两帧之间滑动，全局/区域格数还装反了
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Weather.vert.glsl:46-57` 先把区间内的 t 归一化再 `floor()` 取离散帧号；`Environment/WeatherRenderer.cs:58` 全局可见窗口 7 格，区域按 rect 切格。
-- **Launcher**：`Extract/assets/shaders/weather.gdshaderinc:31-37` 的 `weather_uv_at` 没有 `floor`，`mod(frame, grid.x)` 得到小数列号，UV 落在两帧之间被双线性插值；`Environment/WeatherRenderer.cs:10-11` 是全局 5 格、区域 7 格，和客户端相反。
-- **玩家可见**：雨雪贴图不是逐帧跳，而是整张图在两帧之间交叉淡化，雪花糊成一片、雨丝带重影；镜头拉远能看出雨的边界比客户端小约三成。
-- **要做**：`weather_uv_at` 里补 `floor`，两个格数常量对调。
-
-> **执行结论（Launcher8，待合并）**：`weather_uv_at` 的跨帧插值已修；格数常量核对后与客户端一致，未对调。
-> - UV：`Extract/assets/shaders/weather.gdshaderinc` 的 `frame` 改为 `floor(clamp(...))`，与客户端 `UvTimeline` 的 `floor()` 同口径；提交 `5aab890f1`，`extract.pck` 已重打包（旧包 0 处 `floor(clamp(weather_timeline`，新包 1 处）。
-> - 验证：强制 `MEds`（`texc=1/texr=4`，`tUV=0/2/3`）启动，日志 `uv=0/2/3 grid=1x4`，OpenGL 截图能看到紫色能量天气，着色器无编译错误；单帧截图不能直接展示“逐帧跳”，但帧号已离散。
-> - 格数：任务里“全局 7 格”的证据 `Environment/WeatherRenderer.cs:58` 实际是**区域**常量 `DefaultVisibleCellsPerSide=7`；客户端的全局常量是 `:54` 的 `DefaultCoverageCellsPerSide=5`（全局分支 `:193` 用它，区域分支 `:144` 用 7）。Launcher 的 `GlobalCellsPerSide=5`、`AreaCellsPerSide=7` 与客户端一致，所以没有对调；对调会让全局变 7、区域变 5，反而偏离客户端。
-> - 边界 30%：Turtle Rock/BootyBay 没有天气，无法复现任务里的边界差；如果确有差异，更可能是 Launcher 全局天气没有客户端的 mod 回绕、或 JASS 区域天气未创建（不在本任务范围），需要一张带天气的地图另开任务核对。
-> - 合并：Extract 提交 `5aab890f1`；Launcher8 本任务无代码改动；使用前需重打包 `extract.pck`（本地已完成）。
-
 ### 9. 水面写深度，水面之后的半透明物体被裁掉
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WaterRenderer.cs:66-70` 深度测试开、深度写关，`SrcAlpha/OneMinusSrcAlpha` 混合。
