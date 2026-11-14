@@ -49,21 +49,6 @@
 
 > 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
 
-### 9. 水面写深度，水面之后的半透明物体被裁掉
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WaterRenderer.cs:66-70` 深度测试开、深度写关，`SrcAlpha/OneMinusSrcAlpha` 混合。
-- **Launcher**：`Extract/assets/shaders/water_map.gdshader:2` 是 `render_mode unshaded, blend_mix, depth_draw_always, cull_disabled, fog_disabled;`。
-- **玩家可见**：浅水区的单位阴影、选中圈、施法贴花会间歇性消失，换个视角又出现（Godot 透明排序不同）；水块之间也会互相遮挡出硬边。
-- **要做**：改 `depth_draw_never`，其余参数不动。
-
-> **执行结论（Launcher9，待合并）**：已修复。
-> - `Extract/assets/shaders/water_map.gdshader:2` 的 `depth_draw_always` 改为 `depth_draw_never`，其余 render_mode 原样保留，对齐客户端 `SetDepthWrite(false)` + `SrcAlpha/OneMinusSrcAlpha`。
-> - 验证：用 `Shader.Code` 探针确认运行时加载的就是改后源码（旧包 `depth_draw_always`、改后 `depth_draw_never`）；共享 `extract.pck` 随后被并发提取流程重打包，现包里已是 `depth_draw_never`，进图 `[WATER] 水面格 15556` 正常渲染、无着色器报错；同机位水面 A/B 截图可见渲染差异（差异区集中在水面与透明物体交界）。
-> - 复现：进任意有水地图，浅水岸边选中单位、放地面贴花，转动镜头不再出现选中圈/阴影被水面吞掉的情况。
-> - 说明：本次只改了 Extract 着色器源码，未主动覆盖约 1GB 的共享 pck；若本地包的 mtime 早于该提交，需要重跑 `--export-pack` 或 `extract.command`。
-
----
-
 ## 模块四 单位、技能与物品
 
 > 模拟层行为。这一层决定对局打得对不对。
