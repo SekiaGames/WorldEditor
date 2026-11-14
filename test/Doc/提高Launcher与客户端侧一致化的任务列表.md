@@ -42,14 +42,6 @@ Launcher 的路径其实是对的：gmap 挂载后 `res://gmap/map/war3map.shd` 
 
 ## 二、地形与地表
 
-## 3. 地形网格的铺法和原版不一样
-
-- **变体子块**：客户端普通 4×4 图集只取 `variation & 1`（layer 0 或 15），extended 8×4 才用 `16+variation`；Launcher 无条件 `16+variation`，草地和路缘的接缝花纹比原版更花，混合边界形状也不一样。
-- **非法斜坡**：客户端的 `TerrainRenderState` 有 `DisallowHeight3Ramps`、被悬崖挡住的 ramp 判无效、无效时回落成悬崖模型；Launcher 只判断「四角 ramp 且高低不同」，非法斜坡会画成被拉长的斜坡模型。
-- **过渡格**：客户端把过渡模型覆盖的格标 `Romp`，和 `Cliff` 一起剔除地表；Launcher 的 `_cliffTransitions[k,j]` 格仍然铺地面，斜面上可能出现地面穿出模型。
-
-要做：三处一起改，都在 `TerrainGridFactory` / `CliffSurface` 这条线上。
-
 ## 4. 树影是一张张黑片，没有并进地表阴影
 
 客户端把每棵树的 `ReplaceableTextures\Shadows\*` 按 alpha 盖进同一张阴影图，取 `max(底图, 树影×强度)`，强度随太阳高度走，19 点后归零。
