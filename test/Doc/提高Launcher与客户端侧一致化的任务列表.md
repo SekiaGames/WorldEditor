@@ -37,20 +37,7 @@
 ## 模块四：特效与声音
 
 > MDX 粒子、丝带、弹道与音乐、事件音。
-
-### 16. 粒子参数还是待机帧快照，数量夹在 512（V1 #61）
-
-- **客户端**：`ParticleEmitter2` 每帧按当前动画帧求 `KP2S`、`KP2L`、`KP2G`、`KP2E`、`KP2W/KP2N`、`KP2V`，运行时逐实例推进（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MdxParticle2Renderer.cs:249-277`）。
-- **Launcher**：Extract 侧把发射器烘成 `GPUParticles3D`，速度/纬度/重力/宽/长/可见度取待机帧快照（`Extract/src/Core/Tools/ModelBundle.cs:1559-1566`）；`amount` 已用整段最大发射率计算（`:1562`、`:1855`），但仍硬夹到 8..512，运行时不再随动画帧更新。
-- **表现差异**：发射率、速度、重力随动画变化的特效（呼吸、爆发、蓄力）全程按待机参数出粒子；粒子多的特效被削到 512。
-- **要做**：把上述轨道按片段导出，运行时按 `AnimationPlayer` 当前位置驱动 `ParticleProcessMaterial` 参数；`amount` 按整段最大发射率给，去掉 512 上限或按客户端上限。
-
-> **执行结论（Launcher6，待合并）**：已修复，改动全在 Extract 导出侧，Launcher 不需要新增运行时驱动。
-> - 导出：`EmitterTracks` 为每个发射器逐片段导出 `KP2S/KP2R`（→ `initial_velocity_min/max`）、`KP2L`（→ `spread`）、`KP2G`（→ `gravity`）、`KP2W/KP2N`（→ `emission_box_extents`）到 `fx_nodeX:process_material:*` 的 Animation 轨道；片段内没有键时写回默认值，切换片段不会残留上一段的参数；`DontInterp` 轨道按保持导出；`KP2V` / `KP2E` 仍走原有的 `visible` / `emitting` 轨道。
-> - 实例隔离：fx 场景的 `ParticleProcessMaterial` 加 `resource_local_to_scene = true`，同一模型多个实例各自播动画时参数互不串。
-> - 数量：`amount` 继续按整段最大发射率 `ceil(rate*life)+8`，上限由 512 改为客户端 `MaxParticles` 的 20000（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MdxParticle2Renderer.cs:14`）；重导出 OrcLargeDeathExplode 两个发射器由 512 变为 839/712，MainMenu3d 由 512 变为 1078。
-> - 验证：Godot 加载重导出的 TidalGuardian 模型，播放 `Birth` 时 `spread` 从 0 变为非零、切到 `Stand` 回 0，两个实例的 process material 不再共享；`dotnet build Extract.csproj` 0 错误。
-> - 合并注意：这是导出侧修改（Extract 提交 `8aa450d21`），需全量重跑 `extract.command` 的 `--mdx-export` 与 `--export-pack`；旧 `extract.pck` 里的模型仍带待机快照，画面不会变化。
+> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），编号不复用。
 
 ### 17. MDX 粒子不吃大气雾（V1 #52，部分修复）
 
@@ -204,7 +191,7 @@
 
 ---
 
-## 核对结果（V1 剩余 16 条）
+## 核对结果（V1 剩余 15 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -220,7 +207,6 @@
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
-| 61 | 仍成立（修正） | 参数取待机帧快照；`amount` 已用最大发射率但仍夹 8..512（`ModelBundle.cs:1559-1566`、`:1855`） |
 | 62 | 仍成立 | 四个事件音键无调用点（`War3UiSoundService.cs:10-41`） |
 | 63 | 仍成立 | 弹道仍是实例化后直线/弧线飞行（`Presentation.cs:33-79`），根因未定位 |
 | 64 | 仍成立 | `ContainerAbility` 无赋值（`Ability.cs:714-715`），无 `RuntimeSpellBookAbility`/`OpenSpellBook` |
