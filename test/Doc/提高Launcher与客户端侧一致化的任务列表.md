@@ -24,26 +24,12 @@
 
 > 走位、碰撞、可达性。玩家感知最强的一层差异在这里。
 
-### 3. 寻路用的是自研 32px 布尔网格，不是客户端的路径纹理系统
+### 51. 寻路搜索仍是自研 32px A*，没有客户端的 footprint 接触解算与粗/细/出口搜索
 
-- **客户端**：`Open-Warcraft3_Wiki/Src/Core/Pathing/` 整套（约 2.1MB）：`NativeMirror/` 下的路径纹理 footprint、接触解算、放置掩码、粗/细搜索与出口搜索，`CProximityMap` 逐格记录对象的占用与关系。
-- **Launcher**：`Launcher/Src/Core/Pathing/Search/PathGrid.cs` 340 行，一张 `CellWorld = 32f` 的布尔网格 + `FindPath`；`Launcher/Src/Core/NativeMathShim.cs` 自述是临时替身；全仓搜 `NativeMirror`、`TerrainGrid`、`PathingFlags`、`VisionLevel` 均为 0 命中。单位移动不写回网格，只有建筑放置与移除会 `AddBlocker/RemoveBlocker`（`Launcher/Src/World/World.UnitLookup.cs:90,97`）。
-- **玩家可见**：单位能否挤过建筑和树林之间的缝、绕建筑拐角的走法、被围住时能否蹭出去，都和客户端不同；窄口会出现「客户端能过、Launcher 判定不可达」，或者反向的卡位。
-- **要做**：按整体接入立项，两条路径系统没有可逐点对齐的公共语义，先接 footprint 与放置掩码，再替换搜索。
-
-> **复核评价**：证据成立（`PathGrid.cs` 340 行布尔网格、单位移动不写回），但这条不是一个任务，是一个项目。「先接 footprint 与放置掩码，再替换搜索」中间的验收点没有定义，做完第一半时无法判断是否「完成」，按收尾规则也就删不掉。建议拆成两条：先只做 footprint + 放置掩码，验收口径是「静态阻挡判定与客户端在两张测试图上逐格一致」；搜索替换另立一条。这样每条都能删。
-
-> **执行结论（Launcher3，待合并）**：按复核意见先完成第一半「footprint + 放置掩码」，验收口径（两张测试图逐格一致）已达成；搜索替换仍未做，任务保留等待后续。
-> - 定位：Launcher 的 `PathGrid` 只读 `war3map.wpm`，可破坏物的 `pathTex/pathTexDeath` 从未进入网格；WPM 本身不含树木，两图实测可破坏物新增阻挡 27916 / 约 1.4 万格，所以此前单位能直接穿林。放置检查也只判 Walkable，没读 WPM/overlay 的 Unbuildable。
-> - 数据：`Extract` 新增 `--pathing-codegen`，按客户端像素语义（R bit0=unwalkable、G!=0=unflyable、B bit0=unbuildable，含 TGA 原点/行列转置）解码 206 张 `PathTextures/*.tga`，生成 `Launcher3/Generated/Tables/PathingTextureMasks.g.cs`（45672 格）；已接入 `extract.command` 第 7 步。
-> - 静态阻挡：`DoodadPathingOverlays` 从 `war3map.doo` + `DestructableData.pathTex/pathTexDeath` 生成 overlay（跳过 `DOOD_FL_NONSOLID`、生死贴图、角度按客户端量化、`occH` 记录）；`PathGrid` 按客户端 `AddPathingOverlay` 的掩码行序/旋转/中心格叠加，Walk/Fly/Build 分别计数；`IsBuildableArea` 同时校验 WPM 与 overlay 的 Unbuildable，建造落点改为「可走且可建造」。
-> - 砍树：`PathGrid.RemoveDoodadPathing(creationNumber)` 按创建号撤销整块 pathTex，`TreeState.CreationNumber` 由 `war3map.doo` 带入；脚本生成、没有创建号的树退回原 `ClearArea`。
-> - 对拍：参考网格由客户端 `TerrainGrid`（WPM + `DoodadRenderer.LoadPathingOverlays`）导出，压缩存放在 `Launcher3/GameCore/L4_Composition/Game/Diagnostics/Fixtures/StaticPathing/`；`--state-probe` 的 `CheckStaticPathingParity` 逐格比较低字节（Walk/Fly/Build/Water/Blighted）。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 显示 Turtle Rock 512×512、1745 个 overlay、0 格差异，BootyBay 768×384、1408 个 overlay、0 格差异，砍树撤阻挡均通过；`--combat-probe` 全部通过；`--build-test`/采集/伐木手动跑无卡死，唯一失败仍是基线 `utod`。
-> - 未完成：`PathGrid.FindPath` 仍是自研 32px A*，没有接入客户端的 footprint 接触解算、粗/细搜索与出口搜索，单位移动也还不写回网格；按复核意见这部分应另立一条，本轮未改动。
-> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --state-probe` 可直接看到两图对拍结果；游戏里可见单位不再穿过树林，砍倒树后树块区域恢复通行。
-
----
+- **客户端**：`Open-Warcraft3_Wiki/Src/Core/Pathing/NativeMirror/` 用路径纹理 footprint 做接触解算、放置掩码，搜索分粗搜、细搜与出口搜索；`CProximityMap` 逐格记录对象占用与关系。
+- **Launcher**：`Launcher/Src/Core/Pathing/Search/PathGrid.cs` 的 `FindPath` 仍是 `CellWorld = 32f` 布尔网格上的 A*；网格只含 WPM 与可破坏物静态 footprint（`DoodadPathingOverlays.cs`、`PathingTextureMasks.cs`），单位移动不写回网格。
+- **玩家可见**：单位能否挤过建筑与树林之间的缝、绕建筑拐角的走法、被围住时能否蹭出去，仍与客户端不同；窄口会出现客户端能过而 Launcher 判不可达，或反向卡位。
+- **要做**：接入客户端 footprint 接触解算与粗/细/出口搜索，单位移动写回网格；验收口径：窄口与围堵场景下，Launcher 与客户端逐格可达性一致。
 
 ## 模块三 地形与环境
 
@@ -365,7 +351,7 @@
 
 模块顺序是从底层到表层，模块内从上往下做。
 
-现在最容易被玩家一眼看出的是 **第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、25、29、34、45。
+现在最容易被玩家一眼看出的是 **第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、25、29、34、45。
 
 ## 收尾规则
 
