@@ -37,7 +37,7 @@
 ## 模块四：特效与声音
 
 > MDX 粒子、丝带、弹道与音乐、事件音。
-> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）、任务 20（城镇被攻击/英雄阵亡事件音）已落地并合并，编号不复用。
+> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）、任务 19（音乐/循环音/声部）、任务 20（城镇被攻击/英雄阵亡事件音）已落地并合并；音量设置仍随任务 21 的选项界面做，编号不复用。
 
 ### 18. 飞弹模型几乎不可见（V1 #63）
 
@@ -47,15 +47,6 @@
 - **要做**：先确认是骨骼/Stand 动画把网格挪走，还是投射物节点/材质在运行时被改写；修好后用弓箭手对射复验箭、火球、投石三类飞弹。
 
 > **复核评价**：表现差异有证据，修法还没有，这类条目容易被当成能直接下手的任务。建议标题标 `（待定位）`，定位结论写回本条再动手。定位可以先量 `_projectiles` 节点的运行时 AABB：放大 12 倍时 AABB 一起变大，说明网格在、只是被裁或全透明；AABB 塌成一点，说明骨骼/动画把网格移出了包围盒。
-
-### 19. 音乐无缝连播，也没有脚步和建筑循环音（V1 #25）
-
-- **客户端**：曲间有 20 秒间隔（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:3`），支持主题音乐叠加、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；`War3LoopingSoundService` 按 `MovementSoundLabel` 播脚步并跟随位置，建筑建造时播 `BuildingSoundLabel`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3LoopingSoundService.cs:7`）；`War3AudioSystem` 24 个系统声部、同文件最多 3 个、按 channel 配额/优先级抢占，每条声音用自己的 Min/MaxDistance。
-- **Launcher**：`War3MusicPlayer` 播完立刻下一首，固定 `-10dB`，没有间隔、淡入淡出和脚本接口（`Launcher/GameCore/L4_Composition/Game/Audio/War3MusicPlayer.cs:14`、`:26`、`:69-74`）；没有循环音服务；`War3AudioSystem` 只有 16 个 3D + 8 个 2D 固定播放器，`UnitSize = 900`、`MaxDistance = 4500` 写死（`War3AudioSystem.cs:12-42`），表里的 Min/MaxDistance 没有使用；没有音量设置；客户端加载 11 张声音表（ack/combat/anim/ui/ambience/ability/dialog/midi/environment/EAX/portrait，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:26-44`），Launcher 只有 5 张（`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:44-48`）。
-- **表现差异**：音乐一直接一首、没有呼吸感；行军完全没有脚步声，建筑建造没有循环施工音；远处/近处声音衰减一致，声部抢占规则不同。
-- **要做**：曲间间隔与淡入淡出、脚步/建造循环音；声部按 channel 配额和优先级；音量设置与第 21 条的选项界面一起做。
-
-> **复核评价**：本条依赖第 21 条的选项界面，而 21 在模块五，「模块内从上往下」会先把 19 做到一半卡住。建议把 19 一并放进「提前插队」名单，或者把「音量设置」整段挪进 21 条。
 
 ### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
 
@@ -189,11 +180,10 @@
 
 ---
 
-## 核对结果（V1 剩余 13 条）
+## 核对结果（V1 剩余 12 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 25 | 仍成立 | 音乐无间隔/淡变（`War3MusicPlayer.cs:26`），无循环音服务，16+8 固定播放器（`War3AudioSystem.cs:12-42`） |
 | 38 | 仍成立 | 无 `CommandAtHotkey`/`FindNativeSlot`；`QuickCast.cs:411-417` 只认物编热键 |
 | 39 | 仍成立 | `SetHint` 只赋值（`MeleeHudController.cs:150`），无 `CommandErrorFrame`；Buff 图标另立第 27 条 |
 | 40 | 部分修复 | Esc 已先取消施法/关菜单（`War3InputComponent.cs:41-47`）；放置取消、F10、快捷键、顶栏、选项仍缺 |
