@@ -21,42 +21,7 @@
 ## 模块一：数据、资源与导出
 
 > L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
-> 任务 1（V1 #51）已落地并合并到 Launcher，编号不复用。
-
-### 2. w3i 玩家/势力/环境记录的名字和结构与客户端不一致（V1 #53）
-
-- **客户端**：`MapInfoParser` 里叫 `MapPlayerInfo` / `MapForceInfo`（`Open-Warcraft3_Wiki/GameCore/L2_Core/MapBrowser/MapInfoParser.cs:208`、`:218`），雾、天气、水色、光照 tileset 等环境字段直接平铺在 `MapInfo` 上（`MapInfoParser.cs:39-42`、`:88`）。
-- **Launcher**：叫 `W3iPlayer` / `W3iForce`，环境另包一层 `W3iEnvironment`，`MapInfo.Environment` 暴露给所有消费方（`Launcher/GameCore/L2_Core/MapBrowser/MapInfoParser.cs:41`、`:63`、`:105`），`War3FogConfig` 和 `WeatherSystem` 都按 `map.Info.Environment.X` 取值。
-- **表现差异**：玩家看不到直接差异，但任何按客户端路径移植的 w3i 字段都要多绕一层，字段默认值/缺失时容易取错。
-- **要做**：两个记录改成客户端名字；环境字段平铺进 `MapInfo`，去掉 `W3iEnvironment`，调用点同步。
-
-#### 执行结论（Launcher2，已完成，待合并）
-
-差异点比清单写的多一处：`GlobalWeather` 在客户端是 int 四字符码（`MapInfoParser.cs:43`、`:93`），Launcher 存成 `reader.FourCc()` 回来的字符串；`FogHeight` 客户端是 `float[2]`，Launcher 拆成 `FogHeightStart/FogHeightEnd`；玩家记录客户端只有 `LowPriorityAllies/HighPriorityAllies`，敌方优先级掩码读出来就丢（`:144`），Launcher 多存了 `EnemyLow/EnemyHigh`。全部按客户端对齐。
-
-改动落在 14 个文件：
-
-- `MapInfoParser.cs`：`W3iPlayer`→`MapPlayerInfo`（`AllyLow/AllyHigh`→`LowPriorityAllies/HighPriorityAllies`，删 `EnemyLow/EnemyHigh`，v31+ 仍照旧跳过 8 字节）；`W3iForce`→`MapForceInfo`（补 `SharedAdvancedControlFlag = 32`）；删 `W3iEnvironment`，环境字段平铺成 `UseTerrainFog`(int)、`FogHeight`(float[2])、`FogDensity`、`FogColor`、`GlobalWeather`(int)、`LightEnvTileset`、`WaterVertexColor`，与客户端同名字同类型同位置；`ReadEnvironment` 改成写 `info` 的 `ReadTerrainFog`；`SoundEnvironment` 客户端读完就丢，这里一并去掉（全仓无读取方）。
-- 消费点：`War3FogConfig.FromEnvironment(W3iEnvironment)`→`FromW3i(MapInfo)`；`WeatherSystem` 构造参数改 `MapInfo`，全局天气走 `WeatherTypeParser.FromW3iId`→`Rawcode`（`AddGlobal/AddArea` 的字符串接口保留，`FromRawcode` 解回同一枚举）；`War3WaterConfig.MapBaseColor` 直接读 `info.WaterVertexColor`；`Lifecycle` 三行改 `map.Info`，`LightEnvTileset` 直接取。
-- 其余 `W3iPlayer/W3iForce` 引用：`MapSource`、`Lifecycle`、`Presentation`、`Ui`、`Units`、`Ai`、`CameraFollowTrack`、`War3GameScene.Players`、`War3LoadingScreenRenderer`、`LauncherApp`（`[DUMP]` 那行改成打印盟友掩码）。
-- `W3iItemTable`/`W3iItemDrop` 保持原名：客户端不解析随机物品表，没有可对齐的名字。
-
-验证：
-
-1. `dotnet build Launcher.csproj` 0 错误（4 条既存警告）。
-2. 用 Godot 从 gmap 里导出 `war3map.w3i` 拿真值，对照 `--dump-units` 的运行时输出，4 条玩家逐字段一致：
-
-| 玩家 | w3i 真值（ctrl/race/起点/名字/盟友） | 运行时打印 |
-|---|---|---|
-| P0 | 1/1/(-2112,4608)/TRIGSTR_010/0,8 | 种族1 控制1 起点(-2112,4608) 盟友=0/8 |
-| P1 | 1/2/(5376,-2112)/TRIGSTR_011/0,4 | 种族2 控制1 起点(5376,-2112) 盟友=0/4 |
-| P2 | 1/3/(2624,-5248)/TRIGSTR_012/0,2 | 种族3 控制1 起点(2624,-5248) 盟友=0/2 |
-| P3 | 1/4/(-5248,1600)/TRIGSTR_013/0,1 | 种族4 控制1 起点(-5248,1600) 盟友=0/1 |
-
-   势力表 6 条、`war3map.wts`/小地图/地形/装饰物（2255）解析位置均未错位。
-3. 两张测试图都没开地形雾（Turtle Rock `useTerrainFog=0`，BootyBay 是 v18 连环境段都没有），正向分支另造补丁包验证：把 Turtle Rock 的 w3i 改成 `useTerrainFog=1`、雾 1000/3000、密度 0.4、fogColor BGRA(40,20,10,255)、`globalWeather='RAhr'`、`waterColor[0]=65`、`lightEnv='A'`，重新打成 pck 跑，日志给到 `[FOG] 地图距离雾 线性 1000/3000，色 (0.16,0.08,0.04)`、`[WATER] … 水色 (1.00,1.00,0.25,1.00) … 距离雾 线性 1000/3000`、`[WEATHER] RAhr 全局天气已加载` + `RAhr 跨格 (9,23)：放出 0，新起 25`、昼夜光照 ambient 从 (0.84,0.84,0.98)*0.20 变成 (0.76,1.00,0.94)*0.30。四个环境字段和玩家/势力表都真的进了消费方。
-
-复验：`./RunLauncher.command` 选 Turtle Rock 进图，控制台应看到 `[MAP] … 玩家 4`、`[FOG] 地图距离雾 关（w3i useTerrainFog=0）`、`[WATER] … 水色 (1.00,1.00,1.00,1.00)`；雾/雨正面效果用 `/tmp/fogtest2.pck`（`--play=/tmp/fogtest2.pck`）复现，打包脚本 `/tmp/patch_map.gd`、`/tmp/repack.gd`。
+> 任务 1（V1 #51）、任务 2（V1 #53）已落地并合并到 Launcher，编号不复用。
 
 ### 3. `EfctID` 这条艺术链没接（V1 #49）
 
@@ -364,7 +329,7 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 
 ---
 
-## 核对结果（V1 剩余 24 条）
+## 核对结果（V1 剩余 23 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -380,7 +345,6 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 | 49 | 仍成立 | 只有火雨特判读 `EfctID`（`RuntimeRainOfFireAbility.cs:48`），Extract 无 `Effects/` 导出 |
 | 50 | 仍成立 | 实跑 `--effect-probe`：文本表 1100 条、656 引用、654 可加载、缺 2 |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
-| 53 | 仍成立 | `W3iEnvironment` 独立一层（`MapInfoParser.cs:41/105`） |
 | 54 | 仍成立 | 只有可见性冻结（`Environment.cs:91-95`），无 `ScoutingMemory` |
 | 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
 | 56 | 仍成立 | 每格 `CpuParticles3D` + 跨格 `Restart`（`WeatherRenderer.cs:69-94`、`:199`） |
