@@ -18,20 +18,6 @@
 
 > 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
-### 2. war3mapMisc.txt 没读，小地图与迷雾的颜色、营地阈值全是默认值
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:188-190` 用 `War3MiscData.Load(_uiSource)` 读地图自带的 `war3mapMisc.txt` 覆盖迷雾色、营地阈值、`BlightMask` 等。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:127` `new War3MiscData()`，全仓没有 `Load` 调用。
-- **玩家可见**：默认地图看不出差别；用自定义迷雾颜色或营地范围的地图，小地图与战场的迷雾色、野怪营地脉动范围都和客户端不同。
-- **要做**：HUD 初始化时从地图资源读 `war3mapMisc.txt`，读不到再用默认值。
-
-> **执行结论（Launcher2，待合并）**：HUD 已改为先读地图 Misc 再回落默认值。
-> - 读取：`War3MiscData.LoadMap(MapSource)` 从 gmap 读 `war3mapMisc.txt`，并兼容地图里的 `UI/MiscData.txt`，低 → 高合并（与 `War3Camera` 既有的地图层口径一致），解析 `[FogOfWar]`/`[Minimap]` 覆盖迷雾档位 alpha、BlightMask、小地图点色、营地阈值/缩放/脉动与营地颜色；解析拆到 `LoadLayers` 便于验证。默认值仍是构造函数从全局 `UIMiscData` 读到的原版值。
-> - 接入：`GameHudScreen.Load` 接收 `War3MiscData`，`MinimapFrame` 使用它；`Lifecycle` 在 HUD 初始化时用 `_map` 构造并注入，战场营地跟踪取 `_newHud.Minimap.MiscData`。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 输出 `[HUD] 地图 Misc 迷雾Alpha=0.75 营地阈值=10/20`、`[MISC] HUD 生效 中营地=10 强营地=20 雾Alpha=0.753`（两张自带地图都没有 `war3mapMisc.txt`，走默认值）；合成地图 INI 覆盖结果为 `中营地=7 强营地=13 雾Alpha=0.502 Blight=(1,2,3)/255 强色=(9,8,7)/255`，证明解析与覆盖链路。`--state-probe` 仍只剩基线已知失败 `utod 研究项`。
-> - 说明：两张自带 gmap 的 manifest 文件列表里没有 `war3mapMisc.txt`，所以在它们身上无法肉眼看到地图覆盖；Extract 的 `GmapExportCli.StandardMapFileNames` 已包含该文件，带 `war3mapMisc.txt` 的地图重新导出后会随包带入，本次无需改 Extract。
-> - 合并注意：`GameHudScreen.Load` 由 `public` 收为 `internal` 以接收内部类型；改动落在 `War3MiscData.cs`、`GameHudScreen.cs`、`Lifecycle.cs`，探针输出加在 `Cheats.cs` 的 `RunCardProbe`，与其它 Launcher 副本可能冲突。
-
 ---
 
 ## 模块二 寻路与移动
@@ -60,12 +46,27 @@
 - **玩家可见**：站在低地能直接看到悬崖上方和被崖体挡住的凹地；站在林边能透视整片森林（客户端树后保持灰雾）。高地视野优势消失，侦察回报区域比客户端大一圈。
 - **要做**：先补逐格视野高度与遮挡标记，再改 `Stamp` 为八分传播。
 
+> **执行结论（Launcher4，已实现，待合并）**：逐格视野高度、遮挡体与八分圆阴影传播都已补上。
+> - 高度面：`FogOfWar.Build` 按 w3e 角点 `LayerHeight - 2` 生成 `_terrainLevels`（雾格 128 与地形角点 1:1），观察者高度取所在格地形级；飞行单位按 `int.MaxValue` 处理，与客户端一致。
+> - 遮挡体：`DoodadMeshLibrary` 读物编 `DestructableData.occH`；`MapWorldBuilder.BuildDoodads` 把所有 `occH > 0` 的装饰物（树 1745 棵，另有门/残骸等）按 `occH × 实例 Z 缩放` 收进 `FogOccluders`，`FogOfWar.SetOccluders` 按 `terrainLevel + floor((occH+64)/128)` 写入格级高度面，同格取最大。单位没有 `occH` 列（1.27 `UnitData/UnitBalance` 全表无此字段，客户端建筑 pathing overlay 也不置 BlocksVision），因此不额外造建筑遮挡。
+> - 传播：`StampUnit` 改为 `RevealCircle` 八分圆 parent 阴影传播（`CircleTemplate` 与 `_occ` 的 bit1 shadow / bit2 出图语义和客户端同构），核心 3×3 可见但仍可投影；技能/区域揭示仍走普通圆（客户端 `RevealArea` 同口径）。视野半径按客户端上限 1800 封顶。
+> - 回归：新增 `--fog-los-probe`（`War3GameScene.RunFogVisionProbe`），Turtle Rock 5 条全过：地图遮挡物写入高度面 / 平地无遮挡可直视 / 合成遮挡后方不可见 / 低地看不到悬崖上方 / 站上悬崖后可见；`--fog-memory-probe` 11 条仍全过；`--combat-probe` 全过；`--state-probe` 仍只剩基线 `utod 研究项`。
+> - 实跑：`Godot --headless --path Launcher4 -- --play="(4)Turtle Rock.gmap"` 日志给出 `[FOG] 视野遮挡物 1745 个`，常规视野出现树/崖阴影（同屏 188 格），无 C# 异常。
+> - 范围说明：树被砍倒后遮挡按客户端现状保留（客户端只在建筑拆除时 `RemovePathingOverlay`，树 overlay 不撤）；建筑遮挡要等有 `occH` 的资源版本再补。
+
 ### 5. 悬崖四个面用一个法线，烘焙的明暗写了但 shader 不读
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/CliffRenderer.cs:184-186` 崖体顶点法线取各自 geoset 法线；`CliffSurface.cs:35-40` 只对落在 128 网格边界上的顶点改用地形梯度；`Shaders/Cliff.frag.glsl:20-24` 采样 `uShadowMap` 后压暗。
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/MapWorldBuilder.Cliffs.cs:173,192` 用四个地形角点法线求平均，把这一个法线写进所有崖体顶点；`:175` 其实算好了逐悬崖的烘焙明暗写进 `CUSTOM0.y`，`Extract/assets/shaders/cliff_map.gdshader:65-78` 只读 `CUSTOM0.x`，烘焙值是死数据，也没有 `shadow_map`。
 - **玩家可见**：悬崖四面墙亮度一致，朝光的墙和背光的墙看不出区别，崖体像纸片；有烘焙阴影或树影的区域，地面暗下去而崖壁依旧雪亮，交界出现亮边。
 - **要做**：顶点法线改回逐面，shader 读 `CUSTOM0.y` 当烘焙明暗，并把地形阴影图绑到悬崖材质。
+
+> **执行结论（任务5，Launcher5，待合并）**：已修复。
+> - 法线：`CliffModelLibrary` 从悬崖模型网格提取逐顶点 `Normals`（与顶点同步做 `(-x, y, -z)` 轴变换；缺失时用三角形面法线兜底），`MapWorldBuilder.Cliffs` 不再用四角地形法线求平均，每个顶点写自己的法线。
+> - 烘焙：`CUSTOM0.y` 改为按逐顶点法线算 `dot(normal, CliffLightDirection) + 0.45`；`cliff_map.gdshader` 用 `baked_shade` 把最终 shade 在 0.5~1 之间压暗，保留原有昼夜/动态光，背光面不会黑掉。
+> - 阴影：`TerrainShadowMap` 构造时把 `shadow_map/shadow_scale/shadow_strength/shadow_enabled` 同时写进地形与 `CliffMaterial`；cliff shader 与地形同口径按世界 XZ 采样，在雾之前压暗。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；`[CLIFF]` 日志 `normals=verts`（临时统计每个悬崖模型 10~11 个不同法线，确认逐面）；新 shader 由 Godot 解析通过（15 个 uniform，无 SHADER ERROR），临时本地加载截图显示崖壁各面明暗不同、没有黑面/破面；`[SHADOW] ... 悬崖材质 已绑定`；Turtle Rock 悬崖 799 格、0 条 SCRIPT ERROR。
+> - 注意：shader 改动在 Extract 提交 `a6e9cce84`，需要重跑 `extract.command` 的 `--export-pack`（或全流程）后 Launcher 才能看到新悬崖光照/阴影；Launcher5 提交 `2eb03ab`。
 
 ### 6. 悬崖邻接地表贴图：15 被硬映射成 1，ramp 优先级与变体上限表都缺
 
