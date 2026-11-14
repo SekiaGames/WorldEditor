@@ -67,6 +67,15 @@
 - **玩家可见**：斜坡、坑洼、悬崖边缘上阴影局部陷进地面被切掉，或者浮在坡面折角；贴图边缘偶发 clamp 拖尾的硬边。
 - **要做**：Launcher 已有按 128 格切片的 `ShadowRenderer`，让 `UnitShadowRenderer` 复用它的网格与 alpha 剔除。
 
+> **执行结论（Launcher1，待合并）**：
+> - 定位：`UnitShadowRenderer` 在自己的 `AppendQuad` 里做 2..8 的均匀 N×N 细分，逐格只采样中心/四角高度；`ShadowRenderer` 虽然按 128 地形格切片并保留 TL–BR 对角线，但没有 alpha 剔除，两条路径各写一套。
+> - 新增 `DecalAlphaMask`（与客户端同名文件/类），从 Godot 纹理的 RGBA8 像素构建前缀和占用表；`ShadowRenderer` 增加纹理覆盖率缓存，`BuildQuadVertices` 在发射每个地形格前用 `Intersects(u0,v0,u1,v1)` 剔除全透明格，对角线仍为 TL–BR。
+> - 把 128 格顶点生成提为 `ShadowRenderer.BuildQuadVertices` 共享静态方法；`UnitShadowRenderer` 删除自己的 N×N 细分与逐格 `heightAt` 逻辑，改为对每个形状调用共享生成器，再写入原有 `ImmediateMesh`，保留每个阴影形状的节点、材质与逐帧重建。
+> - `ShadowRenderer` 自己的底座/地面物品贴花也走同一套 alpha 剔除，不再有第二条网格实现。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；headless Turtle Rock 加载正常，`[DECAL]` 日志照常；临时探针（已删除）显示 `BuildingShadowLarge`/`ShadowTownhall`/`Shadow` 三套贴图 `mask=True`、角落空=True、中心有=True，顶点数 54/96/78，确认单位阴影已走 128 格网格且剔除生效。
+> - 未做：客户端贴图外扩 1 像素 + shader UV 重映射（clamp 边缘硬边）不在本条「要做」范围内，未改动 `Extract/assets/shaders/shadow_map.gdshader`，因此不需要重打 `extract.pck`。
+> - 合并注意：只改 `Launcher1`。
+
 ---
 
 ## 模块四 单位、技能与物品
