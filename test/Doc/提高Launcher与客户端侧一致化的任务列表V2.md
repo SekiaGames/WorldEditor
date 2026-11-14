@@ -8,7 +8,7 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..N，标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **33** 起，做完一条删一条，序号不复用。
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..32，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **33** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
@@ -21,13 +21,7 @@
 ## 模块一：数据、资源与导出
 
 > L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
-
-### 1. 技能美术仍走旁路文本表，没并进物编合并（V1 #51）
-
-- **客户端**：`War3ObjectData.LoadStandardTypedData` 把 `Units\*AbilityFunc.txt` / `AbilityStrings.txt` 与 `AbilityData.slk` 一起并进同一份 `War3TypeData`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/War3ObjectData.cs:291`、`:327`、`:403`），技能和 Buff 共用一套字段查询。
-- **Launcher**：`AbilityArt` 自己把 8 张 `Units*AbilityFunc` 生成表合并成一层旁路字典（`Launcher/GameCore/L4_Composition/Game/Presentation/AbilityArt.cs:9`、`:28`），`Ability` 再通过 `AbilityArt.Arts(...)` 取值（`Launcher/Src/Abilities/Ability.cs:438`）。
-- **表现差异**：地图物编对技能美术字段的覆盖不进入统一物编，自定义/地图技能的美术字段与客户端可能对不上；同一字段在 Launcher 有两套来源，后续改一个技能要在两处同步。
-- **要做**：把技能美术字段并进 `War3TypeData` 的物编合并，`AbilityArt` 退化成按字段名取值。
+> 任务 1（V1 #51）已落地并合并到 Launcher，编号不复用。
 
 ### 2. w3i 玩家/势力/环境记录的名字和结构与客户端不一致（V1 #53）
 
@@ -36,6 +30,34 @@
 - **表现差异**：玩家看不到直接差异，但任何按客户端路径移植的 w3i 字段都要多绕一层，字段默认值/缺失时容易取错。
 - **要做**：两个记录改成客户端名字；环境字段平铺进 `MapInfo`，去掉 `W3iEnvironment`，调用点同步。
 
+#### 执行结论（Launcher2，已完成，待合并）
+
+差异点比清单写的多一处：`GlobalWeather` 在客户端是 int 四字符码（`MapInfoParser.cs:43`、`:93`），Launcher 存成 `reader.FourCc()` 回来的字符串；`FogHeight` 客户端是 `float[2]`，Launcher 拆成 `FogHeightStart/FogHeightEnd`；玩家记录客户端只有 `LowPriorityAllies/HighPriorityAllies`，敌方优先级掩码读出来就丢（`:144`），Launcher 多存了 `EnemyLow/EnemyHigh`。全部按客户端对齐。
+
+改动落在 14 个文件：
+
+- `MapInfoParser.cs`：`W3iPlayer`→`MapPlayerInfo`（`AllyLow/AllyHigh`→`LowPriorityAllies/HighPriorityAllies`，删 `EnemyLow/EnemyHigh`，v31+ 仍照旧跳过 8 字节）；`W3iForce`→`MapForceInfo`（补 `SharedAdvancedControlFlag = 32`）；删 `W3iEnvironment`，环境字段平铺成 `UseTerrainFog`(int)、`FogHeight`(float[2])、`FogDensity`、`FogColor`、`GlobalWeather`(int)、`LightEnvTileset`、`WaterVertexColor`，与客户端同名字同类型同位置；`ReadEnvironment` 改成写 `info` 的 `ReadTerrainFog`；`SoundEnvironment` 客户端读完就丢，这里一并去掉（全仓无读取方）。
+- 消费点：`War3FogConfig.FromEnvironment(W3iEnvironment)`→`FromW3i(MapInfo)`；`WeatherSystem` 构造参数改 `MapInfo`，全局天气走 `WeatherTypeParser.FromW3iId`→`Rawcode`（`AddGlobal/AddArea` 的字符串接口保留，`FromRawcode` 解回同一枚举）；`War3WaterConfig.MapBaseColor` 直接读 `info.WaterVertexColor`；`Lifecycle` 三行改 `map.Info`，`LightEnvTileset` 直接取。
+- 其余 `W3iPlayer/W3iForce` 引用：`MapSource`、`Lifecycle`、`Presentation`、`Ui`、`Units`、`Ai`、`CameraFollowTrack`、`War3GameScene.Players`、`War3LoadingScreenRenderer`、`LauncherApp`（`[DUMP]` 那行改成打印盟友掩码）。
+- `W3iItemTable`/`W3iItemDrop` 保持原名：客户端不解析随机物品表，没有可对齐的名字。
+
+验证：
+
+1. `dotnet build Launcher.csproj` 0 错误（4 条既存警告）。
+2. 用 Godot 从 gmap 里导出 `war3map.w3i` 拿真值，对照 `--dump-units` 的运行时输出，4 条玩家逐字段一致：
+
+| 玩家 | w3i 真值（ctrl/race/起点/名字/盟友） | 运行时打印 |
+|---|---|---|
+| P0 | 1/1/(-2112,4608)/TRIGSTR_010/0,8 | 种族1 控制1 起点(-2112,4608) 盟友=0/8 |
+| P1 | 1/2/(5376,-2112)/TRIGSTR_011/0,4 | 种族2 控制1 起点(5376,-2112) 盟友=0/4 |
+| P2 | 1/3/(2624,-5248)/TRIGSTR_012/0,2 | 种族3 控制1 起点(2624,-5248) 盟友=0/2 |
+| P3 | 1/4/(-5248,1600)/TRIGSTR_013/0,1 | 种族4 控制1 起点(-5248,1600) 盟友=0/1 |
+
+   势力表 6 条、`war3map.wts`/小地图/地形/装饰物（2255）解析位置均未错位。
+3. 两张测试图都没开地形雾（Turtle Rock `useTerrainFog=0`，BootyBay 是 v18 连环境段都没有），正向分支另造补丁包验证：把 Turtle Rock 的 w3i 改成 `useTerrainFog=1`、雾 1000/3000、密度 0.4、fogColor BGRA(40,20,10,255)、`globalWeather='RAhr'`、`waterColor[0]=65`、`lightEnv='A'`，重新打成 pck 跑，日志给到 `[FOG] 地图距离雾 线性 1000/3000，色 (0.16,0.08,0.04)`、`[WATER] … 水色 (1.00,1.00,0.25,1.00) … 距离雾 线性 1000/3000`、`[WEATHER] RAhr 全局天气已加载` + `RAhr 跨格 (9,23)：放出 0，新起 25`、昼夜光照 ambient 从 (0.84,0.84,0.98)*0.20 变成 (0.76,1.00,0.94)*0.30。四个环境字段和玩家/势力表都真的进了消费方。
+
+复验：`./RunLauncher.command` 选 Turtle Rock 进图，控制台应看到 `[MAP] … 玩家 4`、`[FOG] 地图距离雾 关（w3i useTerrainFog=0）`、`[WATER] … 水色 (1.00,1.00,1.00,1.00)`；雾/雨正面效果用 `/tmp/fogtest2.pck`（`--play=/tmp/fogtest2.pck`）复现，打包脚本 `/tmp/patch_map.gd`、`/tmp/repack.gd`。
+
 ### 3. `EfctID` 这条艺术链没接（V1 #49）
 
 - **客户端**：`War3EffectArtResolver` 把物编 `EfctID`（`X***`）解析成 `Effects\*.mdl` 并挂到单位/技能上（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/War3EffectArtResolver.cs`；`RuntimeClassicSummonAndArmorAbilities.cs` 也沿这条链取）。
@@ -43,14 +65,76 @@
 - **表现差异**：物编里挂 `EfctID` 的常驻/施法特效不会出现，玩家只能看到其它五个字段的美术。
 - **要做**：Extract 先导出 `Effects/` 目录，再在 `AbilityArt` 补 `EfctID` 的通用解析。
 
+**执行结论（Launcher3，已修复，待合并）**
+
+前提先纠正：1.27 资源里**没有 `Effects/` 目录**。`test/war3-unpack` 顶层没有 `Effects`，`strings extract.pck | grep -c "extract/Effects/"` 为 0；客户端别名表登记的 `Effects\WispExplode.mdl`、`Effects\InfernoSpawn.mdl`、`Effects\Rebirth.mdl` 用 `find -iname` 全部为空。所以不需要重导 pck，「导 `Effects/`」这条不成立。
+
+`EfctID` 的真实美术写在 `Units\*AbilityFunc.txt` 的 `X***` 条目里（`[XHbz] Effectart=Abilities\Spells\Human\Blizzard\BlizzardTarget.mdl`），指向 `Abilities\`，这些模型早就在 pck 里。Launcher 的断点其实是三处，不是一处：
+
+1. `AbilityType` 根本没解析 `EfctID1..4` 列 → `AbilityTypeObjectData` 不透出 → 任何 `ReadString(ObjectData,"EfctID")` 恒返回 ""。火雨那条特判取到的 `EffectRawcode` 一直是空串。
+2. `objects.GetBuff("X***")` 读 `EffectArt` 恒空（`UnitsAbilityBuffData` 只有 9 个结构列，`War3ObjectData.cs:73-95` 只填了 code/comments/isEffect/race）。
+3. 没有与客户端对应的解析器。
+
+改动（全部在 Launcher3）：
+
+- 新增 `GameCore/L3_Simulation/Simulation/Configuration/War3EffectArtResolver.cs`，与客户端同名同路径。解析顺序：先按已合并的 8 张 `Units*AbilityFunc` 表取该特效 ID 的 `Effectart`/`Buffart`/`Targetart`，取不到再退回客户端那张别名表（原样保留，因为 1.27 无 `Effects/`，这张表目前只在自定义地图自带该目录时才有落点）。
+- `AbilityCatalog`：`AbilityType` 补 `EffectId[]`（读 `EfctID1..4`）与 `EffectAt(level)`；`AbilityTypeObjectData` 补 `efctid`/`efctid1`/`aeff`。
+- `RuntimeAbilityFactory`：补 `ReadEffectRawcode` / `ResolveEffectArt`，与客户端 `RuntimeAbilityFactory.cs:730`、`:744` 同口径。
+- `RuntimeRainOfFireAbility`：删掉本地那份走 `GetBuff(...).GetString("EffectArt")` 的死实现，改用上面的公共入口。
+- `Src/Skills/RuntimeBlizzardAbility`：`const ShardArt` 拿掉，改成读 `EfctID`(XHbz) 的解析结果，物编改了美术跟着变；`RuntimePreloadArts` 一并接上（客户端 `_runtimePreloadArts` 同做法），只在解析为空时才用原常量兜底。
+
+实跑取数（`Godot --headless --path Launcher3 -- --effect-probe`）：
+
+```
+[FX] 物编 976 条，美术引用 656，可加载 654，缺 2
+[FX] EfctID 引用 113，解析到美术 88，模型缺失 2，无美术登记的 ID 4: XIct,XNcs,XNhs,XNvc
+```
+
+修复前这条链是 0 条可用。现在 113 处引用里 65 处按 Func 表拿到真实模型（`XHbz→BlizzardTarget`、`XErf→RainOfFireTarget`、`XHfs→FlameStrikeEmbers`、`XUdd→DeathAndDecayTarget`、`XEtq→Tranquility`、`XEsf→StarfallCaster`、`XOeq→EarthquakeTarget`、`XNmo→MonsoonRain`、`Xclf→CloudOfFog`、`Xfla→FlareTarget`、`XEsn→Owl`…），23 处落到客户端别名表指向的 `Effects\*`（1.27 无此目录，所以只有 `XOre`、`XErc` 两条报缺失），剩 25 处落在 4 个在 1.27 里完全没有美术登记的 ID 上。
+
+回归（`--state-probe`）新增两条断言，均通过：
+
+```
+OK 暴风雪冰片美术来自 EfctID XHbz    Abilities\Spells\Human\Blizzard\BlizzardTarget.mdl
+OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\RainOfFireTarget.mdl
+```
+
+`utod 研究项=4 期望 4 实际 2` 这条 FAIL 在改动前就有（已用 `git stash` 复跑确认），与本次无关。
+
+剩下没接的（不在本条范围，建议另立任务）：客户端另外 5 个自己读 `EfctID` 的技能——烈焰风暴余烬（`XHfs`）、云雾（`Xclf`）、季风（`XNmo`）、哨兵（`XEsn`）、火山——在 Launcher 侧是**整套美术都没写**（这些类重写过，没有对应的美术字段与生成循环），不只是 `EfctID` 取不到；`RuntimeMeteorRainAbility` 在 Launcher 没有对应类。这些要各自按客户端补美术生成，不属于「解析链」。
+
 ### 4. 两条技能美术资源 Extract 没导出（V1 #50）
 
 - **客户端**：技能美术由资源管理器按 `Abilities\...` 路径直接解析，这两个模型原版存在。
-- **Launcher**：本轮实跑 `Godot --headless --path Launcher -- --effect-probe`：物编 976 条、美术引用 656、可加载 654、缺 2，缺的仍是：
+- **Launcher**：本轮实跑 `Godot --headless --path Launcher -- --effect-probe`：文本表 1100 条、美术引用 656、可加载 654、缺 2，缺的仍是：
   - `Arsp` 的 `Abilities\Spells\Other\Stampede\MissileDeath.mdl`
   - `AIga` 的 `Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdl`
 - **表现差异**：践踏的落地死亡特效和自然之触的目标特效缺失。
 - **要做**：Extract 补导出这两个模型，复跑 `--effect-probe` 应变成「缺 0」。
+
+**执行结论（Launcher4，已定位，探针口径已修，待合并）**
+
+清单前提要纠正：这两个模型在 1.27a 资源里**不存在**，不是 Extract 漏导出，也没有可导出的源文件。
+
+证据：
+
+1. 探针稳定复现两条缺失（`Godot --headless --path Launcher4 -- --effect-probe`）。
+2. 用 Extract 的 MPQ 读取器（`Extract/src/Core/Formats/Mpq/MpqArchive.cs`）对 1.27a 的四个包 `war3.mpq / War3x.mpq / War3xLocal.mpq / War3Patch.mpq` 同时按 listfile 和哈希表查询：`Abilities\Spells\Other\Stampede\MissileDeath.mdx|.mdl`、`Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdx|.mdl` 全部 `Contains=False`；`NatureTouch` 目录在解包目录和名单里都不存在。
+3. 同目录真实存在的是 `StampedeMissileDeath.mdx`（War3x.mpq，4589 字节）。兽王终极 `ANst`（`Units/NeutralAbilityFunc.txt:773`）指的就是它，探针本来就解析到 `Abilities/Spells/Other/Stampede/StampedeMissileDeath.tscn`。`Arsp` 是 `ANst` 的战役变体（`Units/AbilityData.slk` 里 `code=ANst`，名 "Rexxar - Stampede"），`Units/CampaignAbilityFunc.txt:297` 写的是过期路径，战役里由战役对象数据覆盖；Launcher 不跑战役。
+4. `AIga` 只有 `Units/ItemAbilityFunc.txt:433` 一条孤儿行，没有任何物品/单位引用（铁木树枝 `iwbr` 的 `abilList` 是 `AIs1`），1.27 里没有消费方会播这条 `EffectArt`。
+5. 客户端也会静默丢弃：`Presentation.NormalizeModelPath` 只做 `.mdl`→`.mdx`，随后 `GetVisualEffectRenderer` 加载失败走 catch 记日志并返回 null（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:1266-1286`）。所以「客户端有、Launcher 没有」的表现差异不成立，硬造同名别名等于原创资源。
+
+改动（1 个文件）：
+
+- `Platform/Godot/App/LauncherApp.cs`：`RunEffectProbe` 在 `PathResolve.ModelScene` 失败后，用 Extract 的同一个源目录 `test/war3-unpack` 判断该路径在源里是否存在——源里没有的记为「原版资源不存在」，源里有但 pck 里没有的仍计入「缺」；源目录不存在时保持原口径（计「缺」）。
+
+验证：
+
+1. `dotnet build Launcher.csproj` 0 错误（4 条既存警告）。
+2. 探针末行变为 `[FX] 物编 976 条，美术引用 656，可加载 654，缺 0，原版资源不存在 2`，两条逐行打「原版资源不存在」。
+3. 源目录判定正反向各验一次：`StampedeMissileDeath.mdl` 判 True（源里是 `.mdx`），`MissileDeath.mdl` 判 False；以后真出现「源里有、导出漏」时仍会计入「缺」，回归检测能力没有丢。
+
+复验：`cd Launcher4 && "$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --headless --path . -- --effect-probe`。进游戏看不到变化是符合预期的：兽王践踏走 `ANst` 的 `StampedeMissileDeath`，这两条坏引用在 1.27 里没有消费者，不需要重导 `extract.pck`。
 
 ### 5. 转成 Godot 动画时丢掉了关键帧切线（V1 #60）
 
@@ -274,7 +358,7 @@
 
 ---
 
-## 核对结果（V1 剩余 25 条）
+## 核对结果（V1 剩余 24 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -288,8 +372,7 @@
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 47 | 仍成立 | 地形/悬崖着色器无 `uDynamicLights`（`terrain_map.gdshader:9-11`） |
 | 49 | 仍成立 | 只有火雨特判读 `EfctID`（`RuntimeRainOfFireAbility.cs:48`），Extract 无 `Effects/` 导出 |
-| 50 | 仍成立 | 实跑 `--effect-probe`：976 条、656 引用、654 可加载、缺 2 |
-| 51 | 仍成立 | `AbilityArt.cs:9-56` 单独合并 8 张文本表 |
+| 50 | 仍成立 | 实跑 `--effect-probe`：文本表 1100 条、656 引用、654 可加载、缺 2 |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
 | 53 | 仍成立 | `W3iEnvironment` 独立一层（`MapInfoParser.cs:41/105`） |
 | 54 | 仍成立 | 只有可见性冻结（`Environment.cs:91-95`），无 `ScoutingMemory` |
