@@ -77,7 +77,7 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹道用过，所以狮鹫、双足飞龙、冰龙全都贴地；没有俯仰横滚；朝向在 20Hz 仿真步里直接写 `Root.Rotation`，角速度上限还是 14 rad/s（客户端 20）；完全没有 look-at。
 
-要做：坡面姿态、朝向插值、look-at 三件（飞行高度已完成）。
+要做：朝向插值、look-at 两件（飞行高度、坡面姿态已完成）。
 
 **已完成**（2026-11-14，飞行高度）：
 
@@ -86,6 +86,14 @@ Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹�
 3. 模型摆位统一收到 `UnitSceneComponent.SyncPlacement`：`y = 地面高 + RenderFlyHeight`，建筑再 +12 防 z-fighting，飞行单位按 `moveFloor` 兜底取大；每帧在 `_Process` 里跟着 `unit.Position` 走。
 4. `RenderFlyHeight` 按客户端 `UpdateRenderFlyHeight` 的方式平滑逼近 `unit.FlyHeight`（速度 = 本次变化量 / 仿真步长），起飞/落地不会瞬移。
 5. 影子与选中圈仍读 `unit.Position`（地面），飞行单位不会把影子带上天；血条读 `Root.GlobalPosition`，跟着模型升空。
+
+**已完成**（2026-11-14，坡面姿态）：
+
+1. `UnitType` 补 `TerrainTiltRadius = unitUI.elevRad`、`MaxPitchDegrees = maxPitch`、`MaxRollDegrees = maxRoll`（步兵 r=20/p=10、树 r=30、狮鹫 r=50/p=33/roll=25、建筑多为 0）。
+2. 新增 `UnitTerrainTilt.Compute`：沿朝向按半径采前/后/左/右四点，`pitch = atan2(前后, 2r)`、`roll = atan2(左右, 2r)`，各自 clamp 到上限；上限为负值时按客户端语义当成固定倾角。
+3. 姿态在 `SyncPlacement` 里写 `Root.Rotation = (pitch, yaw, -roll)`，Godot 默认 YXZ 欧拉正好是「先本地 roll、再本地 pitch、最后 yaw」；模型前向是 -Z（由 `Facing = π + atan2(-dx, dz)` 反推），所以 pitch 取正、roll 取负。
+4. `ApplyFacing` 转向时保留 X/Z 分量，不会每 20Hz 把倾角清一次。
+5. 平地实测不误倾斜（营地四个朝向的步兵都站正）；营地/岸边等有落差处 pitch 打满上限，与客户端同样被 `maxPitch` 限制。
 
 ## 18. 战斗动作：攻击只播一次，攻速不影响动作
 
@@ -310,7 +318,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 15 | 2 | 三块已完成，等合并后删 |
 | 16 | 2 | 已完成，等合并后删 |
-| 17 | 2 | 保留：姿态、朝向、look-at |
+| 17 | 2 | 保留：朝向、look-at |
 | 18 | 2 | 保留：动画优先级 |
 | 19 | 2 | 保留：死亡/升级/金矿 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
