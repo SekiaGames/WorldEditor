@@ -109,7 +109,7 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 - **要做**：Extract 导出时把切线表达成 Godot 能承载的曲线（`Transform3D` 轨道只能是线性，需要改成可自定义插值的轨道形式，或按切线重采样成更密的线性关键帧）。
 
 - **执行结论（任务5，2026-11-14）**：已按「重采样成更密线性关键帧」修复，只改 Extract，Launcher5 无需改代码。
-  - 根因有两层：一是 `MdxDocument.ReadTrack` / `ReadTracks` 把关键帧的 in/out 切线读出来后直接丢弃（`Extract/src/Core/Formats/Mdx/MdxModel.cs:1412`、`:1058`），导出端根本拿不到切线；二是 `ModelBundle` 把所有轨道固定写成 `interp = 1`。
+  - 根因有两层：一是 `MdxDocument.ReadTrack` / `ReadTracks` 把关键帧的 in/out 切线读出来后直接丢弃（`Extract/src/Core/Formats/Mdx/MdxModel.cs:1419`、`:1071`），导出端根本拿不到切线；二是 `ModelBundle` 把所有轨道固定写成 `interp = 1`。
   - 修复：解析层保存切线与插值类型；`ModelBundle` 按客户端 `MdxTimelineSampling` 的公式（Hermite、Bezier、四元数 squad/slerp）把 `interp > 1` 的区间自适应重采样为线性关键帧（三次探针 0.25/0.5/0.75，最大深度 5；容差 旋转 0.01、位移 1、缩放 0.01、颜色 0.004、贴图 0.002），全局序列轨道走同一套求值；`interp = 0` 的 step 轨道保留 `interp = 0`，不再被拉成线性。涉及 `Extract/src/Core/Formats/Mdx/MdxModel.cs`、`Extract/src/Core/Tools/ModelBundle.cs`。
   - 验证：全量 3264 个 MDX 导出成功、失败 0；逐关键帧与客户端公式对比——旋转 squad 最大分量误差 9.1e-8，位移/缩放 Hermite/Bezier 最差约 2.3e-5（float32），全局序列在 2000 单位量级坐标上约 1e-3（相对 5e-7）；动画资源 307.6 MB → 364.9 MB（+57.4 MB，1.19×）。
   - 操作：重新导出并打包 `./extract.command`（或至少 `--mdx-export` + `--export-pack`），再 `./RunLauncher.command` 进图即可看到起手/收招/建筑生长/死亡倒地恢复缓入缓出。
