@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 48，下一条新任务从 49 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 52，下一条新任务从 53 起。**
 
 ## 范围
 
@@ -35,14 +35,6 @@
 ## 三、水与天气
 
 ## 四、光照与大气
-
-## 11. 地形雾没人消费
-
-客户端从 w3i 解析雾参数（`FogSettings`），地形、悬崖、水、岸浪、天气都把 `uFogColor` / `uFogParams` 传进着色器。
-
-Launcher 的 `W3iInfo` 明明解析了 `FogHeightStart/End/Density/FogColorBgra`，全仓却没有一处读取；三个世界着色器都写死 `fog_disabled`，`SkyboxRenderer` 也没开 `FogEnabled`。
-
-要做：把已经解析出来的字段接到环境雾或着色器上。
 
 ## 12. 天空没有太阳月亮，选天空的依据也不对
 
@@ -164,23 +156,6 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 ---
 
 ## 八、镜头与输入
-
-## 26. 电影镜头和脚本镜头是空的
-
-客户端 `War3Camera` 能装 MDX 的 `CAMS` 轨道（`SetCinematicModel` / `CinematicModelCamera.Step`），每帧直写位置、目标、FOV、近远裁剪和滚转，并跳过地形钳制；`SetField` / `PanTo` / `SetTargetController` / `SetOrientController` / `SetNoise` / `SetShake` / `ResetToGameCamera` 都有实际消费者。
-
-Launcher 这些方法都在，但除 `SetSoftFollowController` 外没有任何调用者。
-
-要做：`CinematicModelCamera` 补进来并接上轨道求值；接口先接到作弊/探针上验证。触发源在脚本，验收要等 JASS，但实现可以先行。
-
-**已完成**（2026-11-14，电影镜头）：
-1. 新增 `GameCore/L4_Composition/Game/Camera/CinematicModelCamera.cs`（与客户端同名同路径）：每帧按序列时间 `AnimationPlayer.Seek`，读回 `camera0` / `camera0_target` 的世界坐标与 `camera0` 的 `Fov/Near/Far`；时间夹到序列长度，与客户端 `min(elapsed, end-start)` 同口径。序列按惯例取 `Stand`（`GetAnimationList` 是字母序，不能拿下标当序列号）。
-2. `War3Camera.SetCinematicModel(Node3D)`：节点由相机接管——加入场景、`Visible=false`、摘掉 `Model` 可视子树（只留 CAMS；否则为了读一只镜头要把整张场景的网格材质一起留在显存里，`Model` 里含相机时不摘）。
-3. `War3Camera.Update` 顶部走电影分支：直写 `Position/Target`、跳过地形钳制、`GameplayProjectionScale` 固定 1、FOV 由导出的竖直视锥反算回本类半角量纲交给 `UpdatePose` 原样还原。
-4. 释放点与客户端 `_modelCamera=null` 一一对应：`SetTarget` / `PanTo` / `Stop` / `SetTargetController` / `SetOrientController` / `SetField` / `ResetToGameCamera`。
-5. 探针：`--cinematic=<War3 模型路径>`，配合已有的 `--shot=` 出图；用户参数必须放在 `--` 之后（`Godot --path . -- --play=… --cinematic=…`）。本机截图要加 `--rendering-driver opengl3`，Metal 后端截出来是全黑。
-6. 实测：`UndeadCampaign3D` 的 Birth 序列眼点 2.5s 内从 (-413,-29,2889) 推到 (-2043,-222,2824) 后夹住；`HumanCampaign3D` 落位与导出的 `camera0.transform` 完全一致（-3698.73,-272.996,1223.71）。
-7. 未闭环：滚转。客户端取 MDX 的 KCRL，Extract 目前只导出了相机位置轨迹（KCTR/KTTR），需要 Extract 补一条旋转轨迹才能吃进来；触发源仍是 `SetCinematicCamera`，等脚本层接上即可，链路已通。
 
 ## 27. 镜头不跟随、不吃设置、取景也和客户端不同
 
@@ -411,7 +386,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 4 | 2、3 | 保留：客户端并进阴影图，Launcher 另做黑片 |
 | 8 | 2 | 保留：偶发大浪 |
 | 10 | 2、3 | 保留：客户端有 SceneLighting/DynamicLight，Launcher 没有 |
-| 11 | 2、4 | 保留：字段解析了没有消费者 |
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 13 | 2、3 | 保留：悬空雾面 vs 片元采样 |
 | 14 | 2 | 保留：雾里建筑状态 |
@@ -467,9 +441,8 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 1. **第 36 条**（选图界面）已经完成 P0，随时可以收尾剩下的 Esc、预览、Glue 背景，不必等底层。
 2. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
-3. **第 26 条**（镜头）的实现可以先做，验收等 JASS。
 
-底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
+底层那一批里，**第 2、3、10、13** 是「一改就能并排看出差别」的，建议先啃这四个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
 单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 22 的闪电和弹道最容易被玩家看出来。
 
@@ -479,7 +452,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **49** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **53** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -506,3 +479,11 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 客户端在 `LoadStandardTypedData` 里把 `Units*AbilityFunc` 这些 txt 并进同一份 `War3TypeData`，技能和 Buff 共用一份数据；Launcher 的 `AbilityArt` 单独读一张合并过的文本表，等于多了一层旁路。
 
 要做：把技能美术字段并进 `War3ObjectData` 的物编合并，之后 `AbilityArt` 可以退化成按字段名取值。
+
+## 52. 天气和特效粒子不吃雾
+
+客户端 `Weather.frag` 按 `useFog` 把 `uFogColor/uFogParams` 传进天气粒子，MDX 粒子/丝带也一样（`MdxParticle2.frag`、`MdxRibbon.frag`）。
+
+Launcher 的天气用 `StandardMaterial3D` + `DisableFog`，而全场景没有开 Godot 的 `Environment.FogEnabled`，`useFog` 等于空转；`war3_particle.gdshader`、`war3_ribbon*.gdshader` 也没有雾 uniform。地形、悬崖、水面、模型已接上 `atmosphere.gdshaderinc`。
+
+要做：天气材质换成自定义着色器并吃 `atmosphere.gdshaderinc` 的雾；粒子和丝带在片元里调 `war3_apply_fog`。
