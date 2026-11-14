@@ -19,7 +19,7 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 59，下一条新任务从 60 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 60，下一条新任务从 61 起。**
 
 ## 范围
 
@@ -44,6 +44,17 @@
 - **时间缩放**：客户端有 `AnimationTimeScale` 参与时钟；Launcher 没有。
 
 要做：死亡链、升级生长、金矿小精灵先补；切线信息属于 Extract 导出，单独排一条。
+
+**已完成**（2026-11-14）：
+
+1. 死亡链：`Unit.Lifecycle.cs` 补了客户端 `Death` 组件那套字段——`DeathAnimTime`（UnitData 的 `death` 列）、`DecayTime`/`BoneDecayTime`/`DissipateTime`（MiscData，`War3GameplayConfig` 加了同名的四个字段）、`DeathElapsed`/`IsBone`/`DeathPresentationGone`/`PresentationAlpha`；`TickCorpse` 按 `Death.UpdateDead` 的三段边界推进：Death → Decay Flesh → Decay Bone → 消失，英雄是 Death → Dissipate 并在最后 2.5 秒淡出。播放侧新增 `Scenes/War3GameScene/Animation.cs`（与客户端同名同路径）里的 `UpdateDeathAnimation`，用 `UnitSceneComponent.PlayTimed`（对标 `UnitAnimationController.Fit`：整段裁剪到指定秒数、非循环停末帧）驱动；淡出走 `PresentationAlpha` 乘进 `SyncAppearance` 的模型透明。
+2. 升级生长：`UpdateUpgradeAnimation` 按订单进度 `SetUpgradeProgress` 定位 Birth 序列；新增 `Unit.Upgrading`，让模拟层不再每 tick 把动画打回待机；取消升级复位 Stand。
+3. 金矿小精灵：`World.StepCargoWork` + `EntangledMineOccupants`，按挂在缠绕金矿名下的采集者数量播 `Stand Work First..Fifth`（模型里五个变体各自关掉「人数还不够」的 Wisp 附件，选对序列就够）。
+4. 建造 Birth 序列选择补了缓存（`ConstructionBirth`），口径与客户端 `FindConstructionBirthSequence` 一致（只认以 Birth 开头，优先纯 `Birth`）。
+
+实测：临时探针（已移除）跑 Turtle Rock——步兵 death=3.04s，2.25s 时仍播 Death、5.40s 切 Decay Bone 且 `IsBone=true`；英雄 1.50s 后切 Dissipate、4.55s 透明归零并隐藏；htow→hkee 期间持续播 Birth；egol 挂 3 个小精灵时 `Stand Work Third`。`--state-probe` 新增 6 条尸体分段校验全通过。
+
+**还差**：升级变体的 `First/Second` 形态标签来自物编 `animProps`（`uani`），1.27a 的 `Units\UnitUI.slk` 没有这一列，现在落到基础 Birth（客户端同一份数据也是这个结果）；等 Extract 侧能导出该字段再补。
 
 ---
 
@@ -73,6 +84,25 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 
 要做：改成屏幕空间文字并接样式表；文本、颜色、时长逐项对齐。
 
+**已完成**（2026-11-14）：
+
+1. **数据搬到模拟层**：新增 `Src/Core/FloatingText.cs`（客户端同名同路径）——`World.Floats` 在 `Advance()` 里按 `TickSeconds` 老化，文本、颜色、寿命、淡出点、`WorldHeight` 都在出字那一刻定住，之后不跟单位。`ShowCriticalStrike / ShowOrdinaryDamage / ShowMiss / ShowManaBurn / ShowShadowStrike / ShowResource / ShowBounty` 七个入口与客户端一一对应，`CanShow` 管迷雾与隐身/反隐（原来只判迷雾）。
+2. **样式表**：新增 `Src/Configuration/War3FloatingTextStyle.cs`（客户端同名同路径），`War3GameplayConfig` 挂九套样式。颜色/速度/寿命/淡出点读 `UI\MiscData.txt` 的 `Misc.{前缀}Color|Velocity|Lifetime|FadeStart`，字号读 `UI\MiscUI.txt` 的 `Misc.{前缀}Height`（都是 0.024 归一化帧缓冲高度），缺键回落经典 TFT 默认值。实测值：暴击红 `255,0,0` 5s/淡出 2s、未命中红 3s/淡出 1s、金币 `255,220,0`、木材 `0,200,80`、法力燃烧 `82,82,255`、暗影突袭 `160,255,0`。
+3. **屏幕空间渲染**：新增 `GameCore/L4_Composition/Game/UI/TextTagFrame.cs`（客户端同名同路径）——池化 `StringFrame`，一条飘字一个帧，`FontLineHeight` 按帧缓冲高度换算并四舍五入（1080p 下 18.49 设计单位），速度按 `velocity × age × 屏幕高/0.6` 换算，超出视口 48px 剔除。HUD 在 `_Draw` 里、所有界面之前绘制（`RenderWorldText`），所以数字永远不会盖在 HUD 上。
+4. **逐项对齐**：落空文本改成「未命中」；普通伤害数字只对非魔法伤害出、受「伤害数字显示」开关与迷雾双门禁；暴击出在攻击者头上、用减伤前数值；木材赏金按样式表 `alpha 0 / height 0` 保持不显示；暗影突袭补上 `75!`（首段，用实际扣血）与每跳的绿色 `10`（`PeriodicDamageBuff` 的 `DamageType.ShadowStrike` 分流）。
+
+验证（`(4)Turtle Rock.gmap`，`--float-probe --fog-off`，终端打 `[FLT]`）：
+
+| 用例 | 结果 |
+|---|---|
+| 九种反馈的样式 | 颜色/寿命/透明度与 `UI\MiscData` + `UI\MiscUI` 逐项相同（见上） |
+| 未命中 | 文本「未命中」、红、3s，不再有 `Miss` |
+| 木材赏金 | `+40` 寿命 0、透明 0，也就是不显示 |
+| 镜头拉远 2.4 倍 | 字号 `18.49 → 18.49`，投影高度 `241 → 159`（字号不再随镜头缩放） |
+| 「伤害数字显示」关/开 | 同一条普通伤害数字进视图 0 条 / 1 条 |
+
+未做：`CreateTextTag` 这类脚本接口（Launcher 没有 JASS 运行时）。
+
 ## 24. 单位应答变成 3D 音，命中音只认木头和肉
 
 - **应答**：客户端 `War3AckSoundService` 有完整节流——连续选择计数、Pissed 索引、每单位「语音时长 +250ms」冷却、同名去重，并返回时长给头像做说话动作；应答是 `Play2D`。Launcher 只有「12 秒内点 4 次切 Pissed」，没有节流，语音会叠在一起；而且走 `AudioStreamPlayer3D` 放在单位坐标 +80 高，点远处单位时又小又偏声道。
@@ -99,33 +129,6 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 ## 九、加载流程
 
 ## 十、界面
-
-## 36. 地图选择界面的壳、背景和预览都还差一截
-
-版式坐标两边一样（列表面板 `396×520 @ 84,132`、信息面板 `460×440 @ 500,132`、确定按钮 `454×52 @ 503,597` 都是同值），差在壳和内容：
-
-- **宿主**：客户端用 `FdfUiFactory` 解析 `FrameDef.toc`，`Create("Skirmish")` 当全屏宿主，隐藏原有子帧，在宿主上挂两栏。Launcher 原来直接在 `_root` 上手搭，`Skirmish.fdf` 一直没人用。
-- **背景**：客户端 `GlueModelLayer` 用三项皮肤跑模型层动画；Launcher 只有静态贴图。
-- **预览**：客户端 `MapPreviewImage.Read` 依次试 `war3mapPreview.tga/blp`、`war3mapMap.blp/tga`，再用 w3i `LoadingScreenModel` 兜底；Launcher 只读 `war3mapMap.png`。
-- **版本与警告**：客户端有「保存版本」和黄色 1.32 兼容警告；Launcher 原本两行都没有。
-- **排序**：客户端普通地图按文件大小排；Launcher 原本按文件名。
-- **超宽屏**：客户端用 `War3UiViewport` 居中 16:9；Launcher 原本拉满整窗。
-- **Esc**：客户端暴露 `CancelRequested` 属性由宿主轮询，但全仓没有置位点；Launcher 发的是 `Cancelled` 事件，而 `LauncherApp.ShowMapList` 只订阅 `StartRequested`，按 Esc 等于没按；两个子对话框（种族、难度）开着时按 Esc 也关不掉。
-
-**已完成**（2026-11-14）：
-
-1. FDF 宿主接上了：`LoadTemplate(Skirmish.fdf)` + `Create("Skirmish")`，原有 7 个子帧全部隐藏，两栏挂在宿主上。客户端走的是 `ParseToc(FrameDef.toc)` + `ParseToc(SmashFrameDef.toc)`，但 Extract 还没把这两个 toc 导出成表，暂时只能单文件加载；等 toc 导出后换成和客户端同一套解析。
-2. 「保存版本」和兼容警告补上了，判定走新加的 `MapCompatibilityNotice`（与客户端同名同路径），出警告时描述框收到 60。
-3. 列表改成按文件大小排。
-4. 界面改成居中 16:9，输入坐标跟着改成按控件尺寸换算。
-5. Esc 收口：种族/难度对话框开着时先关对话框，其余情况不响应（客户端也没有退出选图页的去处）。顺带删掉没人订阅的 `Cancelled` 和没人读的 `PlayRequested`。
-6. 预览顺序改成作者图优先：`war3mapPreview.png` → `war3mapMap.png`，各自解码失败就试下一张。Extract 的 `GmapExportCli` 白名单补了 `war3mapPreview.blp`，否则作者用 blp 存的预览图根本进不了 gmap。
-7. 背景换成 `GlueModelLayer`：Extract 在模型 tscn 里导出 `camera0`（`current = false`）和 `camera0_target`，并把相机的 KCTR/KTTR 写成 `position_3d` 轨道；Launcher 用 SubViewport 渲染 `MainMenu3d_exp.tscn`，每帧对 `camera0_target` 做 LookAt，画面能复现客户端的镜头平移和极光动画。注意选图页用的是 TFT 皮肤的 `_V1` 背景（`MainMenu3d_exp`），不是主菜单那个 `_V0`。
-8. 背景光照接上自有收集系统：Extract 把每个 `MdxLight` 导成带 `metadata/war3_light_*` 的 `Node3D`（全量 223 盏 omni、25 盏 directional、2 盏 ambient，方向灯多一条 `war3_light_direction`）；Launcher 新增 `Environment/DynamicLight.cs`（与客户端同名同路径），从节点元数据收集光源、打包成 4×8 浮点纹理写进 `war3_light_data`，同时写 `war3_light_count`、`war3_lighting_enabled` 和三个 `war3_scene_*`，配比照客户端 `SceneLight`（方向 +X、0.62 白、环境 0.22）。背景平均亮度从 124 降到 90，客户端 86。
-
-**还要做**：
-
-9. 预览第二级还没接：客户端在没有作者图时会用 w3i `LoadingScreenModel` 指的那张加载画面，Launcher 缺 blp 解码，得让 Extract 在导 gmap 时把这张也算进去。
 
 ## 37. 命令卡少了四个功能格，混选时只剩通用命令
 
@@ -211,7 +214,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 16 | 2 | 已完成，等合并后删 |
 | 17 | 2 | 已完成，等合并后删 |
 | 18 | 2 | 已完成，等合并后删 |
-| 19 | 2 | 保留：死亡/升级/金矿 |
+| 19 | 2 | 三块已完成，等合并后删 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
 | 21 | 2 | 保留：粒子、丝带、事件 |
 | 22 | 2 | 保留：闪电与弹道 |
@@ -223,7 +226,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 28 | 1、3 | 保留：两套子组、点头像清队 |
 | 29 | 1 | 保留：右键分支 |
 | 30 | 1、3 | 保留：拖拽、拾取、地面物品详情 |
-| 36 | 1、2、5 | 保留：选图页壳与内容 |
 | 37 | 2、3 | 保留：命令卡结构 |
 | 38 | 2、3 | 保留：槽位、热键、可用性 |
 | 39 | 2、3 | 保留：提示语与悬停说明 |
@@ -244,15 +246,15 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 36 子项 | F4–F7 选英雄 | 单人最多 3 个英雄，永远用不到 |
 | 38 子项 | 全体/盟友聊天频道 | 多人频道不做 |
 | 43 子项 | 电影模式隐藏 HUD | 过场本身来自脚本，同 37 的理由 |
+| 19 子项 | 动画时间缩放 `AnimationTimeScale` | 客户端只由 JASS `SetUnitTimeScale` 改这一个字段，Launcher 不跑 JASS，永远不会被设成非 1 |
 
 ---
 
 ## 推进顺序
 
-编号已经是自底向上的顺序，从上往下做即可，但有三个例外：
+编号已经是自底向上的顺序，从上往下做即可，但有两个例外：
 
-1. **第 36 条**（选图界面）已经完成 P0，随时可以收尾剩下的 Esc、预览、Glue 背景，不必等底层。
-2. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
+1. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
 
 底层那一批里，**第 2、3、10** 是「一改就能并排看出差别」的，建议先啃这三个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
@@ -260,7 +262,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **60** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **61** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -355,3 +357,11 @@ Launcher 把两件事塞进了同一个类：`GameCore/L4_Composition/Game/Envir
 Launcher 写成 `GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的 `internal static class UnitTerrainTilt.Compute(...)`。算法逐行一致（四点采样、`atan2(前-后, 2r)`、`clamp` 到 `maxPitch/maxRoll`、负角度当固定倾角），差的是归属与位置：客户端在场景 partial 里，Launcher 单开一个类还放进了 `Rendering/`。
 
 要做：按客户端归位——方法搬进 `War3GameScene` 的 partial（可以放在 `Scenes/War3GameScene/Presentation.cs` 同目录的新 partial 文件里，类名仍是 `War3GameScene`），调用点从 `UnitSceneComponent` 改成经场景转调；如果确认 Godot 侧 `UnitSceneComponent` 拿场景引用不方便，退一步也要放到 `GameCore/L4_Composition/Game/Scenes/War3GameScene/` 下而不是 `Rendering/`，并在类名上体现它是场景的一部分。
+
+## 60. 转成 Godot 动画时丢掉了关键帧切线
+
+客户端 `MdxTimelineSampling` 按序列区间求值，关键帧插值支持 step / linear / Hermite / Bezier 四种（`MdxAnimation` 的 `InterpType`），贝塞尔还会取 inTan/outTan 做缓入缓出。
+
+Extract 的 MDX 转换只写 TRS 轨道关键帧的位置/旋转/缩放数值，切线信息整条丢掉，Godot 一律按线性插值。玩家看到：所有带缓入缓出的动作（起手、收招、建筑生长、死亡倒地）都变成匀速，动作发飘、缺少原版的重量感。
+
+要做：Extract 导出时把切线按 Godot `Animation` 支持的曲线表达出来（`Transform3D` 轨道只能是线性，得改成可承载自定义插值的轨道形式或按切线重采样成更密的线性关键帧），Launcher 侧不需要改。
