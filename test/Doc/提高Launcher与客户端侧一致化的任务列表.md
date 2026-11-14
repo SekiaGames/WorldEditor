@@ -35,6 +35,13 @@
 - **表现差异**：单位脚下的地面和悬崖不会被火光/技能光照亮，火把、献祭、火焰雨只有模型亮、地面不亮。
 - **要做**：把 `war3_light_data` 也传进地形、悬崖、水面三个世界着色器，按客户端公式累加。
 
+> **执行结论（Launcher6，待合并）**：地形与悬崖已接入场景动态光。
+> - 着色器：`Extract/assets/shaders/terrain_map.gdshader`、`cliff_map.gdshader` 增加 `war3_light_data` / `war3_light_count` 和 `war3_dynamic_light()`，按客户端 `dynamicLightFactor` 的环境/方向/点光三种类型累加进 `shade` 后再 clamp。
+> - 光源收集：`War3GameScene.TickTerrainLights` 每 0.1 秒收集相机视锥内、模型可见的装饰物与单位光源（雾中冻结建筑跳过），上限 8 个，写入 `MapWorldBuilder.TerrainMaterial` 与新增的 `CliffMaterial`；`UnitSceneComponent`、`MapWorldBuilder` 的装饰物在建模时缓存各自的灯光节点。
+> - 水面未接：客户端 `Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Water.frag.glsl:11-13`、`:26-27` 只吃方向光，没有 `uDynamicLights`；按 AGENTS 规则 6 以客户端为准，水面保持原样，任务原文「三个着色器」中的水面一项不做。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；Godot headless 解析两份着色器成功且能读到新增 uniform；Turtle Rock 运行时日志出现「地形动态光 4」，确认收集/下发链路执行。截图受并行 Launcher 实例占满 GPU 影响（Metal fence 超时）全黑，未作为画面证据。
+> - 合并注意：着色器改动在共享的 `Extract` 工作区（与其它任务共用），需随本任务一起合入并重新生成 `extract.pck`；不重建 pck 时 Launcher 端的新 uniform 不会生效。
+
 ### 7. 树和装饰物死亡瞬间隐藏，没有倒地/死亡姿态
 
 - **客户端**：`DoodadRenderer` 启动时保留 `life <= 0` 的实例并记录死亡计数（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/DoodadRenderer.cs:342-355`），死亡/被砍时解析 `death` 序列（`:106-108`、`:684-692`），非循环序列播到末帧；看不到时按 `TreeKnowledge` 记忆保留。
