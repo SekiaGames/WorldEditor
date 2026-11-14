@@ -73,6 +73,13 @@
 - **表现差异**：玩家离开后基地被拆，再探开那一格时建筑直接消失，看不到「最后看到的废墟」；客户端会保留定格直到重新看见。
 - **要做**：建筑在不可见时阵亡保留最后一次看到的定格模型，重新可见时再按 `ScoutingMemory` 口径清掉。
 
+> **执行结论（Launcher10，待合并）**：已修复。
+> - 记忆层：新增 `Launcher10/GameCore/L4_Composition/Game/Rendering/ScoutingMemory.cs`，与客户端相对路径、文件名、类名一致；按单位 ID 记录建筑最后可见位置，`Begin(fog, retired)` 在位置重新可见时把条目交给回收字典。
+> - 阵亡路径：`Unit.EnterDeath` 对进雾定格（`View.FogFrozen`）的建筑不再切 Death 序列，直接置 `DeathPresentationGone=true`，尸体计时不再隐藏模型；`War3GameScene.OnUnitDied` 把它登记进 `_buildingScouting` 并标 `FogMemorial`，节点留在原位继续吃战争迷雾压暗。
+> - 清退：`TickFog` 每次 0.2s 刷新后执行 `RefreshBuildingScouting`，同格重新可见即隐藏节点并清空记忆；没看过的建筑不建记忆，看得见时阵亡仍走原流程。
+> - 验证：`dotnet build` 0 错误；新增 `--fog-memory-probe` 覆盖 11 项（看过后进雾定格、雾中阵亡保留、尸体计时不隐藏、雾里持续保留、重新看见清退、记忆表清空、看得见时阵亡照常消失、没看过不留记忆），在 `(4)Turtle Rock.gmap` 全部通过；`--state-probe` 仅剩基线已知的 `utod` 1 项失败；`--combat-probe` 全部通过。
+> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --fog-memory-probe`。看画面：启动 Launcher10，让敌方 AI 在你视野外拆掉另一家的建筑，再带兵探回原地，建筑以灰雾定格保留，进入视野当帧消失。
+
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
