@@ -18,20 +18,6 @@
 
 > 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
-### 1. w3i 里的「随机」种族不解析，随机座位被摆成 12 只羊
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassRuntimeHost.cs:861-877` 在 config 之后、main 之前调 `RandomizeMeleePlayerAndAiRaces`，本地玩家用玩家所选，其余座位从 {human,orc,nightelf,undead} 里随机；随后 `ResolveStartingPlayerRaces` 把 `RANDOM=32 / USER_SELECTABLE=64` 落成真实种族（实现在 `Jass/JassGameNatives.Ai.cs:381-418`）。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:262-271` 只改写本地玩家的种族；`Launcher/GameCore/L3_Simulation/Simulation/Configuration/MeleeRules.cs:84-106` 的 `Plan` 对 race 5 走 `default`，落到 `:195-206 PlanUnknownRace`，刷 12 只 `nshe` 羊。
-- **玩家可见**：任何座位标「随机」的地图，该出生点只有 12 只羊，没有基地没有工人，AI 整局废掉。即使用户在选图界面选了种族，客户端会让每个 AI 的种族每局随机，Launcher 始终沿用 w3i 固定值。
-- **要做**：在 `ResolveActivePlayers` 之前做一次 race 5/32/64 → 1..4 的落定，本地玩家用所选、AI 用种子随机；`PlanUnknownRace` 只留给真正的未知种族。
-
-> **执行结论（Launcher1，待合并）**：
-> - 定位：Launcher 内部种族是 1 人 / 2 兽 / 3 亡 / 4 暗夜，`MeleeRules.Plan` 对 5/32/64 走 `default`，落进 `PlanUnknownRace` 的 12 只 `nshe`。
-> - 新增 `War3GameScene.ResolveStartingPlayerRaces`，在 `ResolveActivePlayers` 之前调用。5/32/64 从 {1,2,3,4} 落定：本地玩家用选图/`--race` 的 `SelectedRace`；其余座位在无 `FixedPlayerSettings` 且本地有选择时用 `Environment.TickCount` 种子重掷，对齐客户端 `RandomizeMeleePlayerAndAiRaces`；地图声明固定玩家设置时保留 w3i 作者种族。`PlanUnknownRace` 只留给真正未知的种族。
-> - 每个被改写的座位打印 `[INIT] Pn 种族 X→Y（玩家所选 / 种子随机 seed=…）`，并汇总 `[INIT] 种族落定 N 个座位 seed=…`。
-> - 验证：`dotnet build Launcher.csproj` 0 错误。无 `--race` 时 Turtle Rock 仍为 P0 人 / P1 兽 / P2 亡 / P3 暗夜；`--race=1` 连跑两次，P0 始终人，P1/P2/P3 按不同 seed 重掷（第一次全人，第二次人/兽/人）。临时把四个座位改成 5/32/64/4（环境变量探针，验证后已删除）：5→亡、32→暗夜、64→兽，固定 4 保持暗夜，未出现「没有开局模板」。
-> - 合并注意：只改 `Launcher1`，不涉及 `Extract`/`extract.pck`。
-
 ### 2. war3mapMisc.txt 没读，小地图与迷雾的颜色、营地阈值全是默认值
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:188-190` 用 `War3MiscData.Load(_uiSource)` 读地图自带的 `war3mapMisc.txt` 覆盖迷雾色、营地阈值、`BlightMask` 等。
