@@ -57,6 +57,13 @@
 - **表现差异**：点攻击后单位跑到贴脸才开始转身，侧身追人/绕圈像滑行；攻击前摇被拉长，编队齐转像整体平移。
 - **要做**：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项。
 
+> **执行结论（Launcher1，待合并）**：
+> - 换算改为客户端口径：`UnitFactory` 去掉 `Clamp(turnRate * 6f, 1.5f, 14f)`，改为 `turnRate / 0.03f`；`UnitType.TurnSpeed` 默认值从 3.6 改为 20（对应客户端 `Transform.TurnRate = 20` 的默认 0.6 rad / 0.03s）。不设上限，SLK 实际 `turnRate` 为 0.1–0.6，折合 3.33–20 rad/s；若沿用 14 会把 0.5/0.6 档的单位重新削慢。
+> - `World.MovementEvents.ApplyFacing` 去掉 `Mathf.Max(1.5f, ...)` 下限，每 tick 最大转角改为 `TurnSpeed * FrameSeconds`。
+> - 数值验收（临时探针打印，已还原）：`hfoo`/`hrif`/`ogru` 20 rad/s，`nftr`/`hgyr` 16.667 rad/s；半圈耗时 0.157s / 0.188s，修复前步兵为 3.6 rad/s、半圈 0.873s。
+> - 回归：`dotnet build Launcher.csproj` 0 错误；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知失败 `utod 研究项 4 vs 2`，阵型/命令/追击相关校验均通过。攻击前摇不经过朝向门控（`BeginAttack` 直接用同一 tick 的 `FaceTarget` 结果开火），本次只改视觉转角速度，前摇时序不变。
+> - 合并注意：无新增资源或探针代码，只改 `Launcher1` 的两个 C# 文件；文档结论随根仓库单独提交。
+
 ### 12. Buff 类技能只消耗部分物编字段，护甲/回复/缩放/Buff 美术都没生效
 
 - **客户端**：以 Roar 为例读取 `DataA`（攻击）、`DataB`（护甲）、`DataC`（回血）、`DataD`（回蓝）、`DataG`（目标上限）、`BuffID`（Buff 美术/名称）和 `HeroDur`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:27-48`）；Bloodlust 还读 `DataC`（模型缩放）与 `BuffID`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:24-47`），并生成对应 Buff 对象数据。
