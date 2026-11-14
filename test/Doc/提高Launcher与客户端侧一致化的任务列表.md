@@ -92,7 +92,7 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 - **选中圈**：客户端读 `SelectionRadius/Height`，用原版 `SelectionCircleMed.blp` 铺在地形三角面上，坡地贴合，敌红友绿；Launcher 是固定 32 段程序化圆环，颜色恒为 `3ce03c`，`y=6` 固定在 `Root` 下，所有兵种一样大，坡上会插地或悬空。
 - **影子**：客户端是世界坐标轴对齐的地面贴花、逐顶点贴地，建筑按 30%/70% 锚点偏移；Launcher 的影子是 `Root` 的子节点，`Root` 每帧按朝向旋转，单位一转身影子跟着转；SLK 里没写尺寸的单位会回退成 64+ 世界单位的巨大黑影。
 
-要做：影子脱离 `Root`（血条、选中圈已完成）。
+要做的三块都已完成（血条、选中圈、影子），条目等合并后再删。
 
 **已完成**（2026-11-14，血条）：
 
@@ -111,6 +111,15 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 4. 敌红 `(1,.15,.15)`、友绿 `(.2,1,.25)`，与客户端 `SelectionRingColor` 同色。
 5. 新增 `MapWorldBuilder.SurfaceHeightAt`：按地形网格的三角面（含 LayerHeight/RampLift）插值，替掉双线性 `HeightAt` —— 双线性在 tile 内部会落到网格下方。
 6. 选中状态留在 `UnitSceneComponent.Selected`，圈由场景按 `_selected` 统一画，`Ring` 与程序化圆环网格删除。
+
+**已完成**（2026-11-14，影子）：
+
+1. 影子脱离 `Root`，改由场景层 `UnitShadowRenderer`（新文件）统一画世界坐标轴对齐的贴地贴花，单位转身不再带影子转。
+2. 贴图/尺寸/锚点按客户端 `Presentation.RenderUnitShadows` 两个分支：建筑吃 `buildingShadow` 贴图、边长 = 贴图像素 × 32、锚点 (30%,30%)；普通单位吃 `unitUI` 的 `shadowW/H/X/Y`，宽高为 0 就不画（不再回退成巨大的 64+ 黑影）。
+3. 几何按 128 世界单位地形格细分，逐顶点取 `SurfaceHeightAt`，抬升 `UnitShadowOffset(3)`；地图平面 (x 右, y 上) 与 Godot 世界是 `mapX = -worldX`、`mapY = worldZ`，贴图 V 轴跟随客户端 splat 翻转。
+4. 复用项目里的 `shadow_map.gdshader`（顶点色 × 贴图 alpha），黑 `(0,0,0)`、alpha 0.5，与客户端 `uOpacity 0.5` 同口径；`Shadow.png` 是纯黑 RGB + alpha 0.75 的柔和椭圆。
+5. 删掉 `UnitSceneComponent.ApplyShadow` 与 `Units.ApplyUnitShadow`（原来挂在 `Root` 下的 `QuadMesh` 子节点）。
+6. 迷雾外/已死亡的单位不画，贴图组这一帧没人用时收起节点，不会留残影。
 
 ## 16. 队伍色回绕，幻象不变色，虚无没反应
 
@@ -159,6 +168,29 @@ Launcher 的 `Play` 里有 `if (found == CurrentAnimation) return;`，站桩连�
 Launcher 在手写表 `EffectArtTable` 里维护 147 条「技能码 → 目录/后缀/挂点/是否持续」，按命名约定拼路径；`World` 里的 `Effects` 集合和 `TickEffects` 都在，但 Game 层没有任何一处渲染 `Effect.VisualModelPath`——`AddSpecialEffect`、`AddSpecialEffectTarget` 和 `ChainLightningEffect` 的 `TargetArt` 全都不可见。Buff 循环也没有，只有表里标了 `Stick=true` 的少数技能挂一个模型。挂点只用三档高度比例，刀光固定在身体中轴、不跟手。特效总数还有 60 个硬上限。
 
 要做：先把 `world.Effects` 接上渲染（这一步能一次性救回一大片缺失特效），再把 `EffectArtTable` 逐步换成按物编读 Art 字段，挂点改成骨骼。
+
+**已完成**（2026-11-14，Launcher5）：数据层 + 渲染层 + 施法入口三件都做了，手写表已删除。
+
+1. `world.Effects` 接上渲染：`Game/Scenes/War3GameScene/Presentation.cs` 新增 `RenderVisualEffects`（与客户端同名职责），逐帧把 `SpecialEffect`、单位身上的 Buff 视觉、持续 Art（Caster/Target/Special 三组 persistent 分支）收进「按实例身份缓存节点」的表里，实例消失即释放。原先完全不可见的链式闪电 `TargetArt`、死亡缠绕、法力燃烧、物品幻象落地、火雨，现在都能看到。
+2. 动画按实例年龄推进：序列选择顺序 Death → `AnimationName` → Birth → Stand、`PlayStandAfterBirth` 播完 Birth 接 Stand、循环序列取模、非循环钳住，都照客户端；`LifeSpan<=0` 的非循环特效播完即 `Expire()`，不再靠固定秒数硬删。
+3. 挂点改成骨骼：`AttachmentPoints` 找到 `attach_*` 的 `Point` 节点后把特效挂成它的子节点，`overhead` / `chest` / `hand,right` 这类物编写法都能落到骨骼上，只有找不到才退回宿主根部。队伍色、`SpecialEffect.Color`、`VisualScale`、`VisualHeight` 一并接上。
+4. 新增 `Game/Presentation/AbilityArt.cs`：按 rawcode 从 `Units{Human,Orc,Undead,NightElf,Neutral,Campaign,Common,Item}AbilityFunc` 文本表读 `Casterart / Targetart / Specialart / Effectart / Areaeffectart` 与 `Casterattach / Targetattach / Specialattach / Effectattach`；`Targetattachcount` 支持多挂点，`_` 表示无，`,`/`;` 分隔多模型，`ObjectData` 里有值时优先。
+5. `Ability` 的 `CasterArts / TargetArts / SpecialArts / EffectArts / AreaEffectArts` 与四组 attachments 从空实现改成按物编读（按等级缓存），并补上客户端的 `SpawnArts`：`World.TryCast` 成功后统一往 `world.Effects` 塞 `SpecialEffect`。删掉 `EffectArtTable`（308 行手写表）、`Effects.cs`（171 行节点池）、`MaxSceneEffects=60` 硬上限和 `MountOffset` 三档高度。
+6. Buff 视觉补上：`Buff.VisualModelPath` / `VisualAttachmentPoint` 读物编 `Targetart / Targetattach`，`VisualAgeSeconds` 按 tick 差算实例年龄。神圣护盾、闪电护盾、嗜血（两个手部挂点）、野怪的 `GeneralAuraTarget` 光环圈都出现了；同一单位同模型同挂点只画一次。
+7. 暴风雪按客户端补冰片：`RuntimeBlizzardAbility` 每波按 `DataC`（夹 1..32）在半径内随机点生成 `BlizzardTarget`、时长 2s。
+
+**还要做**：
+
+8. `EfctID`（`X***` → `Effects\*.mdl`）这条艺术链没接：客户端走 `War3EffectArtResolver`，Extract 也没导出 `Effects/` 目录，等 Extract 补齐后再接。
+9. `--effect-probe` 实测物编 976 条、美术引用 656、可加载 654，缺 2 条要 Extract 补导出：`Arsp` 的 `Abilities\Spells\Other\Stampede\MissileDeath.mdl`、`AIga` 的 `Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdl`。
+10. `Ability.Arts` 目前单独读 `AbilityFunc` 文本表，没并进 `War3ObjectData` 的物编合并（客户端是在 `LoadStandardTypedData` 里把 txt 并进同一份 War3TypeData，技能和 Buff 共用）。统一后可以去掉这层单独读取。
+
+**怎么验证**：
+
+- `Godot --path . --rendering-driver opengl3 -- --play="(4)Turtle Rock.gmap" --bolt-probe`：控制台出现 `[FX] 载入 Abilities/Weapons/Bolt/BoltImpact.tscn → 森林巨魔 的 origin`，画面能看到闪电链光束和命中特效。
+- 同上换 `--skill-probe`：出现 `[FX] 载入 .../DivineShield/DivineShieldTarget.tscn → 圣骑士 的 origin` 和野怪身上的 `GeneralAuraTarget` 光环圈。
+- `--effect-probe`（可配 `--headless`）：打印物编美术覆盖率与缺失清单。
+- 控制台每 2 秒报一次 `[FX] 在场特效 N`，技能放完会回落到 0（不残留）。
 
 ## 21. 粒子、丝带和模型事件都缺
 
@@ -216,6 +248,15 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 Launcher 这些方法都在，但除 `SetSoftFollowController` 外没有任何调用者。
 
 要做：`CinematicModelCamera` 补进来并接上轨道求值；接口先接到作弊/探针上验证。触发源在脚本，验收要等 JASS，但实现可以先行。
+
+**已完成**（2026-11-14，电影镜头）：
+1. 新增 `GameCore/L4_Composition/Game/Camera/CinematicModelCamera.cs`（与客户端同名同路径）：每帧按序列时间 `AnimationPlayer.Seek`，读回 `camera0` / `camera0_target` 的世界坐标与 `camera0` 的 `Fov/Near/Far`；时间夹到序列长度，与客户端 `min(elapsed, end-start)` 同口径。序列按惯例取 `Stand`（`GetAnimationList` 是字母序，不能拿下标当序列号）。
+2. `War3Camera.SetCinematicModel(Node3D)`：节点由相机接管——加入场景、`Visible=false`、摘掉 `Model` 可视子树（只留 CAMS；否则为了读一只镜头要把整张场景的网格材质一起留在显存里，`Model` 里含相机时不摘）。
+3. `War3Camera.Update` 顶部走电影分支：直写 `Position/Target`、跳过地形钳制、`GameplayProjectionScale` 固定 1、FOV 由导出的竖直视锥反算回本类半角量纲交给 `UpdatePose` 原样还原。
+4. 释放点与客户端 `_modelCamera=null` 一一对应：`SetTarget` / `PanTo` / `Stop` / `SetTargetController` / `SetOrientController` / `SetField` / `ResetToGameCamera`。
+5. 探针：`--cinematic=<War3 模型路径>`，配合已有的 `--shot=` 出图；用户参数必须放在 `--` 之后（`Godot --path . -- --play=… --cinematic=…`）。本机截图要加 `--rendering-driver opengl3`，Metal 后端截出来是全黑。
+6. 实测：`UndeadCampaign3D` 的 Birth 序列眼点 2.5s 内从 (-413,-29,2889) 推到 (-2043,-222,2824) 后夹住；`HumanCampaign3D` 落位与导出的 `camera0.transform` 完全一致（-3698.73,-272.996,1223.71）。
+7. 未闭环：滚转。客户端取 MDX 的 KCRL，Extract 目前只导出了相机位置轨迹（KCTR/KTTR），需要 Extract 补一条旋转轨迹才能吃进来；触发源仍是 `SetCinematicCamera`，等脚本层接上即可，链路已通。
 
 ## 27. 镜头不跟随、不吃设置、取景也和客户端不同
 
@@ -451,7 +492,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 13 | 2、3 | 保留：悬空雾面 vs 片元采样 |
 | 14 | 2 | 保留：雾里建筑状态 |
-| 15 | 2 | 保留：影子贴片 |
+| 15 | 2 | 三块已完成，等合并后删 |
 | 16 | 2 | 保留：颜色与状态色 |
 | 17 | 2 | 保留：贴地、姿态、朝向 |
 | 18 | 2 | 保留：动画优先级 |
@@ -483,7 +524,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 44 | 3、4 | 保留：渲染能力、FDF 绑定 |
 | 45 | 5 | 保留：命名与职责错位 |
 | 46 | 4 | 保留：重复代码 |
-| 48 | 3 | 保留：客户端有 War3SplatSystem，Launcher 只有建筑底座 |
 
 ## 已排除的候选（不再写进清单）
 
@@ -508,7 +548,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 9、12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
-单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**20–25**）里 20 的「接上 `world.Effects`」性价比最高，48 的技能贴花跟 21 一起做最省。
+单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**20–25**）里 20 的「接上 `world.Effects`」性价比最高。
 
 加载流程（**31–35**）要动 `LauncherApp` 和加载编排，和渲染改动冲突小，适合在不方便跑图的时候做。
 
@@ -525,12 +565,3 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 客户端 `Terrain.vert.glsl` 和 `Cliff.vert.glsl` 里各有一段 `dynamicLightFactor`，把单位的动态光（火把、法术特效）按距离/衰减累加进顶点光照；Launcher 的地形、悬崖、水面着色器只吃方向光和环境光。
 
 要做：把 `war3_light_data` 也传进三个世界着色器，按客户端公式累加。
-
-## 48. 技能的地面贴花还是空的
-
-客户端的 `War3SplatSystem` 吃 MDX 事件对象里的 `SPL`/`UBR`：颜色按 Start→Middle→End 三键插值，和贴图、BlendMode 一起分批（每批 ≤64）用贴地 Quad 画；贴图名分别查 `Splats/SplatData.slk`（有 `Lifespan` 列）与 `Splats/UberSplatData.slk`（无该列，只有 Birth/Pause/Decay）。
-
-Launcher 已经有贴地贴花管线和建筑底座（`Rendering/ShadowRenderer.cs`、`Scenes/War3GameScene/Presentation.cs` 的底座记录池），但没有 MDX 事件对象管线：技能的地面符文、传送门地毯、焦痕、血迹全都不出现。
-
-要做：补 MDX 事件对象里的 `SPL`/`UBR` 解析（生成/销毁时刻、贴图、三键颜色、生命期、BlendMode），实例生命周期照 `War3SplatSystem`，绘制接到现有 `ShadowRenderer`。和 21 的「模型事件」是同一条解析链，可以一起做。`CreateUberSplat` 由脚本触发，按范围规则不进清单。
-
