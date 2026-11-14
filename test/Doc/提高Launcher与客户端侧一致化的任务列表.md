@@ -39,21 +39,6 @@
 
 > 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
 
-### 4. 战争迷雾没有视线遮挡，也没有高度层
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Core/FogOfWar.cs:586-619` 用 `SelfOccludes/OccluderLevel/HeightLevel`（128 世界单位一级）做视线遮挡，`:514-583` 八分圆 parent 阴影传播；`War3GameScene/Lifecycle.cs` 的 TerrainGrid 把 w3e 的 `LayerHeight-2` 灌进视野高度面，树木与建筑按 `OcclusionHeight` 成为遮挡体。
-- **Launcher**：`Launcher/Src/Core/FogOfWar.cs:212-236` 的 `Stamp` 是纯 Bresenham 圆，`:107-133` 只按单位视野半径刷格子，没有高度面、没有遮挡体。
-- **玩家可见**：站在低地能直接看到悬崖上方和被崖体挡住的凹地；站在林边能透视整片森林（客户端树后保持灰雾）。高地视野优势消失，侦察回报区域比客户端大一圈。
-- **要做**：先补逐格视野高度与遮挡标记，再改 `Stamp` 为八分传播。
-
-> **执行结论（Launcher4，已实现，待合并）**：逐格视野高度、遮挡体与八分圆阴影传播都已补上。
-> - 高度面：`FogOfWar.Build` 按 w3e 角点 `LayerHeight - 2` 生成 `_terrainLevels`（雾格 128 与地形角点 1:1），观察者高度取所在格地形级；飞行单位按 `int.MaxValue` 处理，与客户端一致。
-> - 遮挡体：`DoodadMeshLibrary` 读物编 `DestructableData.occH`；`MapWorldBuilder.BuildDoodads` 把所有 `occH > 0` 的装饰物（树 1745 棵，另有门/残骸等）按 `occH × 实例 Z 缩放` 收进 `FogOccluders`，`FogOfWar.SetOccluders` 按 `terrainLevel + floor((occH+64)/128)` 写入格级高度面，同格取最大。单位没有 `occH` 列（1.27 `UnitData/UnitBalance` 全表无此字段，客户端建筑 pathing overlay 也不置 BlocksVision），因此不额外造建筑遮挡。
-> - 传播：`StampUnit` 改为 `RevealCircle` 八分圆 parent 阴影传播（`CircleTemplate` 与 `_occ` 的 bit1 shadow / bit2 出图语义和客户端同构），核心 3×3 可见但仍可投影；技能/区域揭示仍走普通圆（客户端 `RevealArea` 同口径）。视野半径按客户端上限 1800 封顶。
-> - 回归：新增 `--fog-los-probe`（`War3GameScene.RunFogVisionProbe`），Turtle Rock 5 条全过：地图遮挡物写入高度面 / 平地无遮挡可直视 / 合成遮挡后方不可见 / 低地看不到悬崖上方 / 站上悬崖后可见；`--fog-memory-probe` 11 条仍全过；`--combat-probe` 全过；`--state-probe` 仍只剩基线 `utod 研究项`。
-> - 实跑：`Godot --headless --path Launcher4 -- --play="(4)Turtle Rock.gmap"` 日志给出 `[FOG] 视野遮挡物 1745 个`，常规视野出现树/崖阴影（同屏 188 格），无 C# 异常。
-> - 范围说明：树被砍倒后遮挡按客户端现状保留（客户端只在建筑拆除时 `RemovePathingOverlay`，树 overlay 不撤）；建筑遮挡要等有 `occH` 的资源版本再补。
-
 ### 5. 悬崖四个面用一个法线，烘焙的明暗写了但 shader 不读
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/CliffRenderer.cs:184-186` 崖体顶点法线取各自 geoset 法线；`CliffSurface.cs:35-40` 只对落在 128 网格边界上的顶点改用地形梯度；`Shaders/Cliff.frag.glsl:20-24` 采样 `uShadowMap` 后压暗。
@@ -416,7 +401,7 @@
 
 模块顺序是从底层到表层，模块内从上往下做。
 
-现在最容易被玩家一眼看出的是 **第 4 条（迷雾遮挡）**、**第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、25、29、34、45。
+现在最容易被玩家一眼看出的是 **第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、25、29、34、45。
 
 ## 收尾规则
 
