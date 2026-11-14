@@ -48,6 +48,12 @@
 
 > **复核评价**：表现差异有证据，修法还没有，这类条目容易被当成能直接下手的任务。建议标题标 `（待定位）`，定位结论写回本条再动手。定位可以先量 `_projectiles` 节点的运行时 AABB：放大 12 倍时 AABB 一起变大，说明网格在、只是被裁或全透明；AABB 塌成一点，说明骨骼/动画把网格移出了包围盒。
 
+> **执行结论（Launcher8，待合并）**：网格/骨骼/贴图都正常，根因是 filter-mode-1 弹道材质的 alpha 裁剪。
+> - 定位：`Missile_earc` 运行时可见、在视锥内；Skeleton 骨骼姿态 (-5.4,22.08)、`war3_model_opaque`、`ArrowMissile.png`（核心 alpha 0.88）都正常。把网格临时换成亮品红仍能看到箭体，证明几何/深度正常；换回原贴图后 12× 放大仍无箭，把 `alpha_cutoff` 从 0.75 降到 0.01 后 12× 清楚可见，1× 为客户端同量级的小箭。客户端对 filter mode ≤1 按不透明绘制、不做 alpha test，导出的 0.75 裁剪会把细箭连同半透明箭杆一起裁掉。
+> - 修复：武器弹道与技能弹道实例化后，把 `war3_model_*` 材质的 `alpha_cutoff` 统一降到 0.01（shader 自带 `<0.004` 的硬丢弃仍会去掉透明底），见提交 `8e0f75a`。
+> - 补遗漏：客户端 `CharacterRenderer` 会给每个弹道模型推进 RIBB 丝带，Launcher 之前只为单位创建 `MdxRibbonRenderer`，弹道完全没有丝带。现在武器/技能弹道都会创建并在飞行时逐帧 `Tick`，命中后停止发射。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；headless 弓箭手对射日志 `[RIBBON] Missile_earc points=2`，丝带点链已生成；OpenGL 12× A/B 截图为 0.75 无箭、0.01 箭体清楚。正式 Forward+ 截图仍受并行任务 Metal fence 超时影响，未取得 1× 画面；火球/投石与箭矢走同一 `Projectile` 路径，修复同样覆盖但未单独取图。
+
 ### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
 
 - **客户端**：这五个技能都把 `EfctID` 解析出的模型接进生成循环：烈焰风暴余烬取 Buff 的 `EffectArt`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs:51`、`:73-80`），云雾取 `Effectart` 常驻雾团（`RuntimeCloudOfFogAbility.cs:46`、`:69-76`），季风取雨幕与闪电落点（`RuntimeMonsoonAbility.cs:32`、`:85-87`），哨兵在树上生成猫头鹰（`RuntimeSentinelAbility.cs:29-31`、`:50-52`），火山生成喷发视觉与熔岩弹（`RuntimeVolcanoAbility.cs:127`、`:151`、`:226`）；另外客户端有独立的 `RuntimeMeteorRainAbility.cs`。
