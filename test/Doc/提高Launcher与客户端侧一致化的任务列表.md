@@ -34,13 +34,6 @@
 
 ## 三、水与天气
 
-## 7. 水面只学了形状，没学参数
-
-- **雾**：客户端水面吃距离雾和战争迷雾；Launcher 的 `water_map.gdshader` 仍是 `fog_disabled`，战场迷雾也不作用于水面。
-- **alphaMode**：`Water.slk` 的 `alphaMode` 列没读，水面一律按 ripple alpha 相乘。
-
-要做：水面接距离雾与战争迷雾，补 `alphaMode`。
-
 ## 9. 只有全局天气，跨一格整片雨雪重来
 
 客户端给每个 `AddWeatherEffect` 建一个带 rect 的 `WeatherRenderer`，可以多天气叠加，粒子相位由 cell 索引确定性生成，只在相机跨 cell 时重建实例数据。
@@ -99,7 +92,7 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 - **选中圈**：客户端读 `SelectionRadius/Height`，用原版 `SelectionCircleMed.blp` 铺在地形三角面上，坡地贴合，敌红友绿；Launcher 是固定 32 段程序化圆环，颜色恒为 `3ce03c`，`y=6` 固定在 `Root` 下，所有兵种一样大，坡上会插地或悬空。
 - **影子**：客户端是世界坐标轴对齐的地面贴花、逐顶点贴地，建筑按 30%/70% 锚点偏移；Launcher 的影子是 `Root` 的子节点，`Root` 每帧按朝向旋转，单位一转身影子跟着转；SLK 里没写尺寸的单位会回退成 64+ 世界单位的巨大黑影。
 
-要做：选中圈形状和贴地，再影子脱离 `Root`。
+要做：影子脱离 `Root`（血条、选中圈已完成）。
 
 **已完成**（2026-11-14，血条）：
 
@@ -109,6 +102,15 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 4. 填充用 `human-healthbar-fill.blp` 按血量截 UV + 顶点色，黑底用矩形；不再有两档离散色和填充右漂。
 5. 顺带修 `MeasureHeight`：只统计可见 mesh，隐藏的升级形态 geoset 不再把血条顶高（Necropolis 708 → 417）。
 6. 删掉 `UnitSceneComponent` 的 `BarRoot/BarFill/SetHp/SetBarVisible`，以及 20 处 `SetHp` 调用。
+
+**已完成**（2026-11-14，选中圈）：
+
+1. 半径改 `SelectionDiameter × 0.5`，不再按「建筑 3.2 / 其它 0.9」固定缩放。
+2. 贴图换成 `SelectionCircleMed.blp`，`SelectionCircleRenderer` 按 8×8 细分铺在地形三角面上，逐顶点取高度，坡地跟着起伏。
+3. 抬升 = 客户端 `GroundSplatOffset(1) + SelectionCircleBaseZ(16)`。
+4. 敌红 `(1,.15,.15)`、友绿 `(.2,1,.25)`，与客户端 `SelectionRingColor` 同色。
+5. 新增 `MapWorldBuilder.SurfaceHeightAt`：按地形网格的三角面（含 LayerHeight/RampLift）插值，替掉双线性 `HeightAt` —— 双线性在 tile 内部会落到网格下方。
+6. 选中状态留在 `UnitSceneComponent.Selected`，圈由场景按 `_selected` 统一画，`Ring` 与程序化圆环网格删除。
 
 ## 16. 队伍色回绕，幻象不变色，虚无没反应
 
@@ -442,7 +444,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 2 | 2 | 保留：尺寸算错，烘焙阴影等于全废 |
 | 3 | 2 | 保留：地表花纹、斜坡、破面 |
 | 4 | 2、3 | 保留：客户端并进阴影图，Launcher 另做黑片 |
-| 7 | 2、4 | 保留：水面参数没读 |
 | 8 | 2 | 保留：偶发大浪 |
 | 9 | 2、3 | 保留：区域天气分支死 + var 语义错 |
 | 10 | 2、3 | 保留：客户端有 SceneLighting/DynamicLight，Launcher 没有 |
@@ -450,7 +451,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 13 | 2、3 | 保留：悬空雾面 vs 片元采样 |
 | 14 | 2 | 保留：雾里建筑状态 |
-| 15 | 2 | 保留：选中圈与影子两块贴片 |
+| 15 | 2 | 保留：影子贴片 |
 | 16 | 2 | 保留：颜色与状态色 |
 | 17 | 2 | 保留：贴地、姿态、朝向 |
 | 18 | 2 | 保留：动画优先级 |
@@ -505,7 +506,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 2. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
 3. **第 26 条**（镜头）的实现可以先做，验收等 JASS。
 
-底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 4、7、8、9、12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
+底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 9、12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
 单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**20–25**）里 20 的「接上 `world.Effects`」性价比最高，48 的技能贴花跟 21 一起做最省。
 
