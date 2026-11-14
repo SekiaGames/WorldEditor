@@ -19,42 +19,12 @@
 
 **排序方式：从底层往表层。** 先数据读取，再地形与地表，再水与天气，再光照大气与迷雾，再单位实体，再特效与声音，最后镜头输入、加载流程、界面，结构问题放在最后作为横切项。
 
-**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 58，下一条新任务从 59 起。**
+**本次是整体重排，编号全部重排过一次；从那以后恢复「删掉不复用、新任务往后续」的规则。当前排到 59，下一条新任务从 60 起。**
 
 ## 范围
 
 - 起点是地图选择界面。客户端首屏（公告页、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表都不在本轮范围内，Launcher 保持固定地图路径，地图只从 `test/map_gmap` 读。
 - Launcher 不跑 JASS 与触发器，所以「只有脚本能触发」的效果不进清单，这一条在文末「已排除的候选」里有对照。
-
----
-
-## 一、资源与数据
-
-## 二、地形与地表
-
-## 三、水与天气
-
-## 四、光照与大气
-
-## 12. 天空没有太阳月亮，选天空的依据也不对
-
-客户端单独加载 `Environment\Sky\Sky\skyLight.mdx`（日月就在这个模型里），按 `SunMoonAngle(timeOfDay)` 每 24 小时转一圈跟着相机走；天空用 `GameplayConfig.SkyboxType`（war3mapMisc 的 0..14 索引）选，`SetSkyModel` 可以覆盖。
-
-Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extract 里其实有 `skyLight.tscn`）；天空按地形 tileset 字符猜，自定义天空和 war3mapMisc 都不生效。另外多了一层 `PanoramaSkyMaterial` 全景底，天空壳半透明处会露出亮带。
-
-要做：加载 `skyLight` 并按时辰旋转；天空改按 `SkyboxType` 选；全景底只在完全没有天空壳时兜底。
-
-已完成（Launcher5 `任务12` 提交）：
-
-- **顶栏 24 小时时间指示器补上了**：新增 `Game/Rendering/TimeOfDayViewport`，用 `SubViewport` + 正交相机把皮肤里 `TimeOfDayIndicator`（`UI\Console\<race>\<race>UI-TimeIndicator.mdl`）画到设计空间。位置不是手写坐标，而是取模型自身包围盒乘 `FdfScale.ToDesignUnits(1280)`：`x 431.36 / y -9.79 / 163.84×91.71`，正好落在顶栏中段 `439~587` 的空缺上，与客户端 `RenderTimeOfDayIndicator` 的投影口径一致。绘制顺序放在 `_root.Render` 之前，和客户端「先画指示器再画 FDF 帧」一致。
-- **anim 由时辰驱动**：`Stand` 序列长 60，`SetClock(时)` 直接 `Seek(时/24×60)`，日月走模型自带的 `GeoSphere01` 旋转轨道与 geoset 显隐轨道，不再自己算角度。
-- **数字时间显示出来了**：`TopBarFrame._timeText` 一直存在但从来没显示——`SetChromeVisible` 全仓无人调用，`Visible` 初始 false 就再没翻过来。现在建 HUD 时按客户端 `SetChromeVisible(!UseFdfResourceBar)` 的口径调 `SetChromeVisible(true)`。
-- **UI 模型材质换了一套**（Extract 那份 `war3_model_opaque` 在这只模型上取不到 frame 贴图 alpha，石框整个被 discard 掉）：不透明层改 `StandardMaterial3D`（unshaded、cull off、nearest、alpha scissor 0.5）；ADD 层改用本工程自带的加色 shader。ADD 在透明离屏里会把 alpha 也累加成不透明，导致「黑方块」，所以按亮度写 alpha：`ALBEDO = rgb·a·gain`、`ALPHA = a·max(rgb)·gain`。代价是这三层 `geoset_tint` 的动画轨道不再驱动颜色（材质已不是原 ShaderMaterial），显隐轨道和旋转轨道照常生效。
-- **天空改按 `SkyboxType` 选**：`MapSource` 从 gmap 的 `war3mapMisc.txt` 读 `SkyboxType`；`SkyDomeRenderer` 用客户端 `SkyboxRenderer.SkyModels` 那张 0..14 表选壳，`SkyboxRenderer` 的全景底只在壳模型缺失时创建（原来两级都建，全景底从半透明处漏出亮带）。
-- **日月载入 `Environment\Sky\Sky\skyLight`**：跟相机同心，`Rotation.Y = 2π·时/24`（客户端是 `CreateRotationZ`，MDX 的 Z-up 映射到 Godot 就是绕 Y）。skyLight 自带的天空壳（3911）与 8 片云条（5600~6500）会把地形盖住——这些层在客户端是 `BackgroundPass` 不写深度、先画后被地形覆盖，Godot 里没法这么排，所以按包围盒尺寸 >3000 剔除，只留日月两块（716/450）。
-- 验证：`--play="(4)Turtle Rock.gmap" --rendering-driver opengl3 --shot=...` 看顶栏；小时可以用 `--day-seconds=` 快进。`[SKY] 穹顶 ... 日月 已载入`、`[TOD] 时间指示器 ... 序列 Stand 长 60 秒 区域 ...` 是日志取证口。日月是否在天上肉眼不好验（顶视角基本看不到天空），按 8 点/12 点打印过日月中心随时刻转动、高度恒为 1057。
-
-未做：`skyLight` 的云层（上面剔了）；`geoset_tint` 动画；`SetSkyModel`（Launcher 没有 JASS 运行时，`SkyModelOverride` 这条没有对应物）。
 
 ---
 
@@ -505,3 +475,11 @@ Launcher 的 `FogOfWar.Upload()` 只调 `SceneFog.SetFogOfWar(...)` 存静态字
 Launcher 把两件事塞进了同一个类：`GameCore/L4_Composition/Game/Environment/SceneFog.cs`——名字、路径都和客户端对不上，类里同时有 `fog_color` / `fog_params`（大气雾）和 `fog_of_war_*`（战争迷雾），`SceneLightRig.Apply` 里一次调两样。
 
 要做：拆开。战争迷雾那半改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关三项；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
+
+## 59. 坡面姿态在客户端是场景 partial 方法，Launcher 抽成了独立类
+
+客户端 `GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489` 是 `internal static (float Pitch, float Roll) ComputeUnitTerrainTilt(Vec2 position, float facing, float sampleRadius, float maxPitchDegrees, float maxRollDegrees, Func<float,float,float> heightAt)`——挂在 `War3GameScene` 这个 partial class 上，同目录的 `Diagnostics/UnitPresentationDataRegression.cs:299` 也直接调它。
+
+Launcher 写成 `GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的 `internal static class UnitTerrainTilt.Compute(...)`。算法逐行一致（四点采样、`atan2(前-后, 2r)`、`clamp` 到 `maxPitch/maxRoll`、负角度当固定倾角），差的是归属与位置：客户端在场景 partial 里，Launcher 单开一个类还放进了 `Rendering/`。
+
+要做：按客户端归位——方法搬进 `War3GameScene` 的 partial（可以放在 `Scenes/War3GameScene/Presentation.cs` 同目录的新 partial 文件里，类名仍是 `War3GameScene`），调用点从 `UnitSceneComponent` 改成经场景转调；如果确认 Godot 侧 `UnitSceneComponent` 拿场景引用不方便，退一步也要放到 `GameCore/L4_Composition/Game/Scenes/War3GameScene/` 下而不是 `Rendering/`，并在类名上体现它是场景的一部分。
