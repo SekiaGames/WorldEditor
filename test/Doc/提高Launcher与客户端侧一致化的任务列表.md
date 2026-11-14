@@ -8,7 +8,7 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..33，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **34** 起，做完一条删一条，序号不复用。
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..34，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **35** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
@@ -60,24 +60,7 @@
 ## 模块五：输入与镜头
 
 > 键鼠语义、Esc/菜单与快捷键。
-
-### 21. Esc 语义、顶部按钮和选项界面（V1 #40，部分修复）
-
-- **客户端**：Esc 分层取消（取消待定命令 → 关菜单；2026-10-22 起不再开菜单），菜单开关是 F10（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Input.cs:1349-1351`）；Backspace 循环主城（`:1306`）、PageUp/Down 缩放（`:1340`）、Ctrl+C/Alt+C 居中、Alt+F 阵型、Alt+G/T/A 小地图；Esc 菜单用 FDF `EscMenuMainPanel`；`AboutDialogFrame` 有镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/AboutDialogFrame.cs`）。
-- **Launcher**：Esc 现在会先取消施法、再关菜单、最后开菜单（`Launcher/GameCore/L4_Composition/Game/Input/War3InputComponent.cs:41-47`），但放置建筑时 `_placingId` 不在取消分支里，Esc 会弹菜单且幽灵建筑还在；没有 F10/Backspace/PageUp/PageDown/Ctrl+C/Alt+F，Alt+G/T/A 也没有调用者。`TopBarFrame` 暴露了 `MenuButton/QuestButton/AlliesButton`（`TopBarFrame.cs:31`），但没有任何 `.Clicked +=`，顶部按钮可点没反应；Esc 菜单和胜负面板是 `ColorRect + Label + Button` 手搓，坐标写死在 1600×900；没有选项界面。
-- **表现差异**：放置时按 Esc 关不掉幽灵建筑；想开菜单只能按 Esc；编队/镜头快捷键缺失；顶部菜单/任务/盟友按钮点了没反应；没有任何画质/音量/镜头设置。
-- **要做**：把放置建筑也纳入「取消优先」，补 F10；顶部菜单按钮接 Esc 菜单（任务/盟友按范围隐藏）；选项界面和音量一起做。
-
-> **执行结论（Launcher1，待合并）**：
-> - Esc 改为客户端分层语义（`War3InputComponent`）：聊天输入 → 关闭选项页 → 关闭 Esc 菜单 → 取消建造/施法待定（`CancelPendingMode`，幽灵建筑随之清除）→ 退出学习页；不再用 Esc 开菜单。F10 只负责开合 Esc 菜单。
-> - 补齐镜头热键：Backspace 循环己方主城并居中、PageUp/PageDown 走 `War3CameraComponent.Scroll`、Ctrl+C/Alt+C 居中到主选单位。Alt+F 与 Alt+G/T/A 仍归第 26 条，未在本条改动。
-> - 顶栏：任务/盟友/聊天按钮按范围隐藏，只保留「菜单」。客户端 `MeleeHudController.OnMenuClicked` 的「菜单」按钮实际切的是 `AboutDialogFrame`（设置页），不是 F10 的 Esc 菜单；这里按客户端把顶栏菜单接到设置页，Esc 菜单由 F10 打开。Esc 菜单新增「选项」按钮，与客户端 `EscMenuFrame.OptionsRequested` 同路径打开设置页。
-> - 新增 `GameUserSettings`（客户端同名文件同名类）持久化镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率，写到 `~/Documents/openwc3-launcher-settings.ini`；退出地图与关闭设置页都会落盘。
-> - 新增 `AboutDialogFrame`（客户端同名文件同名类），控件走 HUD 的 `UiRoot`/`UiEventRouter` 与设计单位布局：镜头距离/平移灵敏度/音乐/音效滑条，帧率 30/60/90/120/144/不限，渲染倍率 0.5x–1.0x，关闭与退出地图按钮。已去掉客户端仅安卓使用的触屏矫正与世界蓝条。
-> - 生效链路：镜头距离/灵敏度走 `SetCameraDistanceScale`/`SetCameraPanSensitivity`；音效走 `War3AudioSystem.SetVolume`（含 UI/单位/战斗音）、音乐走 `War3MusicPlayer.SetVolume`、天气环境音走 `WeatherRenderer.SetVolume`；帧率写 `Engine.MaxFps`，渲染倍率写 `Viewport.Scaling3DScale`（帧率与倍率变更即时落盘）。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；headless `--ui-hud` 创建设置页 `visible=True`、根帧 14 连续渲染无异常；`--play="(4)Turtle Rock.gmap" --no-ai --no-music` 正常进入 `[HUD] 界面已接管`；设置读写回环实测 2.5/1.75/0.3/0.4/90/0.75 全部还原；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知失败 `utod 研究项 4 vs 2`。
-> - 未做（留给后续条目）：Esc 菜单与胜负面板仍是手写 `ColorRect + Label + Button`（FDF 绑定取舍见第 30 条），坐标仍按 1600×900；菜单打开时未像客户端 `AutoPauseRequested` 那样自动暂停模拟。
-> - 合并注意：只改 `Launcher1`，未涉及 `Extract`/`extract.pck`。
+> 任务 21（Esc/F10/顶栏/选项设置）已落地并合并到 Launcher，编号不复用。
 
 ## 模块六：界面
 
@@ -111,6 +94,15 @@
 - **Launcher**：`MeleeHudController.SetHint` 只做 `_hint = text`（`MeleeHudController.cs:150`），`_hint` 没有读者；`SetQueue(string)`、`SetClock(string)` 是空方法（`:72`、`:139`），`SetPlayerInfo`、`SetBuffs`、`SetUnitSummary` 只写字段没人读（`:74`、`:141`、`:147`）。全仓没有 `CommandErrorFrame`；`TooltipFrame.cs` 只有 112 行，固定 280 宽纯色底 + 按 34 字符硬折行。
 - **表现差异**：资源不足点建造、修理由非农民点残血建筑、Ctrl+1 存编队、子组切换、放置失败等 70 多处调用，一句提示都看不到；悬停资源/数值/Buff 没有说明；长文本用固定宽度硬折行。
 - **要做**：先补客户端的 `CommandErrorFrame`（不要造等价物，就用这个名字和这套行为），再补信息面板悬停，最后升级 `TooltipFrame`；Buff 图标本身缺失另见第 27 条。
+
+> **执行结论（Launcher4，已实现，待合并）**：命令提示、资源/信息面板悬停、TooltipFrame 三项都已接上。
+> - `CommandErrorFrame`：新增 `GameCore/L4_Composition/Game/UI/CommandErrorFrame.cs`，与客户端同名同行为——黄字 `(1,.8,0)`、几何 `0.21/0.23/0.38/0.05 × 1280`、字号 `0.015 × 1280`、底边压在 console 上方、寿命 `3 + 0.1×字数` 秒后再淡出 3 秒。`GameHudScreen` 把它挂到根帧并每帧 `Update`；`MeleeHudController.SetHint` 改为调 `ShowCommandError`，现有 83 处提示调用立刻有读者。
+> - 悬停分派：`GameHudScreen.OnHoverChanged` 按帧名分派——`ResIcon0/1/2`、`ResVal0/1/2` → 金币/木材/人口，`ResVal3` → 维修费用；`UnitAttackIcon/Label`、`UnitArmorIcon/Label`、`UnitStr/Agi/Int Label`、`UnitStatusLabel`、`UnitXpBar` → 攻击/护甲（含 `DAMAGE_*` / `ARMOR_*` 种类行）、三围（`STRENGTH_HILIGHT` + `BONUS_*`）、状态、经验。文案优先读 FDF：用 `FdfUiFactory` + `FdfSource` 加载 `GlobalStrings.fdf` / `InfoPanelStrings.fdf`，缺键时回落到原版中文兜底。Buff 图标悬停留给第 27 条（控件还没建）。
+> - `TooltipFrame`：按客户端结构重写为名称 / 成本行 / 描述 / Ex 四段；宽度用渲染端 `MeasureTextLineWidth` 实测、`UiText.WrapToWidth` 整词折行（去掉固定 280 宽与 34 字符硬切）；宽度 = `max(名称, min(0.2, 描述), 成本行)`，Ex 版 = `max(名称, 0.21)`；四个成本图标槽按 `ToolTipMana/Gold/Lumber/SupplyIcon` 取皮肤纹理并压紧排布；Ex 段白字；面板跟随悬停控件并钳在屏幕内缩 `0.01×1280`，无锚点时仍回右下 console 上方；背景改九宫 `ToolTipBackground/ToolTipEdge`，底层保留不透明 `#101824`。
+> - 富文本：`GodotUiRenderDevice.DrawTextLine` 增加 `|cAARRGGBB…|r` 分段着色（`||` 字面量），度量仍按纯文本、绘制按分段颜色连续推进；FDF 的 `|Cffffcc00…|R` 现在真正着色。
+> - 回归：新增 `--ui-hud-probe`，10 条断言全过（命令提示显示、`SetHint` 进提示、金币/木材/维修费、攻击/护甲含种类行、力量、经验）；`--combat-probe` 全部通过；`--state-probe` 仍只剩改动前就有的 `utod 研究项` 一项失败。
+> - 视觉验证：窗口模式跑 `Godot --path Launcher4 -- --ui-hud --shot=/tmp/hud.png@3`，可看到 console 上方的黄字提示与 tooltip 的九宫边框、实测折行、黄色高亮；headless 的 dummy 渲染器截图会 NRE，不能用。
+> - 未在本轮：成本图标槽已就绪，但命令卡数据仍是纯文本 `Cost`（没有结构化四槽，图标暂时不会出现）；Buff 图标槽与单位血蓝条随第 27 条/世界单位悬停另做；`SetQueue(string)`、`SetPlayerInfo`、`SetClock(string)` 目前没有可显示的构件，不在本条三步范围内。
 
 ### 25. 聊天和控制组各写了一套（V1 #41）
 
@@ -158,6 +150,13 @@
 - **表现差异**：冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、ADD 高亮/光晕偏暗；FDF 皮肤改了也不会反映到 HUD。
 - **要做**：先补三个渲染能力和 ADD 混合，再决定 FDF 绑定是接上还是删掉。
 
+### 34. 打开设置页时没有暂停模拟（新增）
+
+- **客户端**：`MeleeHudController.AutoPauseRequested` 在 `_aboutDialog.Visible` 等对话框可见时为 true（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/MeleeHudController.cs:551`），`War3GameScene/Ui.cs:34` 把它作为 `MenuPauseRequested` 交给游戏循环暂停模拟。
+- **Launcher**：`GameHudScreen` 只负责 `AboutDialog` 的显示/隐藏（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:247-253`），没有把可见性接到 `Paused`；`Paused` 只由 Esc 菜单的暂停按钮切换（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:70-74`），而模拟只在 `Paused` 时停（`Lifecycle.cs:794`）。
+- **表现差异**：打开选项/设置页时单位仍在移动、AI 仍在出兵、计时继续；客户端会自动暂停模拟。
+- **要做**：让设置页的显示/关闭驱动 `Paused`（或实现 `AutoPauseRequested`），关闭时恢复原暂停状态；Esc 菜单本身不算，按客户端口径只认对话框。
+
 ## 模块七：工程结构（横切）
 
 > 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
@@ -180,13 +179,12 @@
 
 ---
 
-## 核对结果（V1 剩余 12 条）
+## 核对结果（V1 剩余 11 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
 | 38 | 仍成立 | 无 `CommandAtHotkey`/`FindNativeSlot`；`QuickCast.cs:411-417` 只认物编热键 |
 | 39 | 仍成立 | `SetHint` 只赋值（`MeleeHudController.cs:150`），无 `CommandErrorFrame`；Buff 图标另立第 27 条 |
-| 40 | 部分修复 | Esc 已先取消施法/关菜单（`War3InputComponent.cs:41-47`）；放置取消、F10、快捷键、顶栏、选项仍缺 |
 | 41 | 仍成立 | 聊天独立 CanvasLayer（`ChatFrame.cs:23-28`），无 `ControlGroupFrame` |
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
@@ -223,16 +221,12 @@
 
 模块顺序是从底层到表层，模块内从上往下做即可。两个例外：
 
-1. **第 21、22、24 条**是「按了没反应/看不到提示」的功能性缺陷，可以提前插队。
-2. **第 6、8、9 条与第 17 条**共用环境/雾/天气代码，建议连着做，避免来回改同一批着色器与加载时序。
-
-> **复核评价**：这条串法只对一半。17 是 `war3_particle.gdshader` 引入雾项，和 9 确实同批；6 是地形/悬崖顶点光照接动态光，8 是天气粒子改实例化，各自改的是不同着色器文件，跟 17 没有共用面。把 17 单独和 9 绑在一起，6 和 8 留在模块二按序做，改动面更小。
-
-底层里最容易被玩家一眼看出的是 **第 11 条（转身）**、**第 12 条（Buff 技能）**、**第 13–15 条（物品）**；特效与声音里 **第 18 条（飞弹）** 和 **第 19 条（音乐/脚步）** 最直观。
+1. **第 22、24 条**是「按了没反应/看不到提示」的功能性缺陷，可以提前插队。
+现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 22、24、26、27、28 条** 最直观。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **34** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **35** 开始。
 - 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
