@@ -79,6 +79,12 @@
 - **表现差异**：打开选项/设置页时单位仍在移动、AI 仍在出兵、计时继续；客户端会自动暂停模拟。
 - **要做**：让设置页的显示/关闭驱动 `Paused`（或实现 `AutoPauseRequested`），关闭时恢复原暂停状态；Esc 菜单本身不算，按客户端口径只认对话框。
 
+> **执行结论（Launcher4，已修复，待合并）**：按客户端 `AutoPauseRequested` 口径实现，不改写手动暂停状态。
+> - `GameHudScreen` 新增 `AutoPauseRequested => AboutDialogVisible`（后续任务/盟友对话框补齐时并进同一属性）。
+> - `War3GameScene` 新增 `MenuPauseRequested`（读 `_newHud.AutoPauseRequested`）与 `SimulationBlocked => Paused || MenuPauseRequested`；`_PhysicsProcess` 的模拟入口从 `if (Paused)` 改为 `if (SimulationBlocked)`。世界推进、时钟、订单、AI 波次与各家 AI 都在这一个入口后面，因此设置页打开时全部停步；`Paused` 本身不被改写，关页即恢复，Esc 菜单暂停与设置页叠加时仍保持暂停（不会出现“关设置页把 Esc 暂停一起解掉”）。
+> - 回归：新增场景探针 `--pause-probe`（`War3GameScene.RunPauseProbe`），在 Turtle Rock 实跑 6 条全过：初始未暂停 / 设置页打开暂停模拟 / 不改写手动暂停 / 关闭恢复 / 手动暂停下开关设置页仍暂停 / 暂停状态还原。`--ui-hud-probe` 增加“设置页请求暂停、关闭恢复”两条，全部通过；`--combat-probe` 全过；`--state-probe` 仍只剩基线的 `utod 研究项`。
+> - 复验：进任意测试图，按 Esc →「选项」打开设置页，单位/AI/昼夜计时应立即停住；点「返回」关闭后继续。点 Esc 菜单的暂停按钮再开关设置页，暂停不会被设置页关闭顺手解除。
+
 ### 35. 命令卡悬停说明没有结构化成本图标（新增）
 
 - **客户端**：`TooltipFrame` 接收结构化 `costs`，按 `ToolTipMana/Gold/Lumber/SupplyIcon` 画四个成本图标槽并显示数字（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs`）。
@@ -99,6 +105,13 @@
 - **要做**：拆开。战争迷雾改叫 `FogOfWarUniforms` 并挪到 `Game/Rendering/`，只留雾纹理/UV/开关；大气雾留在 `War3FogConfig`，由地形、悬崖、水面、模型各自在材质创建处传参，`SceneLightRig.Apply` 只负责光照。
 
 > **复核评价**：命名与归属那一半属规则 5，成立。「各渲染器自己在材质创建处传参」属于行为重构，落在规则 1/3 上，超出了规则 5 的题面，方向是对的，保留。做的时候和第 9 条一起收，顺序是先拆后修。
+
+> **执行结论（Launcher2，待合并）**：两类雾已拆开，命名与路径对齐客户端。
+> - 战争迷雾：删除 `Game/Environment/SceneFog.cs`，新增 `Game/Rendering/FogOfWarUniforms.cs`，只保留 `Texture/Uvp/Enabled` 与 `Publish/Reset/Register/Upload`，只写 `fog_of_war_texture/uvp/enable`；`FogOfWar` 改为调用 `Publish`/`Register`，水面在材质创建时注册为接收者，删掉 `BindWaterFogOfWar` 与每 0.2 秒的单独下发。
+> - 大气雾：留在 `War3FogConfig`，新增 `Current/SetCurrent/Apply/ApplyTo`；`LoadTextures` 从 w3i 取值后 `SetCurrent` 并 `Reset` 战争迷雾状态，地形、悬崖、水面、装饰物、单位、变形、技能特效、弹道、丝带、集结点旗帜、岸浪、天空都在材质创建处写 `fog_color`/`fog_params`（`SceneLightRig.Apply` 不再碰雾）。
+> - `SceneLightRig.Apply` 现在只写 `war3_scene_direction/color/ambient`，不再顺带写两种雾。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 新增 `[FOG]` 材质检查，Turtle Rock/BootyBay 上地形、悬崖、单位、水面四类材质均为 `fog_of_war=1` 且 `fog_params` 与当前配置一致；`--state-probe` 仍只剩基线已知失败 `utod 研究项`。两张自带地图的 w3i 都是 `useTerrainFog=0`，非零大气雾数值无法在这两张图上肉眼验收，代码路径与材质检查已覆盖。运行时截图因 Metal fence 超时全黑（并行 Godot 占用 GPU），不作为画面证据。
+> - 合并注意：改动面覆盖 `SceneLighting.cs`、`War3FogConfig.cs`、`MapWorldBuilder*`/`TerrainGridFactory.cs`、`WaterRenderer.cs`、`DoodadRenderer.cs`、`UnitSceneComponent.cs`、`Units.cs`、`Presentation.cs`、`MdxRibbonRenderer.cs`、`ShorelineWaveRenderer.cs`、`SkyDomeRenderer.cs`、`RallyPointDisplay.cs`、`FogOfWar.cs`、`Lifecycle.cs`/`Environment.cs`，与其它 Launcher 副本冲突概率高；未改 Extract，无需重建 `extract.pck`。
 
 ---
 
