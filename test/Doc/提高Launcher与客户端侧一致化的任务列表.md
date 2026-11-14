@@ -47,21 +47,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 29（超宽屏居中/UI 字号）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
-
-### 35. 命令卡悬停说明没有结构化成本图标（新增）
-
-- **客户端**：`TooltipFrame` 接收结构化 `costs`，按 `ToolTipMana/Gold/Lumber/SupplyIcon` 画四个成本图标槽并显示数字（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs`）。
-- **Launcher**：`GameHudScreen.OnHoverChanged` 已把 `button.TooltipCosts` 传给 `TooltipFrame`（`GameHudScreen.cs:286`），但命令卡的 `CommandEntry.Cost` 仍是拼好的字符串（`MeleeHudController.cs:12`），构建命令卡时从未设置 `TooltipCosts`；目前只有 `InventoryFrame` 显式置空（`InventoryFrame.cs:77`）。
-- **表现差异**：悬停建造/训练/研究按钮时只有一行文字成本，没有客户端的金/木/人口/法力图标。
-- **要做**：给 `CommandEntry`/命令卡绑定补结构化成本字段，训练/建造/研究/升级/技能分别从物编填金、木、人口、法力，再写入 `TooltipCosts`。
-
-> **执行结论（任务35，Launcher5，待合并）**：已修复。
-> - 数据：`CommandEntry` 增加 `TooltipCosts`（法力/金/木/人口四槽，0 不显示）与 `CommandEntry.Costs(...)`；`CommandSlotView` 增加 `Costs`，`CommandCardBuilder` 写到 `ButtonFrame.TooltipCosts`，直接复用现成的 `TooltipFrame` 四个 `ToolTip*Icon` 图标槽。
-> - 填值：训练/商店单位取 `GoldCost/LumberCost/FoodUsed`；建造页取建筑同三项；研究取 `GoldFor/LumberFor`；升级取目标建筑金/木；技能取 `ManaCost`；商店物品取金币。混选聚合时成本随主位一起复制。
-> - 去重：训练/建造/研究/升级/商店这些纯资源条目不再把「385金/205木」追加到说明正文，只留图标；技能在就绪时也只留法力图标，冷却/开启/自动等状态文字仍保留。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 日志确认训练 `0,135,0,2`、建造 `0,385,205,0`、研究 `0,125,175,0`、技能 `65,0,0,0`；截图悬停建造页「城镇大厅」显示金/木两个图标与 385/205，正文不再重复成本文字；`--card-probe` 回归 0 条 SCRIPT ERROR。
-> - 查看：合并后进图选农民开建造页、选兵营/铁匠铺开训练研究页，悬停对应按钮即可看到图标成本；技能卡悬停则显示法力图标。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 29（超宽屏居中/UI 字号）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）、任务 35（命令卡结构化成本）已落地并合并到 Launcher，编号不复用。
 
 ### 36. Esc 菜单与胜负面板固定 1600×900，超宽屏不居中（新增）
 
