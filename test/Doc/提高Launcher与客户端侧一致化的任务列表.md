@@ -42,33 +42,6 @@
 
 要做：闪电改成确定性抖动 + UV 滚动；弹道补俯仰和迷雾裁剪；把黄球和蓝盘去掉。
 
-## 23. 飘字是贴在 3D 世界里的字，而且是「Miss」
-
-客户端把伤害/资源数字和 `CreateTextTag` 都交给 `TextTagFrame` 在屏幕空间投影画，字号按 framebuffer 高度换算，速度/寿命/淡出点来自 `UI\MiscData` 可覆盖的样式表，之后在屏幕上飘、不跟单位。
-
-Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小；落空文本是 **Miss**（灰、0.9s），客户端是 **未命中**（红、3s）；普通伤害寿命 0.95s 对 0.4s，暴击 1.6s 对 2s；木材赏金客户端默认不显示，Launcher 会飘一个金色 `+N`；暗影突袭的绿色 `N/N!` 完全没有；可见性只判迷雾不判隐身。
-
-要做：改成屏幕空间文字并接样式表；文本、颜色、时长逐项对齐。
-
-**已完成**（2026-11-14）：
-
-1. **数据搬到模拟层**：新增 `Src/Core/FloatingText.cs`（客户端同名同路径）——`World.Floats` 在 `Advance()` 里按 `TickSeconds` 老化，文本、颜色、寿命、淡出点、`WorldHeight` 都在出字那一刻定住，之后不跟单位。`ShowCriticalStrike / ShowOrdinaryDamage / ShowMiss / ShowManaBurn / ShowShadowStrike / ShowResource / ShowBounty` 七个入口与客户端一一对应，`CanShow` 管迷雾与隐身/反隐（原来只判迷雾）。
-2. **样式表**：新增 `Src/Configuration/War3FloatingTextStyle.cs`（客户端同名同路径），`War3GameplayConfig` 挂九套样式。颜色/速度/寿命/淡出点读 `UI\MiscData.txt` 的 `Misc.{前缀}Color|Velocity|Lifetime|FadeStart`，字号读 `UI\MiscUI.txt` 的 `Misc.{前缀}Height`（都是 0.024 归一化帧缓冲高度），缺键回落经典 TFT 默认值。实测值：暴击红 `255,0,0` 5s/淡出 2s、未命中红 3s/淡出 1s、金币 `255,220,0`、木材 `0,200,80`、法力燃烧 `82,82,255`、暗影突袭 `160,255,0`。
-3. **屏幕空间渲染**：新增 `GameCore/L4_Composition/Game/UI/TextTagFrame.cs`（客户端同名同路径）——池化 `StringFrame`，一条飘字一个帧，`FontLineHeight` 按帧缓冲高度换算并四舍五入（1080p 下 18.49 设计单位），速度按 `velocity × age × 屏幕高/0.6` 换算，超出视口 48px 剔除。HUD 在 `_Draw` 里、所有界面之前绘制（`RenderWorldText`），所以数字永远不会盖在 HUD 上。
-4. **逐项对齐**：落空文本改成「未命中」；普通伤害数字只对非魔法伤害出、受「伤害数字显示」开关与迷雾双门禁；暴击出在攻击者头上、用减伤前数值；木材赏金按样式表 `alpha 0 / height 0` 保持不显示；暗影突袭补上 `75!`（首段，用实际扣血）与每跳的绿色 `10`（`PeriodicDamageBuff` 的 `DamageType.ShadowStrike` 分流）。
-
-验证（`(4)Turtle Rock.gmap`，`--float-probe --fog-off`，终端打 `[FLT]`）：
-
-| 用例 | 结果 |
-|---|---|
-| 九种反馈的样式 | 颜色/寿命/透明度与 `UI\MiscData` + `UI\MiscUI` 逐项相同（见上） |
-| 未命中 | 文本「未命中」、红、3s，不再有 `Miss` |
-| 木材赏金 | `+40` 寿命 0、透明 0，也就是不显示 |
-| 镜头拉远 2.4 倍 | 字号 `18.49 → 18.49`，投影高度 `241 → 159`（字号不再随镜头缩放） |
-| 「伤害数字显示」关/开 | 同一条普通伤害数字进视图 0 条 / 1 条 |
-
-未做：`CreateTextTag` 这类脚本接口（Launcher 没有 JASS 运行时）。
-
 ## 24. 单位应答变成 3D 音，命中音只认木头和肉
 
 - **应答**：客户端 `War3AckSoundService` 有完整节流——连续选择计数、Pissed 索引、每单位「语音时长 +250ms」冷却、同名去重，并返回时长给头像做说话动作；应答是 `Play2D`。Launcher 只有「12 秒内点 4 次切 Pissed」，没有节流，语音会叠在一起；而且走 `AudioStreamPlayer3D` 放在单位坐标 +80 高，点远处单位时又小又偏声道。
