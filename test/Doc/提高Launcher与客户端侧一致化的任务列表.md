@@ -77,6 +77,17 @@
 - **表现差异**：放置时按 Esc 关不掉幽灵建筑；想开菜单只能按 Esc；编队/镜头快捷键缺失；顶部菜单/任务/盟友按钮点了没反应；没有任何画质/音量/镜头设置。
 - **要做**：把放置建筑也纳入「取消优先」，补 F10；顶部菜单按钮接 Esc 菜单（任务/盟友按范围隐藏）；选项界面和音量一起做。
 
+> **执行结论（Launcher1，待合并）**：
+> - Esc 改为客户端分层语义（`War3InputComponent`）：聊天输入 → 关闭选项页 → 关闭 Esc 菜单 → 取消建造/施法待定（`CancelPendingMode`，幽灵建筑随之清除）→ 退出学习页；不再用 Esc 开菜单。F10 只负责开合 Esc 菜单。
+> - 补齐镜头热键：Backspace 循环己方主城并居中、PageUp/PageDown 走 `War3CameraComponent.Scroll`、Ctrl+C/Alt+C 居中到主选单位。Alt+F 与 Alt+G/T/A 仍归第 26 条，未在本条改动。
+> - 顶栏：任务/盟友/聊天按钮按范围隐藏，只保留「菜单」。客户端 `MeleeHudController.OnMenuClicked` 的「菜单」按钮实际切的是 `AboutDialogFrame`（设置页），不是 F10 的 Esc 菜单；这里按客户端把顶栏菜单接到设置页，Esc 菜单由 F10 打开。Esc 菜单新增「选项」按钮，与客户端 `EscMenuFrame.OptionsRequested` 同路径打开设置页。
+> - 新增 `GameUserSettings`（客户端同名文件同名类）持久化镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率，写到 `~/Documents/openwc3-launcher-settings.ini`；退出地图与关闭设置页都会落盘。
+> - 新增 `AboutDialogFrame`（客户端同名文件同名类），控件走 HUD 的 `UiRoot`/`UiEventRouter` 与设计单位布局：镜头距离/平移灵敏度/音乐/音效滑条，帧率 30/60/90/120/144/不限，渲染倍率 0.5x–1.0x，关闭与退出地图按钮。已去掉客户端仅安卓使用的触屏矫正与世界蓝条。
+> - 生效链路：镜头距离/灵敏度走 `SetCameraDistanceScale`/`SetCameraPanSensitivity`；音效走 `War3AudioSystem.SetVolume`（含 UI/单位/战斗音）、音乐走 `War3MusicPlayer.SetVolume`、天气环境音走 `WeatherRenderer.SetVolume`；帧率写 `Engine.MaxFps`，渲染倍率写 `Viewport.Scaling3DScale`（帧率与倍率变更即时落盘）。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；headless `--ui-hud` 创建设置页 `visible=True`、根帧 14 连续渲染无异常；`--play="(4)Turtle Rock.gmap" --no-ai --no-music` 正常进入 `[HUD] 界面已接管`；设置读写回环实测 2.5/1.75/0.3/0.4/90/0.75 全部还原；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知失败 `utod 研究项 4 vs 2`。
+> - 未做（留给后续条目）：Esc 菜单与胜负面板仍是手写 `ColorRect + Label + Button`（FDF 绑定取舍见第 30 条），坐标仍按 1600×900；菜单打开时未像客户端 `AutoPauseRequested` 那样自动暂停模拟。
+> - 合并注意：只改 `Launcher1`，未涉及 `Extract`/`extract.pck`。
+
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
