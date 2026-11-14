@@ -27,6 +27,7 @@
 ## 模块二：地形与环境
 
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
+> 任务 7（装饰物死亡姿态）已落地并合并到 Launcher，编号不复用。
 
 ### 6. 地形与悬崖不接收 MDX 动态光（V1 #47）
 
@@ -41,21 +42,6 @@
 > - 水面未接：客户端 `Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Water.frag.glsl:11-13`、`:26-27` 只吃方向光，没有 `uDynamicLights`；按 AGENTS 规则 6 以客户端为准，水面保持原样，任务原文「三个着色器」中的水面一项不做。
 > - 验证：`dotnet build Launcher.csproj` 0 错误；Godot headless 解析两份着色器成功且能读到新增 uniform；Turtle Rock 运行时日志出现「地形动态光 4」，确认收集/下发链路执行。截图受并行 Launcher 实例占满 GPU 影响（Metal fence 超时）全黑，未作为画面证据。
 > - 合并注意：着色器改动在共享的 `Extract` 工作区（与其它任务共用），需随本任务一起合入并重新生成 `extract.pck`；不重建 pck 时 Launcher 端的新 uniform 不会生效。
-
-### 7. 树和装饰物死亡瞬间隐藏，没有倒地/死亡姿态
-
-- **客户端**：`DoodadRenderer` 启动时保留 `life <= 0` 的实例并记录死亡计数（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/DoodadRenderer.cs:342-355`），死亡/被砍时解析 `death` 序列（`:106-108`、`:684-692`），非循环序列播到末帧；看不到时按 `TreeKnowledge` 记忆保留。
-- **Launcher**：加载时直接跳过 `Dead` 和 `Hidden` 的装饰物（`Launcher/GameCore/L4_Composition/Game/Environment/DoodadRenderer.cs:30-39`）；树被砍倒时 `TreeState.Chop` 只做 `Node.Visible = false`（`Launcher/Src/World/TreeState.cs:17-21`），采伐 `ConsumeTree` 同样瞬间隐藏（`Launcher/Src/World/World.UnitLookup.cs:46-52`）。
-- **表现差异**：树被砍倒没有倒地/枯木过渡，模型一帧消失；地图开局就已毁坏的装饰物完全不显示，而客户端保留死亡姿态。
-- **要做**：装饰物实例补 `death` 序列播放与定格，死亡后按可见性记忆保留；初始已毁的实例也要建出来并播死亡姿态。
-
-> **执行结论（Launcher7，待合并）**：已修复。导出资源本身已带 `death` 序列（如 `Extract/extract/Doodads/Terrain/LordaeronTree/LordaeronTree7.02_death.tres`），问题只在 Launcher 侧：
-> - `TreeState` 绑定 `AnimationPlayer`，新增 `EnterDeath`（播放 `death`）与 `HoldDeathPose`（定格末帧）；`Chop` 和 `ConsumeTree` 不再 `Visible = false`。
-> - `BuildDoodads` 不再跳过 `Dead` 实例，实例化后立即定格死亡姿态；已毁实例不投树影、不登记可通行面。
-> - 关掉导出的 `AnimationTree`，改为 `AnimationPlayer` 驱动，避免状态机把死亡姿态自动切回 `stand`。
-> - 验证：`dotnet build` 0 错误；headless 加载 `(2)BootyBay`、`(4)Turtle Rock` 分别 2011/2255 个装饰物无异常；`LordaeronTree7` 实测死亡末帧枯木 geoset 可见、活树 geoset 隐藏，存活态相反；`animation_finished` 回调能把砍倒的树停在末帧。
-> - 两张样例地图初始已毁实例数均为 0，初始死亡姿态复用同一套定格逻辑；Launcher 不做装饰物迷雾剔除，死亡姿态全时段常驻，等价于客户端“见过即保留”。
-> - 复核方式：用 Godot 启动本工作区的 Launcher7，进入 `(4)Turtle Rock`，派农民砍树，树倒地后停在枯木姿态且树影消失。
 
 ### 8. 天气粒子还是每格一个 CpuParticles3D，跨格重启整窗雨（V1 #56）
 
