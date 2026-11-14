@@ -89,20 +89,7 @@
 ## 模块七：工程结构（横切）
 
 > 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
-
-### 31. 坡面姿态在客户端是场景 partial 方法，Launcher 抽成了独立类（V1 #59）
-
-- **客户端**：`ComputeUnitTerrainTilt` 挂在 `War3GameScene` 的 partial class 上（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489`），同目录诊断也直接调它。
-- **Launcher**：写成 `Launcher/GameCore/L4_Composition/Game/Rendering/UnitTerrainTilt.cs` 的独立静态类，算法逐行一致但归属与目录都不对。
-- **表现差异**：玩家看不到差别，但任何按客户端路径找坡面姿态的改动都会落空，后续场景层改动容易漏改这份独立实现。
-- **要做**：搬回 `War3GameScene` 的 partial（可放 `Scenes/War3GameScene/Presentation.cs` 同目录新 partial），调用点经场景转调；如果拿场景引用不方便，至少放到 `Scenes/War3GameScene/` 下并在类名上体现归属。
-
-> **执行结论（Launcher1，待合并）**：
-> - 方法已搬进客户端同路径的 `GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs`，作为 `War3GameScene` 的 `internal static ComputeUnitTerrainTilt`，与客户端 `Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:489` 的归属一致。
-> - 唯一调用点 `UnitSceneComponent.SyncPlacement` 改为 `War3GameScene.ComputeUnitTerrainTilt(...)`；方法为静态，不需要场景实例。独立文件 `Game/Rendering/UnitTerrainTilt.cs` 已删除。
-> - 方法体逐字保留原来的采样与夹取逻辑（Launcher 世界 X/Z 的前后/左右方向映射属于平台坐标差异，未改）。`git diff` 可见只有归属与调用名变化，没有算法改动。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；headless `--play="(4)Turtle Rock.gmap" --no-ai --no-music` 正常到 `[HUD] 界面已接管`，无新增异常。
-> - 合并注意：只改 `Launcher1`，不涉及 `Extract`/`extract.pck`，不影响画面数值。
+> 任务 31（坡面姿态归属）已落地并合并到 Launcher，编号不复用。
 
 ### 32. `SceneFog` 该叫 `FogOfWarUniforms`，而且不该管大气雾（V1 #58）
 
@@ -115,14 +102,13 @@
 
 ---
 
-## 核对结果（V1 剩余 5 条）
+## 核对结果（V1 剩余 4 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
-| 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
 
 > **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
