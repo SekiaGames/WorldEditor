@@ -99,14 +99,6 @@ Launcher 只按 `map.Info?.Environment?.GlobalWeather` 建一次，`WeatherRende
 
 ## 四、光照与大气
 
-## 10. 整局不参与昼夜光照，也没有局部光
-
-客户端 `SceneLighting` 每次 `Update(gameHour)` 从 DNC 模型插值方向光、漫反射和环境光，`Lifecycle` 按 0.05 小时节流刷新；地形和悬崖把光照烘进顶点色，单位和装饰物走 `DoodadRenderer.Draw(..., light, ...)`。`DynamicLight` 再把 MDX 灯光上传成最多 8 盏动态光，按衰减累加。
-
-Launcher 场景里没有任何 `DirectionalLight3D`（只有头像视口里有一盏），`SkyboxRenderer` 还显式关掉环境光和反射光；世界着色器全是 `unshaded` + 写死的光方向，世界模型着色器的 `war3_lighting_enabled` 没有一处置 true（只有选图页的 Glue 背景由 `DynamicLight` 接上了），`war3_light_data` 在世界场景里没人上传。`_todHours` 只用来判断白天黑夜和画时钟。
-
-要做：先把昼夜光照接上（哪怕先只做方向和颜色），再补 MDX 动态光。这条不做，「黄昏」「夜里」「火把照亮地面」永远对不上。
-
 ## 11. 地形雾没人消费
 
 客户端从 w3i 解析雾参数（`FogSettings`），地形、悬崖、水、岸浪、天气都把 `uFogColor` / `uFogParams` 传进着色器。
@@ -563,3 +555,10 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 - 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **47** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
+
+## 47. 地形与悬崖不接收 MDX 动态光
+
+客户端 `Terrain.vert.glsl` 和 `Cliff.vert.glsl` 里各有一段 `dynamicLightFactor`，把单位的动态光（火把、法术特效）按距离/衰减累加进顶点光照；Launcher 的地形、悬崖、水面着色器只吃方向光和环境光。
+
+要做：把 `war3_light_data` 也传进三个世界着色器，按客户端公式累加。
+
