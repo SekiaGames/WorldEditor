@@ -37,21 +37,7 @@
 ## 模块四：特效与声音
 
 > MDX 粒子、丝带、弹道与音乐、事件音。
-> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），编号不复用。
-
-### 17. MDX 粒子不吃大气雾（V1 #52，部分修复）
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/MdxParticle2.frag.glsl` 按 `useFog` 把 `uFogColor/uFogParams` 传进粒子，丝带同样。
-- **Launcher**：天气已经改用 `weather.gdshaderinc` 并调 `war3_apply_fog`（`Extract/assets/shaders/weather.gdshaderinc:42`），丝带也已接上（`war3_ribbon.gdshader:23`、`war3_ribbon_add.gdshader:23`）；但 `war3_particle.gdshader` 没有包含 `atmosphere.gdshaderinc`，`fragment()` 里没有雾项（`Extract/assets/shaders/war3_particle.gdshader:69-91`）。
-- **表现差异**：远处的技能粒子/环境粒子在浓雾图里保持原色，和地形、模型、丝带的雾感不一致。
-- **要做**：`war3_particle.gdshader` 引入 `atmosphere.gdshaderinc`，片元里按视深调 `war3_apply_fog`。
-
-> **执行结论（Launcher7，待合并）**：已修复。查 pck 内实际资源确认两处都缺：`war3_particle.gdshader` 没有雾项，导出的粒子材质也没有 `fog_color/fog_params`（读出来是 `<null>`）；`SceneLightRig.Apply` 只遍历 `MeshInstance3D`，粒子挂在 `GPUParticles3D.MaterialOverride` 上，从未写过雾参数。
-> - Extract：`war3_particle.gdshader` 引入 `atmosphere.gdshaderinc`，片元改为 `ALBEDO = war3_apply_fog(rgb, -VERTEX.z)`，与丝带/天气同一套公式。
-> - Launcher7：`SceneLightRig.Apply` 补遍历 `GPUParticles3D`，把 `SceneFog.Write` 写进粒子材质，和地形、模型、丝带共用同一份雾参数。
-> - `extract.pck` 已按只重打包方式更新（先导出到临时 `.pck` 校验再替换），新包里 `war3_particle.gdshader` 已包含 `atmosphere` 与 `war3_apply_fog`。
-> - 验证：headless 加载 `(4)Turtle Rock` 时粒子材质雾参数从 `<null>` 变为已写入值；opengl3 实际渲染无 shader 编译错误，画面正常。两张样例图 `useTerrainFog=0`，最终雾效观感需要带距离雾的地图复核。
-> - 复核方式：用 Godot 启动本工作区的 Launcher7，进入带距离雾的地图，对比远处技能粒子/环境粒子与地形、模型、丝带的雾感。
+> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）已落地并合并，编号不复用。
 
 ### 18. 飞弹模型几乎不可见（V1 #63）
 
@@ -198,7 +184,7 @@
 
 ---
 
-## 核对结果（V1 剩余 15 条）
+## 核对结果（V1 剩余 14 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -210,7 +196,6 @@
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
-| 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
