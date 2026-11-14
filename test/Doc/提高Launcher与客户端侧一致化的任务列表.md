@@ -39,20 +39,6 @@
 
 > 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
 
-### 5. 悬崖四个面用一个法线，烘焙的明暗写了但 shader 不读
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/CliffRenderer.cs:184-186` 崖体顶点法线取各自 geoset 法线；`CliffSurface.cs:35-40` 只对落在 128 网格边界上的顶点改用地形梯度；`Shaders/Cliff.frag.glsl:20-24` 采样 `uShadowMap` 后压暗。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/MapWorldBuilder.Cliffs.cs:173,192` 用四个地形角点法线求平均，把这一个法线写进所有崖体顶点；`:175` 其实算好了逐悬崖的烘焙明暗写进 `CUSTOM0.y`，`Extract/assets/shaders/cliff_map.gdshader:65-78` 只读 `CUSTOM0.x`，烘焙值是死数据，也没有 `shadow_map`。
-- **玩家可见**：悬崖四面墙亮度一致，朝光的墙和背光的墙看不出区别，崖体像纸片；有烘焙阴影或树影的区域，地面暗下去而崖壁依旧雪亮，交界出现亮边。
-- **要做**：顶点法线改回逐面，shader 读 `CUSTOM0.y` 当烘焙明暗，并把地形阴影图绑到悬崖材质。
-
-> **执行结论（任务5，Launcher5，待合并）**：已修复。
-> - 法线：`CliffModelLibrary` 从悬崖模型网格提取逐顶点 `Normals`（与顶点同步做 `(-x, y, -z)` 轴变换；缺失时用三角形面法线兜底），`MapWorldBuilder.Cliffs` 不再用四角地形法线求平均，每个顶点写自己的法线。
-> - 烘焙：`CUSTOM0.y` 改为按逐顶点法线算 `dot(normal, CliffLightDirection) + 0.45`；`cliff_map.gdshader` 用 `baked_shade` 把最终 shade 在 0.5~1 之间压暗，保留原有昼夜/动态光，背光面不会黑掉。
-> - 阴影：`TerrainShadowMap` 构造时把 `shadow_map/shadow_scale/shadow_strength/shadow_enabled` 同时写进地形与 `CliffMaterial`；cliff shader 与地形同口径按世界 XZ 采样，在雾之前压暗。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`[CLIFF]` 日志 `normals=verts`（临时统计每个悬崖模型 10~11 个不同法线，确认逐面）；新 shader 由 Godot 解析通过（15 个 uniform，无 SHADER ERROR），临时本地加载截图显示崖壁各面明暗不同、没有黑面/破面；`[SHADOW] ... 悬崖材质 已绑定`；Turtle Rock 悬崖 799 格、0 条 SCRIPT ERROR。
-> - 注意：shader 改动在 Extract 提交 `a6e9cce84`，需要重跑 `extract.command` 的 `--export-pack`（或全流程）后 Launcher 才能看到新悬崖光照/阴影；Launcher5 提交 `2eb03ab`。
-
 ### 7. 天空穹顶被当普通模型着色，吃大气雾还吃战争迷雾
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/SkyboxRenderer.cs:102-116` 天空壳与日月用 `FogSettings.None` 绘制，`applyFogOfWar:false`，不写深度。
