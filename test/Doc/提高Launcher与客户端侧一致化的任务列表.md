@@ -467,3 +467,13 @@ Launcher 的天气用 `StandardMaterial3D` + `DisableFog`，而全场景没有�
 Launcher 现在会冻结序列和粒子（`UnitSceneComponent.SetFogFrozen`），模型也吃迷雾压暗，但建筑阵亡后没有「冻结快照」：模型停止推进、继续留在地上，重新看见时也不会按客户端逻辑遗忘。
 
 要做：建筑在不可见时阵亡要保留最后一次看到的定格模型，重新可见时再按 `ScoutingMemory` 口径清掉。
+
+## 55. 单位转身比客户端慢五倍多
+
+客户端 `UnitFactory.TypeData.cs:139-140` 把 SLK 的 `turnRate` 直接当弧度/秒用：`DefaultTurnSpeed = turnRate`，`TurnRate = NativeTimedFacing.TurnSpeed(turnRate) / Period`（`Period = 0.03`），即每 0.03 秒转过 `turnRate` 弧度；`NativeTimedFacing.TurnSpeed` 只做 `max(0.001, …)`，没有额外下限或上限。步兵这一档换算出来约 20 rad/s，也就是 0.3 秒转一整圈。
+
+Launcher `UnitFactory.cs:353` 是 `TurnSpeed = Mathf.Clamp(turnRate * 6f, 1.5f, 14f)`，`World.MovementEvents.ApplyFacing` 每仿真步最多转 `Mathf.Max(1.5f, TurnSpeed) * 0.05` 弧度。同一条 `turnRate` 只走出客户端五分之一到六分之一，而且 `1.5` 的下限会把慢速单位（攻城器械、建筑类转向）一起抬快。
+
+玩家看到：点攻击后单位往往跑到贴脸才开始转身，侧身追人、绕圈时像在滑行；`NeedsAttackFacing` 的朝向窗口满足得晚，攻击前摇整体被拉长；编队齐转时更像整体平移而不是各自转身。
+
+要做：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完必须回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项——这条动的是战斗节奏，不只是表现。
