@@ -32,32 +32,12 @@
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）、任务 15（地面物品影子/光圈/离场）已落地并合并到 Launcher，编号不复用。
+> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）、任务 15（地面物品影子/光圈/离场）、任务 33（烈焰风暴/云雾/季风/哨兵/火山美术循环）已落地并合并到 Launcher，编号不复用。
 
 ## 模块四：特效与声音
 
 > MDX 粒子、丝带、弹道与音乐、事件音。
 > 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）、任务 18（飞弹材质与丝带）、任务 19（音乐/循环音/声部）、任务 20（城镇被攻击/英雄阵亡事件音）已落地并合并；音量设置仍随任务 21 的选项界面做，编号不复用。
-
-### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
-
-- **客户端**：这五个技能都把 `EfctID` 解析出的模型接进生成循环：烈焰风暴余烬取 Buff 的 `EffectArt`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs:51`、`:73-80`），云雾取 `Effectart` 常驻雾团（`RuntimeCloudOfFogAbility.cs:46`、`:69-76`），季风取雨幕与闪电落点（`RuntimeMonsoonAbility.cs:32`、`:85-87`），哨兵在树上生成猫头鹰（`RuntimeSentinelAbility.cs:29-31`、`:50-52`），火山生成喷发视觉与熔岩弹（`RuntimeVolcanoAbility.cs:127`、`:151`、`:226`）；另外客户端有独立的 `RuntimeMeteorRainAbility.cs`。
-- **Launcher**：上述五个类（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs`、`RuntimeCloudOfFogAbility.cs`、`RuntimeMonsoonAbility.cs`、`RuntimeSentinelAbility.cs`、`RuntimeVolcanoAbility.cs`）只结算伤害/状态，没有 `Art`、`Effect`、`Spawn` 相关的美术字段与生成循环；全仓也没有 `RuntimeMeteorRainAbility` 对应类。
-- **表现差异**：烈焰风暴只有伤害数字没有柱状余烬，云雾没有雾团遮挡，季风没有雨幕和落点闪电，哨兵没有停在树上的猫头鹰，火山没有喷发和熔岩弹；陨石雨技能整个缺失。
-- **要做**：逐个按客户端补美术字段、`RuntimePreloadArts` 与生成/销毁循环；火山和陨石雨还要补对应的 `Effect`/`Missile` 类。
-
-> **复核评价**：五个技能那半成立，陨石雨这半越界。`ANme` 在 `test/war3-unpack/Units/AbilityData.slk` 里没有行（大小写都查过），`UnitAbilities.slk` 里没有任何单位携带，全仓只出现在战役脚本和 `Blizzard.j`；客户端 `RuntimeAbilityFactory.Constructors.cs:167` 的注册在 1.27 数据下是死代码。按本清单范围「只有脚本能触发的效果不进清单」，陨石雨应从本条删除，`RuntimeMeteorRainAbility` 不必补。另外编号 33 夹在 20 和 21 之间，破坏了「模块内从上往下」的读法，技能美术应排到模块三末尾。
-
-> **执行结论（Launcher3，待合并）**：五个技能的美术循环已按客户端补齐；陨石雨按复核意见不做，没有新增 `RuntimeMeteorRainAbility`。
-> - 美术来源：全部走物编合并层 `War3ObjectData` + `AbilityArt`，与客户端同口径——烈焰风暴 `XHfs.Effectart=FlameStrikeEmbers.mdl`、喷发取 `AHfs.Specialart`；云雾 `Xclf.Effectart=CloudOfFog.mdl`；季风 `XNmo.Effectart=MonsoonRain.mdl`、落雷 `ANmd.Targetart=MonsoonBoltTarget.mdl`；哨兵 `XEsn.Targetart=Owl.mdl`；火山 `Volcan` 破坏物模型 `Volcano.mdl`、`XNvc.Missileart=VolcanoMissile.mdl`（速度 400、弧 0.8）。
-> - 烈焰风暴：`RuntimeFlameStrikeAbility` 施法时随机播一个喷发模型（`Dur` 时长），`FlameStrikeBurn` 每 0.33s 在半径内撒 10 个余烬、存活 1s（`Launcher3/Src/Skills/FlameStrikeBurn.cs`）。
-> - 云雾：施法时在落点挂常驻 `CloudOfFog.mdl`（`PlayStandAfterBirth`、队伍色），云区提前结束或主人死亡时播 Death（`RuntimeCloudOfFogAbility.cs`、`Src/Skills/CloudOfFogSpell.cs`）。
-> - 季风：引导开始挂 `MonsoonRain.mdl` 雨幕，每波对命中的单位挂 `MonsoonBoltTarget.mdl` 落雷；断引导/正常结束销毁雨幕（`RuntimeMonsoonAbility.cs`）。同时补了 `ANmo` 注册（此前只有 `ACmo`，两者同实现）。
-> - 哨兵：保留 Launcher 现有的点地面施法与 `AddFogReveal`，在落点按 `DataC`（275）高度生成 `Owl.mdl` 猫头鹰，持续 `DataA`。Launcher 没有可破坏物目标管线，未改成客户端的树目标模式。
-> - 火山：引导时在落点生成 `Volcano.mdl` 喷发体；每波保留现有 `DataE` 范围伤害，并新增 `RuntimeVolcanoMissileEffect` 按 `RuntimeVolcanoWavePattern` 从火山口抛出一批熔岩弹（复用 `MissileEffect` 渲染路径，不参与伤害结算，避免改动已对齐的逐波伤害与探针）。断引导时喷发体播 Death。
-> - 预载：五个类都实现 `RuntimePreloadArts`，加载流程的 `PreloadAbility` 会把喷发/雾团/雨幕/落雷/猫头鹰/熔岩弹模型一起预载。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 新增 15 项美术断言全 OK（预载数量、喷发/余烬/雾团/雨幕/落雷/猫头鹰/喷发体/熔岩弹生成、断引导销毁），仅剩基线 `utod` 一项；`--combat-probe` 全部通过（火山第一波伤害仍为 `DataE`）。
-> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --state-probe` 可直接看断言；画面验证在 `(4)Turtle Rock.gmap` 用血法师/火焰领主放烈焰风暴/火山、龙鹰放云雾、女猎手放哨兵，季风可用风暴术士（`ACmo`）观察雨幕与落雷。
 
 ## 模块五：输入与镜头
 
