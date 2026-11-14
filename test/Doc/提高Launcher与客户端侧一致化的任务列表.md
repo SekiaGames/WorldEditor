@@ -8,7 +8,7 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..34，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **35** 起，做完一条删一条，序号不复用。
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..35，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **36** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
@@ -65,7 +65,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）已落地并合并到 Launcher，编号不复用。
+> 任务 22（命令卡槽位/热键/可用性）、任务 24（命令提示/悬停/Tooltip）已落地并合并到 Launcher，编号不复用。
 
 ### 23. 法术书没有页面，子技能进不了命令卡（V1 #64）
 
@@ -83,22 +83,6 @@
 > - 数据：1.27 的 `Aspb` 为 `DataA=AEer,Adis,Aroa`、`DataB=1`、`DataC/DataD=3`、`DataE=spellbook`；三个子技能没有额外 `Requires`，按客户端 `learnable:false` 以 1 级提供，命令卡可用性沿用 Launcher 其他技能格的口径。
 > - 验证：`dotnet build -t:Rebuild` 0 错误；`--card-probe` 输出「法术书 子技能=3 页面=True 0:纠缠根须 1:驱逐魔法 2:咆哮 11:返回」→ 点咆哮法力 390→290 且页面保持 → 返回后回到基础卡 → 书离手后页面自动关闭且书=0；`--state-probe` 仅剩基线 `utod` 一项，`--combat-probe` 全部通过，`--item-probe` 正常。
 > - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --play="(4)Turtle Rock.gmap" --card-probe` 可直接看到上述页面；常规玩法里让英雄拾取 `sbok`，选中英雄后点物品格即打开法术书页，点子技能释放，点第 12 格「返回」关页（Esc 关命令卡页属第 21/22 条，尚不在本次范围）。
-
-### 24. 提示语和悬停说明石沉大海（V1 #39）
-
-- **客户端**：`CommandErrorFrame` 黄字、在 console 上方、3 秒 + 每字符 0.1 秒；`SetHint` 等提示都有真实读者；信息面板悬停按帧名分派（金币/木材/人口/维修费、攻击力/护甲、三围、经验条、8 个 Buff 图标）；`TooltipFrame` 有 `ShowEx(ext/costs)`、四个成本图标槽、分段富文本、跟随锚点、屏幕边缘内缩、单位血蓝条（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs` 1227 行）。
-- **Launcher**：`MeleeHudController.SetHint` 只做 `_hint = text`（`MeleeHudController.cs:150`），`_hint` 没有读者；`SetQueue(string)`、`SetClock(string)` 是空方法（`:72`、`:139`），`SetPlayerInfo`、`SetBuffs`、`SetUnitSummary` 只写字段没人读（`:74`、`:141`、`:147`）。全仓没有 `CommandErrorFrame`；`TooltipFrame.cs` 只有 112 行，固定 280 宽纯色底 + 按 34 字符硬折行。
-- **表现差异**：资源不足点建造、修理由非农民点残血建筑、Ctrl+1 存编队、子组切换、放置失败等 70 多处调用，一句提示都看不到；悬停资源/数值/Buff 没有说明；长文本用固定宽度硬折行。
-- **要做**：先补客户端的 `CommandErrorFrame`（不要造等价物，就用这个名字和这套行为），再补信息面板悬停，最后升级 `TooltipFrame`；Buff 图标本身缺失另见第 27 条。
-
-> **执行结论（Launcher4，已实现，待合并）**：命令提示、资源/信息面板悬停、TooltipFrame 三项都已接上。
-> - `CommandErrorFrame`：新增 `GameCore/L4_Composition/Game/UI/CommandErrorFrame.cs`，与客户端同名同行为——黄字 `(1,.8,0)`、几何 `0.21/0.23/0.38/0.05 × 1280`、字号 `0.015 × 1280`、底边压在 console 上方、寿命 `3 + 0.1×字数` 秒后再淡出 3 秒。`GameHudScreen` 把它挂到根帧并每帧 `Update`；`MeleeHudController.SetHint` 改为调 `ShowCommandError`，现有 83 处提示调用立刻有读者。
-> - 悬停分派：`GameHudScreen.OnHoverChanged` 按帧名分派——`ResIcon0/1/2`、`ResVal0/1/2` → 金币/木材/人口，`ResVal3` → 维修费用；`UnitAttackIcon/Label`、`UnitArmorIcon/Label`、`UnitStr/Agi/Int Label`、`UnitStatusLabel`、`UnitXpBar` → 攻击/护甲（含 `DAMAGE_*` / `ARMOR_*` 种类行）、三围（`STRENGTH_HILIGHT` + `BONUS_*`）、状态、经验。文案优先读 FDF：用 `FdfUiFactory` + `FdfSource` 加载 `GlobalStrings.fdf` / `InfoPanelStrings.fdf`，缺键时回落到原版中文兜底。Buff 图标悬停留给第 27 条（控件还没建）。
-> - `TooltipFrame`：按客户端结构重写为名称 / 成本行 / 描述 / Ex 四段；宽度用渲染端 `MeasureTextLineWidth` 实测、`UiText.WrapToWidth` 整词折行（去掉固定 280 宽与 34 字符硬切）；宽度 = `max(名称, min(0.2, 描述), 成本行)`，Ex 版 = `max(名称, 0.21)`；四个成本图标槽按 `ToolTipMana/Gold/Lumber/SupplyIcon` 取皮肤纹理并压紧排布；Ex 段白字；面板跟随悬停控件并钳在屏幕内缩 `0.01×1280`，无锚点时仍回右下 console 上方；背景改九宫 `ToolTipBackground/ToolTipEdge`，底层保留不透明 `#101824`。
-> - 富文本：`GodotUiRenderDevice.DrawTextLine` 增加 `|cAARRGGBB…|r` 分段着色（`||` 字面量），度量仍按纯文本、绘制按分段颜色连续推进；FDF 的 `|Cffffcc00…|R` 现在真正着色。
-> - 回归：新增 `--ui-hud-probe`，10 条断言全过（命令提示显示、`SetHint` 进提示、金币/木材/维修费、攻击/护甲含种类行、力量、经验）；`--combat-probe` 全部通过；`--state-probe` 仍只剩改动前就有的 `utod 研究项` 一项失败。
-> - 视觉验证：窗口模式跑 `Godot --path Launcher4 -- --ui-hud --shot=/tmp/hud.png@3`，可看到 console 上方的黄字提示与 tooltip 的九宫边框、实测折行、黄色高亮；headless 的 dummy 渲染器截图会 NRE，不能用。
-> - 未在本轮：成本图标槽已就绪，但命令卡数据仍是纯文本 `Cost`（没有结构化四槽，图标暂时不会出现）；Buff 图标槽与单位血蓝条随第 27 条/世界单位悬停另做；`SetQueue(string)`、`SetPlayerInfo`、`SetClock(string)` 目前没有可显示的构件，不在本条三步范围内。
 
 ### 25. 聊天和控制组各写了一套（V1 #41）
 
@@ -159,6 +143,13 @@
 - **表现差异**：打开选项/设置页时单位仍在移动、AI 仍在出兵、计时继续；客户端会自动暂停模拟。
 - **要做**：让设置页的显示/关闭驱动 `Paused`（或实现 `AutoPauseRequested`），关闭时恢复原暂停状态；Esc 菜单本身不算，按客户端口径只认对话框。
 
+### 35. 命令卡悬停说明没有结构化成本图标（新增）
+
+- **客户端**：`TooltipFrame` 接收结构化 `costs`，按 `ToolTipMana/Gold/Lumber/SupplyIcon` 画四个成本图标槽并显示数字（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs`）。
+- **Launcher**：`GameHudScreen.OnHoverChanged` 已把 `button.TooltipCosts` 传给 `TooltipFrame`（`GameHudScreen.cs:286`），但命令卡的 `CommandEntry.Cost` 仍是拼好的字符串（`MeleeHudController.cs:12`），构建命令卡时从未设置 `TooltipCosts`；目前只有 `InventoryFrame` 显式置空（`InventoryFrame.cs:77`）。
+- **表现差异**：悬停建造/训练/研究按钮时只有一行文字成本，没有客户端的金/木/人口/法力图标。
+- **要做**：给 `CommandEntry`/命令卡绑定补结构化成本字段，训练/建造/研究/升级/技能分别从物编填金、木、人口、法力，再写入 `TooltipCosts`。
+
 ## 模块七：工程结构（横切）
 
 > 命名、归属与目录对齐；放最后，避免和功能改动互相踩。
@@ -181,11 +172,10 @@
 
 ---
 
-## 核对结果（V1 剩余 10 条）
+## 核对结果（V1 剩余 9 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 39 | 仍成立 | `SetHint` 只赋值（`MeleeHudController.cs:150`），无 `CommandErrorFrame`；Buff 图标另立第 27 条 |
 | 41 | 仍成立 | 聊天独立 CanvasLayer（`ChatFrame.cs:23-28`），无 `ControlGroupFrame` |
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
@@ -220,14 +210,13 @@
 
 ## 推进顺序
 
-模块顺序是从底层到表层，模块内从上往下做即可。两个例外：
+模块顺序是从底层到表层，模块内从上往下做即可。
 
-1. **第 22、24 条**是「按了没反应/看不到提示」的功能性缺陷，可以提前插队。
-现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 22、24、26、27、28 条** 最直观。
+现在最容易被玩家一眼看出的是 **第 18 条（飞弹）**、**第 33 条（五个技能特效）**；界面上 **第 26、27、28、34、35 条** 最直观。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **35** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **36** 开始。
 - 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
