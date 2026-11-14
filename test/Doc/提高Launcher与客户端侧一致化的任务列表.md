@@ -90,7 +90,7 @@
 
 > **执行结论（Launcher6，待合并）**：已修复。
 > - 地表土带：`RealTileTexture` 改为客户端两趟顺序（先 ramp 后 cliff），2×2 扫描后接 `CliffIdOf` 的 5×5 邻域；删除 `15 - 14` 的硬映射，cliff 邻接地表统一由邻域找到的 cliffId 取 `groundTile/upperTile`。
-> - ramp 矩阵：`BuildCliiffs` 在斜坡模型被接受时按客户端 Romp 口径标记 2×2 与 facing 方向的第二格，供第一趟使用；原有 `_cliffTransitions` 的遮挡行为未改。
+> - ramp 矩阵：`BuildCliffs` 在斜坡模型被接受时按客户端 Romp 口径标记 2×2 与 facing 方向的第二格，供第一趟使用；原有 `_cliffTransitions` 的遮挡行为未改。
 > - 变体：`CliffModelLibrary` 内建 Cliffs/CityCliffs 的 cliffCode 最大变体表，取 `variation < max ? variation : variation % (max+1)`；cliff code 四角高度差按客户端封顶 +2，变体来源改为 5×5 找到的那格 `CliffVariation`，不再向下回退找模型。
 > - 验证：`dotnet build` 0 错误；BootyBay headless 日志为悬崖 2400、斜坡 20、无缺模型；临时探针出现 `ACCA v=7 max=1 -> 1`、`CCCA v=6 -> 0` 等取模结果，ramp 邻格取到 `CLgr`。Turtle Rock/BootyBay 都没有 15 哨兵格，5×5 分支按客户端代码平移，需在含 15 的地图（达拉然/外域类）上复验土带颜色。
 
