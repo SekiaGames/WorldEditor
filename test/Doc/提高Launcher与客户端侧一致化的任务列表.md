@@ -74,6 +74,16 @@
 - **表现差异**：拿到法术书点使用没有任何页面打开，书里的子技能永远进不了命令卡，物品等于失效。
 - **要做**：补 `RuntimeSpellBookAbility`（物编 MenuOrderId + 子技能 `Requires` 链），在 `CommandCardBuilder` 的菜单栈里加 `MenuKind.Book` 与 `OpenSpellBook` / `BackFromSpellBook`，子技能按容器过滤并把序号当格号，点开/关页条件与客户端一致。
 
+> **执行结论（Launcher3，待合并）**：法术书已能打开命令卡页面并释放子技能。
+> - 定位：`sbok` 的 `abilList=Aspb` 不在 `GrantItemAbilities` 白名单里，`RuntimeAbilityFactory` 没有 `Aspb` 实现，命令卡菜单栈只有 Learn/Build 两种页，`Ability.ContainerRawcode/ContainerAbility` 从未被赋值。
+> - 书本体：新增 `Launcher3/GameCore/L3_Simulation/Simulation/Configuration/RuntimeSpellBookAbility.cs`（与客户端同路径）：DataA 子技能码、DataB 共享冷却、DataC/DataD 最小/最大技能数、DataE 基础命令（`BaseOrderId`，Launcher 无 `OrderIdTable`，用它承担客户端 `MenuOrderId` 的页面身份）；子技能按客户端 `SelectSpellIndices` 抽取、等级 1、带 `ContainerRawcode`/`ContainerAbility`/`SourceItem` 挂到主人技能表。
+> - 装备/卸下：`Launcher3/Src/World/World.Abilities.cs` 的 `GrantItemAbilities` 对 `Aspb` 走 `AttachToItem`，`RevokeItemAbilities` 移除书时调 `OnRemove()` 一并撤掉子技能；`TryCast` 成功后按客户端广播 `OnOwnerAbilityCast`，实现共享冷却。
+> - 页面：`Launcher3/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs` 加 `MenuKind.Book`、`OpenSpellBook`/`BackFromSpellBook`/`CurrentSpellBook`，`UpdateMenuSelection` 在主人死亡或书被移除时自动退回；`GameHudScreen`/`MeleeHudController` 透传。
+> - 收格：`Launcher3/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs` 的 `CollectSpellBookMenu` 只收这本书的子技能、序号当格号（0..10）、第 12 格返回；`Ui.cs` 的 `BuildCommandEntries` 在学习页/建造页之前判定书页有效性；`ActivateItem` 点到法术书物品直接开页，不进入使用/冷却流程。
+> - 数据：1.27 的 `Aspb` 为 `DataA=AEer,Adis,Aroa`、`DataB=1`、`DataC/DataD=3`、`DataE=spellbook`；三个子技能没有额外 `Requires`，按客户端 `learnable:false` 以 1 级提供，命令卡可用性沿用 Launcher 其他技能格的口径。
+> - 验证：`dotnet build -t:Rebuild` 0 错误；`--card-probe` 输出「法术书 子技能=3 页面=True 0:纠缠根须 1:驱逐魔法 2:咆哮 11:返回」→ 点咆哮法力 390→290 且页面保持 → 返回后回到基础卡 → 书离手后页面自动关闭且书=0；`--state-probe` 仅剩基线 `utod` 一项，`--combat-probe` 全部通过，`--item-probe` 正常。
+> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --play="(4)Turtle Rock.gmap" --card-probe` 可直接看到上述页面；常规玩法里让英雄拾取 `sbok`，选中英雄后点物品格即打开法术书页，点子技能释放，点第 12 格「返回」关页（Esc 关命令卡页属第 21/22 条，尚不在本次范围）。
+
 ### 24. 提示语和悬停说明石沉大海（V1 #39）
 
 - **客户端**：`CommandErrorFrame` 黄字、在 console 上方、3 秒 + 每字符 0.1 秒；`SetHint` 等提示都有真实读者；信息面板悬停按帧名分派（金币/木材/人口/维修费、攻击力/护甲、三围、经验条、8 个 Buff 图标）；`TooltipFrame` 有 `ShowEx(ext/costs)`、四个成本图标槽、分段富文本、跟随锚点、屏幕边缘内缩、单位血蓝条（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs` 1227 行）。
