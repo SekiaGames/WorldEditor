@@ -63,6 +63,15 @@
 - **表现差异**：冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、ADD 高亮/光晕偏暗；FDF 皮肤改了也不会反映到 HUD。
 - **要做**：先补三个渲染能力和 ADD 混合，再决定 FDF 绑定是接上还是删掉。
 
+> **执行结论（Launcher10，待合并）**：已修复。
+> - 冷却遮罩：`DrawCooldownSweep` 改成从 Extract 导出的 `UI/Feedback/Cooldown/cooldown.png` 取 UV，按扇形顶点映射纹理（中心 0.5,0.5、外缘按角度采样），保留原图 60% 透明度；纹理缺失时退回原纯色扇形。
+> - 冷却完成：`DrawCooldownCompletion` 用 `star4.png` 加法叠加，缩放曲线直接取 `UI-Cooldown-Indicator.01_Death.tres` 的关键帧，时长 1 秒；`CommandCardBuilder` 改用 `ButtonFrame.SetCooldown` 并带稳定 `CooldownId`，冷却归零才会触发这段闪光（之前直接写 `Cooldown`，完成动画永远进不去）。
+> - 自动施法：`DrawAutoCast` 用 `GlowStar.png` 在按钮四边循环移动 1.667 秒一圈，加法叠加并带呼吸透明度；命令卡把 `CommandEntry.Active` 接到 `AutoCastHighlight`（之前全仓没人设这个标志，光环即使能画也不会出现）。
+> - ADD 混合：实测 Godot `DrawMesh` 不使用网格表面材质；改为在 HUD 下挂一个 `CanvasItemMaterial{BlendMode=Add}` 的子 CanvasItem，`Begin` 时清空、每次加法绘制用 `RenderingServer.CanvasItemAddTextureRectRegion` 写入，CPU 裁剪沿用原 rect/uv 逻辑。按住 Esc 菜单是更高层 CanvasLayer，不受这层影响。
+> - FDF 绑定：删掉 5 个没有调用者的生成文件（`ConsoleUiBinding`/`ResourceBarBinding`/`UpperButtonBarBinding`/`MainMenuBinding`/`EscMenuMainPanelBinding`），保留在用的 `LoadingScreenBinding`；`FdfBindGen` 的 FDF 源清单保留，哪个任务真要接 HUD 时用 `--fdf-bindgen` 重新生成。理由：HUD 顶栏/控制台/菜单是带状态、提示和布局逻辑的手写帧，光有绑定类接不上行为，留着只是死代码。
+> - 验证：`dotnet build` 0 错误；`--ui-hud-probe` 全部通过；`--combat-probe` 全部通过；`--card-probe` 输出（学习页/建造页/法术书/热键/混选）与改动前一致。运行时截图 `Godot --path Launcher10 -- --ui-hud --shot=/tmp/hud.png@2` 目视确认：圣光术槽有带圆角的方形冷却遮罩、自动施法槽四角出现加法星光、冷却归零后出现十字闪光。
+> - 复现：正常开局后放一个带冷却的技能看遮罩与结束闪光；右键开自动施法看四角星环。首屏样张可直接用上面的 `--ui-hud` 命令。
+
 ### 35. 命令卡悬停说明没有结构化成本图标（新增）
 
 - **客户端**：`TooltipFrame` 接收结构化 `costs`，按 `ToolTipMana/Gold/Lumber/SupplyIcon` 画四个成本图标槽并显示数字（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TooltipFrame.cs`）。
