@@ -37,7 +37,7 @@
 ## 模块四：特效与声音
 
 > MDX 粒子、丝带、弹道与音乐、事件音。
-> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）已落地并合并，编号不复用。
+> 任务 16（粒子参数按动画片段驱动）已落地并合并（Extract 导出侧），任务 17（MDX 粒子吃大气雾）、任务 20（城镇被攻击/英雄阵亡事件音）已落地并合并，编号不复用。
 
 ### 18. 飞弹模型几乎不可见（V1 #63）
 
@@ -56,20 +56,6 @@
 - **要做**：曲间间隔与淡入淡出、脚步/建造循环音；声部按 channel 配额和优先级；音量设置与第 21 条的选项界面一起做。
 
 > **复核评价**：本条依赖第 21 条的选项界面，而 21 在模块五，「模块内从上往下」会先把 19 做到一半卡住。建议把 19 一并放进「提前插队」名单，或者把「音量设置」整段挪进 21 条。
-
-### 20. 城镇被攻击、英雄阵亡这几类事件音还没接（V1 #62）
-
-- **客户端**：`War3UiSoundService` 有 `TownAttack`、`UnderAttack`、`HeroDies`、`AllyHeroDies`，由模拟层事件源驱动（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3UiSoundService.cs:65-67`；`MeleeHudController` 里按事件派发）。
-- **Launcher**：冷却表和种族前缀已经建好（`Launcher/GameCore/L4_Composition/Game/Audio/War3UiSoundService.cs:10-41`），但上述四个键没有任何调用点（全仓只有定义和生成文本）；建筑被攻击不报警，英雄阵亡也不出声。
-- **表现差异**：混战里少了「基地被打」和「英雄阵亡」的听觉提示。
-- **要做**：在 `World` 的建筑受伤路径上区分城镇与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。
-
-> **执行结论（Launcher10，待合并）**：已修复。
-> - 被攻击：对齐客户端在挥击起手发布 `EVENT_UNIT_ATTACKED` 的时机（`CAbilityAttack.cs:223-231`，避免远程晚一个弹道、闪避丢失事件），`World` 新增 `UnitAttacked(attacker, victim)` 并在 `BeginAttack` 起手时派发；场景 `OnUnitAttacked` 只对 `victim.Player == ViewPlayer` 响应，建筑播 `TownAttackSound`、单位播 `UnderAttackSound`，沿用服务里 30 秒冷却。
-> - 英雄阵亡：`HeroPresentation` 补 `AnnounceDeath` / `DeathSound`，按客户端口径过滤幻象与 `hideHeroDeathMsg`；`OnUnitDied` 里自己播 `HeroDiesSound`、盟友播 `AllyHeroDiesSound`、敌方不播。`UnitType` 补读 UnitUI 的 `hideHeroDeathMsg` 列。
-> - 音效条目确认存在：`TownAttackHuman/Orc/NightElf/Undead`、`UnderAttack*`、`HeroDies*`、`AllyHeroDies*` 都在 `UISoundInfoUISounds` 表里，不需要补资源。
-> - 验证：新增 `--event-sound-probe` 8 项全过（自己/盟友/敌方/幻象/hideHeroDeathMsg 的英雄死亡音选择，起手派发 `UnitAttacked`，建筑与单位分别选 TownAttack/UnderAttack）；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知的 `utod` 1 项失败。
-> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --event-sound-probe`。听效果：正常开局后让敌方 AI 打到你的建筑/单位（30 秒内只报一次），或让英雄阵亡；日志会打印 `[AUDIO] UI TownAttackSound` / `UnderAttackSound` / `HeroDiesSound`。
 
 ### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
 
@@ -184,7 +170,7 @@
 
 ---
 
-## 核对结果（V1 剩余 14 条）
+## 核对结果（V1 剩余 13 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -199,7 +185,6 @@
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
-| 62 | 仍成立 | 四个事件音键无调用点（`War3UiSoundService.cs:10-41`） |
 | 63 | 仍成立 | 弹道仍是实例化后直线/弧线飞行（`Presentation.cs:33-79`），根因未定位 |
 | 64 | 仍成立 | `ContainerAbility` 无赋值（`Ability.cs:714-715`），无 `RuntimeSpellBookAbility`/`OpenSpellBook` |
 
