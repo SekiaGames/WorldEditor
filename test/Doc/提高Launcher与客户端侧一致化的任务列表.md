@@ -58,14 +58,6 @@ Launcher 是每棵树一个黑色 Quad（alpha 0.65、固定偏移 `(-0.2w, 2, 0
 
 要做：并进第 2 条那张阴影图，强度跟着太阳高度。
 
-## 5. 腐地是羽化遮罩，不是换贴图
-
-客户端把整格地表换成 blight 地表贴图，走正常的四角混合，而且只在被这个玩家观察过的格显示（`ScoutedBlight` 带记忆位掩码）。
-
-Launcher 生成一格一字节的 `blight_mask` 加一张贴图，在着色器里按世界 UV `mix`，每 0.5 秒扫全部单位盖章，没有观察者记忆。
-
-要做：改成逐格贴图替换（块状硬边），并区分「世界已经腐化」和「这个玩家看到过」。
-
 ## 6. 地面贴花和地图边缘都是空的
 
 客户端的 `War3SplatSystem` 支持 `SPL`/`UBR` 与 `CreateUberSplat`，带 Birth/Pause/Decay 颜色和 BlendMode，用贴地 Quad 批量画；建筑底座（`UnitUI.uberSplat`）也走这条管线，拆掉时会淡出。地图四边还有 `MapVoidRenderer` 生成贴边裙边和外圈。
@@ -111,7 +103,7 @@ Launcher 只按 `map.Info?.Environment?.GlobalWeather` 建一次，`WeatherRende
 
 客户端 `SceneLighting` 每次 `Update(gameHour)` 从 DNC 模型插值方向光、漫反射和环境光，`Lifecycle` 按 0.05 小时节流刷新；地形和悬崖把光照烘进顶点色，单位和装饰物走 `DoodadRenderer.Draw(..., light, ...)`。`DynamicLight` 再把 MDX 灯光上传成最多 8 盏动态光，按衰减累加。
 
-Launcher 场景里没有任何 `DirectionalLight3D`（只有头像视口里有一盏），`SkyboxRenderer` 还显式关掉环境光和反射光；世界着色器全是 `unshaded` + 写死的光方向，模型着色器的 `war3_lighting_enabled` 全仓没有一处置 true，`war3_light_data` 也没人上传。`_todHours` 只用来判断白天黑夜和画时钟。
+Launcher 场景里没有任何 `DirectionalLight3D`（只有头像视口里有一盏），`SkyboxRenderer` 还显式关掉环境光和反射光；世界着色器全是 `unshaded` + 写死的光方向，世界模型着色器的 `war3_lighting_enabled` 没有一处置 true（只有选图页的 Glue 背景由 `DynamicLight` 接上了），`war3_light_data` 在世界场景里没人上传。`_todHours` 只用来判断白天黑夜和画时钟。
 
 要做：先把昼夜光照接上（哪怕先只做方向和颜色），再补 MDX 动态光。这条不做，「黄昏」「夜里」「火把照亮地面」永远对不上。
 
@@ -362,20 +354,22 @@ Launcher 在 `.90 预热单位与界面资源` 之后没有预载循环，`Asset
 - **版本与警告**：客户端有「保存版本」和黄色 1.32 兼容警告；Launcher 原本两行都没有。
 - **排序**：客户端普通地图按文件大小排；Launcher 原本按文件名。
 - **超宽屏**：客户端用 `War3UiViewport` 居中 16:9；Launcher 原本拉满整窗。
-- **Esc**：客户端置 `CancelRequested` 交给宿主；Launcher 只 `Cancelled?.Invoke()`，而 `LauncherApp.ShowMapList` 只订阅了 `StartRequested`，按 Esc 没有反应。
+- **Esc**：客户端暴露 `CancelRequested` 属性由宿主轮询，但全仓没有置位点；Launcher 发的是 `Cancelled` 事件，而 `LauncherApp.ShowMapList` 只订阅 `StartRequested`，按 Esc 等于没按；两个子对话框（种族、难度）开着时按 Esc 也关不掉。
 
 **已完成**（2026-11-14）：
 
-1. FDF 宿主接上了：`LoadTemplate(Skirmish.fdf)` + `Create("Skirmish")`，原有 7 个子帧全部隐藏，两栏挂在宿主上，启动日志打印 `[MAP-UI] Skirmish 宿主已创建`。
+1. FDF 宿主接上了：`LoadTemplate(Skirmish.fdf)` + `Create("Skirmish")`，原有 7 个子帧全部隐藏，两栏挂在宿主上。客户端走的是 `ParseToc(FrameDef.toc)` + `ParseToc(SmashFrameDef.toc)`，但 Extract 还没把这两个 toc 导出成表，暂时只能单文件加载；等 toc 导出后换成和客户端同一套解析。
 2. 「保存版本」和兼容警告补上了，判定走新加的 `MapCompatibilityNotice`（与客户端同名同路径），出警告时描述框收到 60。
 3. 列表改成按文件大小排。
 4. 界面改成居中 16:9，输入坐标跟着改成按控件尺寸换算。
+5. Esc 收口：种族/难度对话框开着时先关对话框，其余情况不响应（客户端也没有退出选图页的去处）。顺带删掉没人订阅的 `Cancelled` 和没人读的 `PlayRequested`。
+6. 预览顺序改成作者图优先：`war3mapPreview.png` → `war3mapMap.png`，各自解码失败就试下一张。Extract 的 `GmapExportCli` 白名单补了 `war3mapPreview.blp`，否则作者用 blp 存的预览图根本进不了 gmap。
+7. 背景换成 `GlueModelLayer`：Extract 在模型 tscn 里导出 `camera0`（`current = false`）和 `camera0_target`，并把相机的 KCTR/KTTR 写成 `position_3d` 轨道；Launcher 用 SubViewport 渲染 `MainMenu3d_exp.tscn`，每帧对 `camera0_target` 做 LookAt，画面能复现客户端的镜头平移和极光动画。注意选图页用的是 TFT 皮肤的 `_V1` 背景（`MainMenu3d_exp`），不是主菜单那个 `_V0`。
+8. 背景光照接上自有收集系统：Extract 把每个 `MdxLight` 导成带 `metadata/war3_light_*` 的 `Node3D`（全量 223 盏 omni、25 盏 directional、2 盏 ambient，方向灯多一条 `war3_light_direction`）；Launcher 新增 `Environment/DynamicLight.cs`（与客户端同名同路径），从节点元数据收集光源、打包成 4×8 浮点纹理写进 `war3_light_data`，同时写 `war3_light_count`、`war3_lighting_enabled` 和三个 `war3_scene_*`，配比照客户端 `SceneLight`（方向 +X、0.62 白、环境 0.22）。背景平均亮度从 124 降到 90，客户端 86。
 
 **还要做**：
 
-5. Esc 按客户端语义收口：先取消待定操作，再考虑退出选图页；现在发的是没人接的事件。
-6. 预览回退：`war3mapPreview` 要 Extract 在生成 gmap 时一并导出 png，不在 Launcher 里塞 blp 解码器。
-7. `GlueModelLayer` 动画背景：移植客户端的模型层渲染，或者明确接受静态背景。
+9. 预览第二级还没接：客户端在没有作者图时会用 w3i `LoadingScreenModel` 指的那张加载画面，Launcher 缺 blp 解码，得让 Extract 在导 gmap 时把这张也算进去。
 
 ## 37. 命令卡少了四个功能格，混选时只剩通用命令
 
@@ -493,7 +487,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 2 | 2 | 保留：尺寸算错，烘焙阴影等于全废 |
 | 3 | 2 | 保留：地表花纹、斜坡、破面 |
 | 4 | 2、3 | 保留：客户端并进阴影图，Launcher 另做黑片 |
-| 5 | 2 | 保留：腐地边缘形态不同 |
 | 6 | 3 | 保留：客户端有 splat/void，Launcher 没有 |
 | 7 | 2、4 | 保留：水面参数没读 |
 | 8 | 2 | 保留：偶发大浪 |
@@ -557,7 +550,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 2. **第 39 条**（提示语）和第 38 条（热键）现在是「按了没反应」，属于功能性缺陷，可以提前插队。
 3. **第 26 条**（镜头）的实现可以先做，验收等 JASS。
 
-底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 4、5、6、7、8、9、12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
+底层那一批里，**第 2、3、10、11、13** 是「一改就能并排看出差别」的，建议先啃这五个；**第 4、6、7、8、9、12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
 单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**20–25**）里 20 的「接上 `world.Effects`」性价比最高。
 
