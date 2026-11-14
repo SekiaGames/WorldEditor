@@ -65,24 +65,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 24（命令提示/悬停/Tooltip）已落地并合并到 Launcher，编号不复用。
-
-### 23. 法术书没有页面，子技能进不了命令卡（V1 #64）
-
-- **客户端**：法术书是命令卡的一个页面：`OpenSpellBook(selected, book)` / `BackFromSpellBook()`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs:59-64`），`CollectAbilityCommands` 在 `spellBook != null` 时只收 `ContainerAbility` 与这本书同源的子技能（`CommandCardBuilder.Abilities.cs:25-26`），子技能序号当格号落在 0..10、第 12 格放「返回」；书的主人死亡、书被移除或子技能不可用时自动 `_menus.Back()`。
-- **Launcher**：`Ability` 只有 `ContainerRawcode` / `ContainerAbility` 两个字段，全仓没有一处赋值（`Launcher/Src/Abilities/Ability.cs:714-715`），也没有 `RuntimeSpellBookAbility`；物编里的法术书物品（`sbok` / `Aspb`）用出去什么都不发生。
-- **表现差异**：拿到法术书点使用没有任何页面打开，书里的子技能永远进不了命令卡，物品等于失效。
-- **要做**：补 `RuntimeSpellBookAbility`（物编 MenuOrderId + 子技能 `Requires` 链），在 `CommandCardBuilder` 的菜单栈里加 `MenuKind.Book` 与 `OpenSpellBook` / `BackFromSpellBook`，子技能按容器过滤并把序号当格号，点开/关页条件与客户端一致。
-
-> **执行结论（Launcher3，待合并）**：法术书已能打开命令卡页面并释放子技能。
-> - 定位：`sbok` 的 `abilList=Aspb` 不在 `GrantItemAbilities` 白名单里，`RuntimeAbilityFactory` 没有 `Aspb` 实现，命令卡菜单栈只有 Learn/Build 两种页，`Ability.ContainerRawcode/ContainerAbility` 从未被赋值。
-> - 书本体：新增 `Launcher3/GameCore/L3_Simulation/Simulation/Configuration/RuntimeSpellBookAbility.cs`（与客户端同路径）：DataA 子技能码、DataB 共享冷却、DataC/DataD 最小/最大技能数、DataE 基础命令（`BaseOrderId`，Launcher 无 `OrderIdTable`，用它承担客户端 `MenuOrderId` 的页面身份）；子技能按客户端 `SelectSpellIndices` 抽取、等级 1、带 `ContainerRawcode`/`ContainerAbility`/`SourceItem` 挂到主人技能表。
-> - 装备/卸下：`Launcher3/Src/World/World.Abilities.cs` 的 `GrantItemAbilities` 对 `Aspb` 走 `AttachToItem`，`RevokeItemAbilities` 移除书时调 `OnRemove()` 一并撤掉子技能；`TryCast` 成功后按客户端广播 `OnOwnerAbilityCast`，实现共享冷却。
-> - 页面：`Launcher3/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs` 加 `MenuKind.Book`、`OpenSpellBook`/`BackFromSpellBook`/`CurrentSpellBook`，`UpdateMenuSelection` 在主人死亡或书被移除时自动退回；`GameHudScreen`/`MeleeHudController` 透传。
-> - 收格：`Launcher3/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs` 的 `CollectSpellBookMenu` 只收这本书的子技能、序号当格号（0..10）、第 12 格返回；`Ui.cs` 的 `BuildCommandEntries` 在学习页/建造页之前判定书页有效性；`ActivateItem` 点到法术书物品直接开页，不进入使用/冷却流程。
-> - 数据：1.27 的 `Aspb` 为 `DataA=AEer,Adis,Aroa`、`DataB=1`、`DataC/DataD=3`、`DataE=spellbook`；三个子技能没有额外 `Requires`，按客户端 `learnable:false` 以 1 级提供，命令卡可用性沿用 Launcher 其他技能格的口径。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；`--card-probe` 输出「法术书 子技能=3 页面=True 0:纠缠根须 1:驱逐魔法 2:咆哮 11:返回」→ 点咆哮法力 390→290 且页面保持 → 返回后回到基础卡 → 书离手后页面自动关闭且书=0；`--state-probe` 仅剩基线 `utod` 一项，`--combat-probe` 全部通过，`--item-probe` 正常。
-> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --play="(4)Turtle Rock.gmap" --card-probe` 可直接看到上述页面；常规玩法里让英雄拾取 `sbok`，选中英雄后点物品格即打开法术书页，点子技能释放，点第 12 格「返回」关页（Esc 关命令卡页属第 21/22 条，尚不在本次范围）。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）已落地并合并到 Launcher，编号不复用。
 
 ### 25. 聊天和控制组各写了一套（V1 #41）
 
@@ -172,7 +155,7 @@
 
 ---
 
-## 核对结果（V1 剩余 9 条）
+## 核对结果（V1 剩余 8 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -184,7 +167,6 @@
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
 | 63 | 仍成立 | 弹道仍是实例化后直线/弧线飞行（`Presentation.cs:33-79`），根因未定位 |
-| 64 | 仍成立 | `ContainerAbility` 无赋值（`Ability.cs:714-715`），无 `RuntimeSpellBookAbility`/`OpenSpellBook` |
 
 > **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
 
