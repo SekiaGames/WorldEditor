@@ -56,7 +56,7 @@
 > - 哨兵：保留 Launcher 现有的点地面施法与 `AddFogReveal`，在落点按 `DataC`（275）高度生成 `Owl.mdl` 猫头鹰，持续 `DataA`。Launcher 没有可破坏物目标管线，未改成客户端的树目标模式。
 > - 火山：引导时在落点生成 `Volcano.mdl` 喷发体；每波保留现有 `DataE` 范围伤害，并新增 `RuntimeVolcanoMissileEffect` 按 `RuntimeVolcanoWavePattern` 从火山口抛出一批熔岩弹（复用 `MissileEffect` 渲染路径，不参与伤害结算，避免改动已对齐的逐波伤害与探针）。断引导时喷发体播 Death。
 > - 预载：五个类都实现 `RuntimePreloadArts`，加载流程的 `PreloadAbility` 会把喷发/雾团/雨幕/落雷/猫头鹰/熔岩弹模型一起预载。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 新增 18 项美术断言全 OK（预载数量、喷发/余烬/雾团/雨幕/落雷/猫头鹰/喷发体/熔岩弹生成、断引导销毁），仅剩基线 `utod` 一项；`--combat-probe` 全部通过（火山第一波伤害仍为 `DataE`）。
+> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 新增 15 项美术断言全 OK（预载数量、喷发/余烬/雾团/雨幕/落雷/猫头鹰/喷发体/熔岩弹生成、断引导销毁），仅剩基线 `utod` 一项；`--combat-probe` 全部通过（火山第一波伤害仍为 `DataE`）。
 > - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --state-probe` 可直接看断言；画面验证在 `(4)Turtle Rock.gmap` 用血法师/火焰领主放烈焰风暴/火山、龙鹰放云雾、女猎手放哨兵，季风可用风暴术士（`ACmo`）观察雨幕与落雷。
 
 ## 模块五：输入与镜头
