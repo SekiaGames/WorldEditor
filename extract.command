@@ -22,17 +22,6 @@ die() {
 	exit 1
 }
 
-# Godot 偶发在进程销毁阶段崩（文件已写完、退出码非 0），每步允许重试一次；转换步骤增量跳过，重试只补缺口。
-run_step() {
-	local label="$1"
-	shift
-	if "$GODOT" --headless --quiet --path "$PROJECT" "$@"; then
-		return 0
-	fi
-	printf '      %s failed - retrying once\n' "$label"
-	"$GODOT" --headless --quiet --path "$PROJECT" "$@"
-}
-
 if [ ! -x "$GODOT" ]; then
 	GODOT=""
 	for app in "/Applications/Godot_mono.app/Contents/MacOS/Godot" \
@@ -74,18 +63,18 @@ rm -rf "$OUT/Tables" "$OUT/Texts"
 if [ -f "$WORK/$UNPACK_MARKER" ]; then
 	printf '      marker found, skip unpack\n'
 else
-	run_step unpack "${GD_ARGS[@]}" "--war3-extract=$WAR3_DIR|$WORK"
+	"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--war3-extract=$WAR3_DIR|$WORK"
 	: > "$WORK/$UNPACK_MARKER"
 fi
 
 printf '\n[3/8] images to png\n'
-run_step images "${GD_ARGS[@]}" "--image-convert=$WORK|$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--image-convert=$WORK|$OUT"
 
 printf '\n[4/8] mdx to glb\n'
-run_step mdx "${GD_ARGS[@]}" "--source-dir=$WORK" "--mdx-export=$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--mdx-export=$OUT"
 
 printf '\n[5/8] copy audio\n'
-run_step media "${GD_ARGS[@]}" "--media-copy=$WORK|$OUT"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--media-copy=$WORK|$OUT"
 
 printf '\n[6/8] importing into godot, this takes 20 to 40 minutes\n'
 if ! "$GODOT" --headless --quiet --path "$PROJECT" --import; then
@@ -95,14 +84,14 @@ fi
 
 printf '\n[7/8] config to C#: tables, texts, fdf, lighting\n'
 mkdir -p "$ROOT/Launcher/Generated"
-run_step tables "${GD_ARGS[@]}" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
-run_step texts "${GD_ARGS[@]}" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
-run_step fdf "${GD_ARGS[@]}" "--source-dir=$WORK" "--fdf-codegen=$ROOT/Launcher/Generated"
-run_step lighting "${GD_ARGS[@]}" "--lighting-codegen=$WORK|$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--fdf-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "--lighting-codegen=$WORK|$ROOT/Launcher/Generated"
 
 printf '\n[8/8] pack %s\n' "$PACK"
 rm -f "$PACK"
-run_step pack --export-pack "extract.pck" "$PACK"
+"$GODOT" --headless --quiet --path "$PROJECT" --export-pack "extract.pck" "$PACK"
 
 printf '\n[OK] resources %s\n' "$OUT"
 printf '     pack      %s\n' "$PACK"
