@@ -32,6 +32,13 @@
 - **玩家可见**：默认地图看不出差别；用自定义迷雾颜色或营地范围的地图，小地图与战场的迷雾色、野怪营地脉动范围都和客户端不同。
 - **要做**：HUD 初始化时从地图资源读 `war3mapMisc.txt`，读不到再用默认值。
 
+> **执行结论（Launcher2，待合并）**：HUD 已改为先读地图 Misc 再回落默认值。
+> - 读取：`War3MiscData.LoadMap(MapSource)` 从 gmap 读 `war3mapMisc.txt`，并兼容地图里的 `UI/MiscData.txt`，低 → 高合并（与 `War3Camera` 既有的地图层口径一致），解析 `[FogOfWar]`/`[Minimap]` 覆盖迷雾档位 alpha、BlightMask、小地图点色、营地阈值/缩放/脉动与营地颜色；解析拆到 `LoadLayers` 便于验证。默认值仍是构造函数从全局 `UIMiscData` 读到的原版值。
+> - 接入：`GameHudScreen.Load` 接收 `War3MiscData`，`MinimapFrame` 使用它；`Lifecycle` 在 HUD 初始化时用 `_map` 构造并注入，战场营地跟踪取 `_newHud.Minimap.MiscData`。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；`--card-probe` 输出 `[HUD] 地图 Misc 迷雾Alpha=0.75 营地阈值=10/20`、`[MISC] HUD 生效 中营地=10 强营地=20 雾Alpha=0.753`（两张自带地图都没有 `war3mapMisc.txt`，走默认值）；合成地图 INI 覆盖结果为 `中营地=7 强营地=13 雾Alpha=0.502 Blight=(1,2,3)/255 强色=(9,8,7)/255`，证明解析与覆盖链路。`--state-probe` 仍只剩基线已知失败 `utod 研究项`。
+> - 说明：两张自带 gmap 的 manifest 文件列表里没有 `war3mapMisc.txt`，所以在它们身上无法肉眼看到地图覆盖；Extract 的 `GmapExportCli.StandardMapFileNames` 已包含该文件，带 `war3mapMisc.txt` 的地图重新导出后会随包带入，本次无需改 Extract。
+> - 合并注意：`GameHudScreen.Load` 由 `public` 收为 `internal` 以接收内部类型；改动落在 `War3MiscData.cs`、`GameHudScreen.cs`、`Lifecycle.cs`，探针输出加在 `Cheats.cs` 的 `RunCardProbe`，与其它 Launcher 副本可能冲突。
+
 ---
 
 ## 模块二 寻路与移动
