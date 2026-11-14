@@ -91,6 +91,13 @@
 
 > **复核评价**：本条顺手欠着一笔规则 5 的账。`PortraitViewport.cs` 客户端在 `L4_Composition/Game/UI/`，Launcher 在 `L4_Composition/Game/Rendering/`。既然本来就要重写这个类，一起搬回 `Game/UI/`。全仓 273 个同名 C# 文件里，相对路径对不上的只有这一处。
 
+> **执行结论（Launcher8，待合并）**：头像已改用 `*_Portrait` 模型，并接入 Portrait/Talk 状态机。
+> - 根因：`PortraitViewport.Show` 加载的是主模型（如 `peasant`/`Footman` 只有 `Stand` 变体），头像模型 `peasant_Portrait.tscn`/`Footman_Portrait.tscn` 才有 `Portrait`/`Portrait Talk`。客户端 `GetPortraitRenderer` 先找 `<模型>_Portrait.mdx`，再退回主模型。
+> - 修复：`PortraitViewport` 搬到 `Game/UI/`（规则 5），加载时按 `stem_Portrait` → `stemPortrait` → 主模型顺序做大小写不敏感查找；新增 `Game/UI/PortraitAnimator.cs`，待机随机选 `Portrait` 变体（避免连续同一段、按 `SimulationId` 重播种，类型/Animprops 变化重建），Talk 选 `Portrait+TALK`，按 ack 语音时长播放后回待机，见提交 `d714284`。
+> - 接线：`UnitSceneComponent` 暴露 Portrait 选段/播放/时长；HUD 每帧推进头像；选择 ack、下令 ack、英雄复活 Ready 都取 `War3AckSoundService` 返回的实际语音时长调 `Talk`。
+> - 验证：`dotnet build -t:Rebuild` 0 错误；headless `--train-test` 日志 `show hpea model=...peasant_Portrait.tscn`、待机 `Portrait - 2`、ack 1.10s 后 `Portrait Talk -1`、随后回待机；OpenGL 截图左下头像显示农民半身像而不是主模型全身。
+> - 未覆盖：各族/英雄的 `_Portrait` 资源未逐个取图，缺失时按主模型回退；正式 Forward+ 截图仍受 Metal fence 影响，画面证据来自 OpenGL 兼容渲染器。
+
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
 - **客户端**：把 `PixelOffsetX` 和 `ActivePixelWidth` 传给渲染设备，`War3UiViewport.FitPixelWidth` 把 HUD 限制在居中 16:9（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/War3UiViewport.cs:24`、`Scenes/War3GameScene/Rendering.cs:46`）。`UiFontScale` 读用户设置并在倍率变化时 `InvalidateLayout()`。
