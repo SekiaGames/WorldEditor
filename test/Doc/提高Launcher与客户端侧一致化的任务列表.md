@@ -56,7 +56,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）已落地并合并到 Launcher，编号不复用。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 27（Buff 图标栏）已落地并合并到 Launcher，编号不复用。
 
 ### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
 
@@ -74,21 +74,6 @@
 > - 阵型：新增场景 `FormationMovementEnabled`（默认开），小地图阵型按钮经 `FilterChanged` 写入；`PlayerCommandProcessor` 的 Move/AttackMove/Patrol 在关闭时不再套 `GroupFormation.Layout`、不再限速与组路径。
 > - 物品/出生点：客户端 `MinimapUnitView.Classify` 实际没有 Item/StartLocation 分支，这两类只是贴图/配色枚举，由 JASS 自定义图标注入；Launcher 不跑 JASS，按客户端口径不生成。
 > - 验证：`dotnet build` 0 错误；Turtle Rock 运行日志出现「营地图标 19」；在 `extract.pck` 内校验修正后的 CreepLoc PNG 路径存在、旧路径不存在。
-
-### 27. 单位信息面板没有 Buff 图标栏
-
-- **客户端**：`UnitInfoPanelFrame` 有 8 个 `BuffIcon0..7`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:41-43`、`:126-128`），`UpdateBuffIcons` 按选中单位的 Buff 填图标、剩余时间和光环/增益标记（`:534-573`），悬停显示 `Bufftip/BuffUbertip`。
-- **Launcher**：`UnitInfoPanelFrame` 只有名字/经验/攻击/护甲/三围/状态标签（`Launcher/GameCore/L4_Composition/Game/UI/UnitInfoPanelFrame.cs:24-39`），没有 Buff 控件；`MeleeHudController.SetBuffs` 只把列表存进 `_buffs`（`MeleeHudController.cs:141-145`），`GameHudScreen` 没有任何读取方。
-- **表现差异**：选中单位后看不到身上的增益/减益图标和剩余时间，也看不到悬停说明；玩家无法判断减速、嗜血、光环还剩多久。
-- **要做**：在 `UnitInfoPanelFrame` 补 8 个 Buff 图标槽与剩余时间/光环标记，数据从 `SetBuffs` 接入；悬停说明与第 24 条一起做。
-
-> **执行结论（Launcher7，待合并）**：已修复。查客户端 `UpdateBuffIcons` 确认口径：8 个 `BuffIcon0..7`、19.2 尺寸；图标取物编 `Buffart`（短名补 `ReplaceableTextures\CommandButtons\`，空/`_`/缺贴图跳过），按 rawcode 去重；悬停显示 `Bufftip/BuffUbertip`。
-> - `UnitInfoPanelFrame` 补 8 个图标槽，与状态行同底边（x = 6 + 46 + 24 + i × 19.2）；`SetBuffs` 接入并按客户端口径过滤/去重/解析贴图；`状态：` 改为所有单位可见（客户端同款）。
-> - 新增 `BuffEntry.Collect`：从 `unit.Abilities` 收 `Buff`，用 `Buffart/Bufftip/BuffUbertip` 和 `BuffID` 回退生成展示数据；`MeleeHudController.SetBuffs` → `GameHudScreen.SetBuffs` → 面板。
-> - 悬停：`GameHudScreen.OnHoverChanged` 识别 `BuffIcon#` 并显示 Bufftip/BuffUbertip；`SetBuffs` 刷新时同步更新悬停内容。
-> - 口径说明：客户端这 8 个图标本身不画剩余时间数字或光环角标，剩余时间通过 Buff 到期移除体现，光环 Buff 用其 `Buffart` 图标进入同一排；这里按客户端实现，没有自创覆盖层。
-> - 验证：`dotnet build` 0 错误；`--ui-hud-probe` 全部通过（空图跳过、重复 rawcode 去重、8 格容量、图标不越界、悬停显示“专注光环/提高了护甲”）；真实 `BHad` Buff 走 `BuffEntry.Collect → SetBuffs` 端到端通过；headless `(4)Turtle Rock` 加载无异常。
-> - 复核方式：启动 Launcher7 进图，选中带光环/增益的单位（如虔诚光环的圣骑士或受诅咒单位），信息面板底部状态行右侧会出现图标，悬停查看 Bufftip/BuffUbertip。
 
 ### 28. 头像只循环 Stand，没有 Portrait/Talk 动作
 
