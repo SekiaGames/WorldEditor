@@ -10,31 +10,44 @@
 
 读完一条就动手，不要先全面铺开。每条都标了客户端在哪、Launcher 在哪，照着路径能直接翻到。
 
-**完成一条就把它从清单里删掉，序列号不复用；下一条新任务接着往后续。当前清单排到 48。**
+**完成一条就把它从清单里删掉，序列号不复用；下一条新任务接着往后续。当前清单排到 47。**
+
+## 范围
+
+- 起点是**地图选择界面**。客户端首屏（公告页、主菜单、菜单音乐）、地图文件夹浏览、地图导入、战役列表都不在本轮范围内，Launcher 保持固定地图路径，地图只从 `test/map_gmap` 读。
+- 因此「客户端双击 `.w3x` 就能进、Launcher 要先转 gmap」属于既定差异，不记进清单；但**选图界面本身的版式、预览、版本提示、点确定之后的流程**要按客户端对齐。
 
 ---
 
-## 一、进图这一段
+## 一、从选图到进图
 
-## 1. 首屏直接被砍掉了
+## 1. 地图选择界面的壳、背景和预览都还差一截
 
-客户端启动先进公告页（`Hosting/GameApplication.cs` 的 `EnterMenuMode`，`UI/PublicServiceScreen.cs` 有「不再显示」的勾选），再进主菜单（`UI/MainMenuScreen.cs`，按钮走 `menu_game` / `menu_campaign`），同时起菜单音乐 `War3MenuMusic.TryStart()`。
+版式坐标两边其实是一样的（列表面板 `Place(listPanel, 396, 520, ..., 84, 132)`、信息面板 `460×440 @ 500,132`、确定按钮 `454×52 @ 503,597` 都是同值），差在壳和内容：
 
-Launcher 的 `LauncherApp._Ready` 只有两条路：带 `--play=` 直接进图，否则直接 `ShowMapList()`。没有公告、没有主菜单、没有菜单 BGM（`Audio/` 下也没有 `War3MenuMusic` 这类东西）。
+- **宿主**：客户端用 `FdfUiFactory` 解析 `UI\FrameDef\FrameDef.toc`，`Create("Skirmish")` 当全屏宿主，再把它原有子帧全部隐藏，在宿主上挂自己的左右两栏。Launcher 直接在 `_root` 上手搭，`Generated/Fdf` 里那张 `Skirmish.fdf` 一直没人用。
+- **背景**：客户端 `GlueModelLayer` 用 `GlueSpriteLayerBackground` / `TopLeft` / `TopRight` 三项皮肤跑模型层动画；Launcher 只有一张静态 `GlueSpriteLayerBackground` 贴图（失败时退纯色），仓库里没有 `GlueModelLayer` 这个文件。
+- **预览**：客户端 `MapPreviewImage.Read` 依次试 `war3mapPreview.tga/blp`、`war3mapMap.blp/tga`，再用 w3i 的 `LoadingScreenModel` 兜底。Launcher 只读 `war3mapMap.png`；gmap 里目前确实只有这张 png，作者自带的 `war3mapPreview` 没有，也没有 blp/tga 解码。
+- **版本与警告**：客户端有「保存版本」一行，并按 `MapCompatibilityNotice` 出黄色 1.32 兼容警告，警告出现时描述框从 112 收到 60。Launcher 两行都没有，但 `W3iInfo` 里 `FormatVersion` / `GameVersionNumber` 已经解析好了。
+- **排序**：客户端普通地图按文件大小排（`MapLibrary.SortMapsBySize`），Launcher 按文件名。
+- **超宽屏**：客户端用 `War3UiViewport` 把界面限制在居中 16:9，Launcher 用 `viewport / 1024` 拉满整窗。
+- **Esc**：客户端置 `CancelRequested` 交给宿主处理；Launcher 只 `Cancelled?.Invoke()`，而 `LauncherApp.ShowMapList` 只订阅了 `StartRequested`，按 Esc 没有任何反应。
+- **文案**：Launcher 副标题是「从 gmap 中选择一个场景开始游戏」，固定路径下应改成和客户端一致的说法。
 
-另外客户端的窗口标题带地图名，换图会更新（`GameApplication.cs` 里几处 `Title`）；Launcher 从不改标题，永远是 `project.godot` 里的那个名字。
+**已完成**（2026-11-14）：
 
-要做：把公告页和主菜单补回来，菜单音乐接上，窗口标题跟随地图名。
+1. FDF 宿主接上了：`LoadTemplate(Skirmish.fdf)` + `Create("Skirmish")`，原有 7 个子帧全部隐藏，两栏挂在宿主上。启动日志会打印 `[MAP-UI] Skirmish 宿主已创建`。
+2. 「保存版本」和兼容警告两行补上了，判定走新加的 `MapCompatibilityNotice`（和客户端同名同路径），警告出现时描述框收到 60。
+3. 列表改成按文件大小排（同大小再按文件名）。
+4. 界面改成居中 16:9，超宽屏两侧留黑；`_GuiInput` 的坐标换算跟着改成按控件尺寸。
 
-## 2. 地图只能从 `test/map_gmap` 里挑，还挑不全
+**还要做**：
 
-客户端的地图来源是 MPQ：`Src/Resources/War3ResourceManager.cs` 把地图归档、战役归档和 `War3.mpq` 等基础归档叠起来，双击 `.w3x` 就能进；列表侧有文件夹层级（`MapSelectionScreen.OpenFolder`）、有导入（`MapPackageImporter`）、有 1.32 版本兼容提示（`MapCompatibilityNotice`）、预览依次试 `war3mapPreview.tga/blp` 再试 `war3mapMap.blp/tga`（`MapPreviewImage.cs`）。
+5. Esc 给个去处，别再发一个没人接的事件（`Cancelled` 至今没有订阅者）。
+6. 预览回退顺序对齐：`war3mapPreview` 需要 Extract 在生成 gmap 时一并导出 png，不在 Launcher 里塞一个 blp 解码器（缺数据改 Extract，这条规矩不破）。
+7. `GlueModelLayer` 单独评估，工作量不小：要么移植客户端的模型层渲染，要么明确接受静态背景。
 
-Launcher 的 `Assets` 只列 `test/map_gmap` 下的 `.gmap`，塞进一个平铺列表（`MapSelectionScreen` 里只有一个 `_maps`），没有上级目录、没有导入、没有兼容提示，预览只读 `war3mapMap.png`——普通地图包里是 `.blp`，所以很多图预览是空的。
-
-要做：gmap 这条路先留着，但列表要按客户端的分层和预览顺序来；`.blp`/`.tga` 得能解。
-
-## 3. 点「开始」之后有一段空档，屏幕上还停在刚点过的列表
+## 2. 点「开始」之后有一段空档，屏幕上还停在刚点过的列表
 
 客户端点开始只是置标志位（`MapSelectionScreen.OnPlayRequest` 设 `PlayRequested`），真正的加载发生在主循环里：先 `DetachMenus()`，再把地图名写进标题，然后 `LoadMap()`（`GameApplication.cs` 的 `Render`）。加载屏是在 `LoadMap` 一开始就建好的。
 
@@ -42,15 +55,15 @@ Launcher 是回调里直接干（`LauncherApp` 里 `Clear(); StartGame(mapPath)`
 
 要做：先开加载屏再解析，和客户端一个顺序。
 
-## 4. 加载屏少了缩略图和背景模型，节奏也不一样
+## 3. 加载屏少了缩略图和背景模型，节奏也不一样
 
-客户端的加载屏由宿主持有，`Report` 里直接画一帧再 SwapBuffers（`War3LoadingScreenRenderer.Report`），`using` 完就释放，时长等于真实加载时长；`MinimapImage` 里塞的是地图缩略图，背景优先用 w3i 的 `LoadingScreenModel` 或 `UI\WorldEditData.txt` 的 `[LoadingScreens]`，FDF 绑失败还有一条直绘回退。
+客户端的加载屏由宿主持有，`Report` 里直接画一帧再 SwapBuffers（`War3LoadingScreenRenderer.Report`），`using` 完就释放，时长等于真实加载时长；`MinimapImage` 里塞的是地图缩略图（就是选图页那张），背景优先用 w3i 的 `LoadingScreenModel` 或 `UI\WorldEditData.txt` 的 `[LoadingScreens]`，FDF 绑失败还有一条直绘回退。
 
 Launcher 的加载屏是场景里的一个 `Control`，`Report` 只 `QueueRedraw`；另外硬加了「至少显示 1.2 秒 + 稳定 3 帧 + 0.5 秒淡出」（`Lifecycle.cs` 的 `LoadHoldSeconds`、`War3LoadingScreenRenderer` 的 `_remaining` / `_settleFrames`）。缩略图完全没有，背景是按 skin 里模型路径取目录硬拼四张 `Loading-*.png`；`BuildFrameTree` 在 `_loading == null` 时直接 return，但 `LayoutTexts` 照样解引用，FDF 绑不出来会空引用——客户端这时是回退直绘。
 
-要做：缩略图接上，背景模型按 w3i / LoadingScreens 表来，1.2 秒那条规则去掉或改成「不早于真实加载完成」，补回 FDF 失败时的直绘路径。
+要做：缩略图接上（选图页解码一次就能复用），背景模型按 w3i / LoadingScreens 表来，1.2 秒那条规则去掉或改成「不早于真实加载完成」，补回 FDF 失败时的直绘路径。
 
-## 5. 加载阶段表和建世界的顺序都变了
+## 4. 加载阶段表和建世界的顺序都变了
 
 客户端的阶段是枚举驱动的（`Scenes/War3GameScene/Lifecycle.cs` 的 `Begin → Terrain → Textures → TerrainPresentation → SceneResources → WorldConfiguration → PlacedUnits → MapAot → MapScript → PresentationPreload → Pathing → Selection → Behaviours`），打点在 .10/.22/.34/.45/.56/.66/.73/.76/.86/.93/.98。
 
@@ -62,7 +75,7 @@ Launcher 是 `SetupSteps` 里手写 async 顺序，打点 .10/.22/.34/.45/.66/.8
 
 要做：阶段名和打点对齐；World 先于单位；脚本那两格虽然不跑 JASS，也要有对应位置（哪怕是空阶段），否则后面接脚本时又要重排。
 
-## 6. 加载出错时，一边中止一边带病进门
+## 5. 加载出错时，一边中止一边带病进门
 
 客户端只对 `SceneResources..Selection` 区间吞异常并跳到 `Behaviours`，其余阶段直接抛；`Scene.ContinueLoad` 会先 `Dispose` 再抛；`GameApplication.LoadMap` 没有 try/catch，最终由 `AppDomain.UnhandledException` 写 `CrashLog`。
 
@@ -74,7 +87,7 @@ Launcher 的 `RunSetupAsync` 捕所有异常，只 `GD.PushError`，然后照样
 
 ## 二、镜头
 
-## 7. 电影镜头和脚本镜头是空的
+## 6. 电影镜头和脚本镜头是空的
 
 客户端 `War3Camera` 能装 MDX 的 `CAMS` 轨道（`SetCinematicModel` / `CinematicModelCamera.Step`），每帧直写位置、目标、FOV、近远裁剪和滚转，并且跳过地形钳制；`SetField` / `PanTo` / `SetTargetController` / `SetOrientController` / `SetNoise` / `SetShake` / `ResetToGameCamera` 都有实际消费者。
 
@@ -82,7 +95,7 @@ Launcher 这些方法都在，但除 `SetSoftFollowController` 外没有任何�
 
 要做：`CinematicModelCamera` 补进来并接上轨道求值；脚本镜头接口先接到作弊/探针上验证，等 JASS 进来再接 JASS。
 
-## 8. 镜头不跟随、不吃设置、取景也和客户端不同
+## 7. 镜头不跟随、不吃设置、取景也和客户端不同
 
 四件事：
 
@@ -97,7 +110,7 @@ Launcher 这些方法都在，但除 `SetSoftFollowController` 外没有任何�
 
 ## 三、光与环境
 
-## 9. 整局不参与昼夜光照，也没有局部光
+## 8. 整局不参与昼夜光照，也没有局部光
 
 客户端 `SceneLighting` 每次 `Update(gameHour)` 从 DNC 模型插值方向光、漫反射和环境光，`Lifecycle` 按 0.05 小时节流刷新，还接受 `SetTerrainLighting` / `SetUnitLighting`；地形和悬崖把光照烘进顶点色，单位和装饰物走 `DoodadRenderer.Draw(..., light, ...)`。`DynamicLight` 再把 MDX 灯光上传成最多 8 盏动态光，在顶点着色器里按衰减累加。
 
@@ -105,7 +118,7 @@ Launcher 场景里没有任何 `DirectionalLight3D`（只有头像视口里有�
 
 要做：先把昼夜光照接上（哪怕先只做方向和颜色），再补 MDX 动态光。这条不做，「黄昏」「夜里」「火把照亮地面」这些观感永远对不上。
 
-## 10. 地形雾没人消费
+## 9. 地形雾没人消费
 
 客户端从 w3i 解析雾参数（`FogSettings`），`SetTerrainFogEx` 也能改，地形、悬崖、水、岸浪、天气都把 `uFogColor` / `uFogParams` 传进着色器。
 
@@ -113,7 +126,7 @@ Launcher 的 `W3iInfo` 明明解析了 `FogHeightStart/End/Density/FogColorBgra`
 
 要做：把已经解析出来的字段接到 Godot 的环境雾或着色器上，带雾的图（沼泽、达拉然、剧情图）一眼就能看出来。
 
-## 11. 天空没有太阳月亮，选天空的依据也不对
+## 10. 天空没有太阳月亮，选天空的依据也不对
 
 客户端单独加载 `Environment\Sky\Sky\skyLight.mdx`（日月就在这个模型里），按 `SunMoonAngle(timeOfDay)` 每 24 小时转一圈跟着相机走；天空用 `GameplayConfig.SkyboxType`（war3mapMisc 的 0..14 索引）选，`SetSkyModel` 可以覆盖。
 
@@ -121,7 +134,7 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 要做：加载 `skyLight` 并按时辰旋转；天空改按 `SkyboxType` 选；全景底只在完全没有天空壳时兜底。
 
-## 12. 地形贴图和悬崖有四处硬伤
+## 11. 地形贴图和悬崖有四处硬伤
 
 - **变体子块**：客户端普通 4×4 图集只取 `variation & 1`（layer 0 或 15），extended 8×4 才用 `16+variation`；Launcher 无条件 `16+variation`，草地和路缘的接缝花纹比原版更花，混合边界形状也不一样。
 - **悬崖模型目录**：客户端读 `CliffTypes.slk` 的 `cliffModelDir` / `rampModelDir`；Launcher 写死 `Doodads/Terrain/Cliffs/` 和 `CliffTrans/`（`CliffRenderer` 里两个常量），城市悬崖这类直接找不到模型，地面留空洞。
@@ -130,7 +143,7 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 要做：按 `CliffTypes.slk` 走，补齐上层贴图和非法斜坡修正，过渡格剔除。
 
-## 13. 地形高度改不了
+## 12. 地形高度改不了
 
 客户端支持运行时改顶点高度和法线（`TerrainRenderer` 的增量变形、`TerrainSurface.SampleHeightDeformation`），`TerrainDeformCrater` 一类会真的在地形上挖坑。
 
@@ -138,15 +151,15 @@ Launcher 没有 deformation，地形网格一次性烘死。
 
 要做：地形网格要能被改写；不然地震、深渊这类技能单位会悬空或陷进去。
 
-## 14. 地图自带的阴影图读错路径，树影也各画各的
+## 13. 地图自带的阴影图读错路径，树影也各画各的
 
 客户端的 `TerrainShadowMap` 从当前地图归档读 `war3map.shd`，纹理按 `(W-1)*4 × (H-1)*4` 建（32 世界单位一个 texel），值折半；每棵树的 `ReplaceableTextures\Shadows\*` 也按 alpha 盖进同一张图，取值取 `max(底图, 树影×强度)`，强度随太阳高度在 19 点后归零。
 
-Launcher 读的是固定路径 `res://gmap/map/war3map.shd`，仓库和 Extract 里都没有这个文件，所以进图只打印「阴影图缺失」；就算命中，也按 `W×H` 建纹理并且只拷前 W×H 字节，等于取左上角一小块拉伸到全图。树影则是每棵树一个黑色 Quad（alpha 0.65、固定偏移 `(-0.2w, 2, 0.2h)`），密林处多片叠加越来越黑，夜里也还在，斜坡上的影子是悬空平板。
+Launcher 读的是固定路径 `res://gmap/map/war3map.shd`，而 gmap 是把 `war3map.shd` 打包在包内的（实测两张图都有），按固定路径永远读不到，所以进图只打印「阴影图缺失」；就算读到了，也按 `W×H` 建纹理并且只拷前 W×H 字节，而实际文件是 `(W-1)*4 × (H-1)*4`，等于取左上角一小块拉伸到全图。树影则是每棵树一个黑色 Quad（alpha 0.65、固定偏移 `(-0.2w, 2, 0.2h)`），密林处多片叠加越来越黑，夜里也还在，斜坡上的影子是悬空平板。
 
-要做：路径改从地图归档读，尺寸按客户端的算法；树影并进同一张阴影图，并跟着太阳高度走。
+要做：路径改成从 gmap 包内读，尺寸按客户端的算法；树影并进同一张阴影图，并跟着太阳高度走。
 
-## 15. 战争迷雾是一块悬在 320 高的板子
+## 14. 战争迷雾是一块悬在 320 高的板子
 
 客户端不画雾：`FogOfWarRenderer` 只维护一张 R8 可见性纹理，由地形、悬崖、单位、水、岸浪、天气各自在片元里采样（`FogOfWarCommon.glsl` 里 `rgb=mix(rgb,0,shadow)`），三态 255/128/0，`FogVisualBuffer` 每 30ms 逼近 9 级，所以视野进出是渐变的。
 
@@ -154,7 +167,7 @@ Launcher 把雾做成一张贴地网格（`Src/World/FogOfWar.cs`，`FogHeight=3
 
 要做：把雾改成着色器采样，别用几何体；分辨率回到 128；补灰雾渐变和正确的混色。
 
-## 16. 进雾之后的记忆：一个定格，一个只是暂停
+## 15. 进雾之后的记忆：一个定格，一个只是暂停
 
 客户端的建筑看不见但已探索时，`CharacterRenderer.FogMemory` 会抓一份 CPU 快照（模型矩阵、骨骼调色板、序列、帧、全局时间、队伍色），把粒子/丝带实例移除，用冻结时间重画，模型仍然吃迷雾所以是灰的；重新看到那块空地时 `ScoutingMemory` 才遗忘。装饰物也一样有可见/腐地/序列/帧的记忆。
 
@@ -162,7 +175,7 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 
 要做：建筑和装饰物都要「冻住最后看到的样子」，并吃到迷雾染色。
 
-## 17. 腐地是羽化遮罩，不是换贴图
+## 16. 腐地是羽化遮罩，不是换贴图
 
 客户端把整格地表换成 blight 地表贴图，走正常的四角混合，而且只在被观察过的格显示（`ScoutedBlight` 带按玩家的记忆位掩码）。
 
@@ -170,7 +183,7 @@ Launcher 生成一格一字节的 `blight_mask` 加一张贴图，在着色器�
 
 要做：改成逐格贴图替换（块状硬边），并区分「世界已经腐化」和「这个玩家看到过」。
 
-## 18. 水面只学了形状，没学参数
+## 17. 水面只学了形状，没学参数
 
 - UV 密度：客户端用 `Water.slk` 的 `cells` 列，纹理每 N 格重复一次；Launcher 按格号直接当 UV，等于 `cells=1`，大水面波纹明显更碎。
 - 深浅阈值：客户端用 `MinimumDepth` / `DeepLevel` / `MaximumDepth` 分段插值，并乘地图水色 `BaseColor`；Launcher 写死 `5/64`、`27/64`、`0.5`、`0.0625`，也不读地图水色。
@@ -179,7 +192,7 @@ Launcher 生成一格一字节的 `blight_mask` 加一张贴图，在着色器�
 
 要做：`Water.slk` 的字段补齐（`War3WaterConfig` 现在连 `cells` / `alphaMode` / `lighting` 都没有），水面接光照和雾。
 
-## 19. 岸浪逐格实例化，偶发大浪没了
+## 18. 岸浪逐格实例化，偶发大浪没了
 
 客户端把岸浪模型的 `ParticleEmitter2` 展开成实例化粒子，保留段颜色、透明度、缩放、重力、`TimeMiddle`，还有 7% 概率的 rare `Stand` 脉冲。
 
@@ -187,7 +200,7 @@ Launcher 的 inside/straight/outside 判定和旋转常量跟客户端一致，�
 
 要做：至少把偶发大浪补上；实例化方式可以后面再优化。
 
-## 20. 只有全局天气，跨一格整片雨雪重来
+## 19. 只有全局天气，跨一格整片雨雪重来
 
 客户端给每个 `AddWeatherEffect` 建一个带 rect 的 `WeatherRenderer`，可以多天气叠加，粒子相位由 cell 索引确定性生成，只在相机跨 cell 时重建实例数据。
 
@@ -195,7 +208,7 @@ Launcher 只按 `map.Info?.Environment?.GlobalWeather` 建一次，`WeatherRende
 
 要做：区域天气接上；跨 cell 不要 Restart；`var` 按速度变化用。
 
-## 21. 地面贴花和地图边缘都是空的
+## 20. 地面贴花和地图边缘都是空的
 
 客户端的 `War3SplatSystem` 支持 `SPL`/`UBR` 与 `CreateUberSplat`，带 Birth/Pause/Decay 颜色和 BlendMode，用贴地 Quad 批量画；建筑底座（`UnitUI.uberSplat`）也走这条管线，拆掉时会淡出。地图四边还有 `MapVoidRenderer` 生成贴边裙边和外圈，边缘不会看到天空。
 
@@ -207,7 +220,7 @@ Launcher 全仓没有 splat/decal，也没有 void：建筑脚下没有底座土
 
 ## 四、单位与战斗表现
 
-## 22. 血条、选中圈、影子三块贴片都挂错了地方
+## 21. 血条、选中圈、影子三块贴片都挂错了地方
 
 - **血条**：客户端按 `SelectionDiameter` 换算成屏幕像素宽、按包围盒决定高度，所有可见存活非无敌单位都画，敌人恒红、有蓝条；Launcher 是世界尺寸 Quad（56 / 建筑 90），只有受伤或被选中才画，没有蓝条，颜色是 0.6/0.3 两档离散色。而且 `BarRoot` 是 `Root` 的子节点、`Root` 上已经设过缩放，模型缩放不是 1 的单位血条离头顶的距离不对；建筑条宽 90，填充偏移却还按 28 算，掉血时填充会往右漂。
 - **选中圈**：客户端读 `SelectionRadius/Height`，用原版 `SelectionCircleMed.blp` 铺在地形三角面上，坡地贴合，敌红友绿；Launcher 是固定 32 段程序化圆环（内 40 外 52），颜色恒为 `3ce03c`，`y=6` 固定在 `Root` 下，所有兵种一样大，坡上会插地或悬空。
@@ -215,7 +228,7 @@ Launcher 全仓没有 splat/decal，也没有 void：建筑脚下没有底座土
 
 要做：三块拆开做，血条先做（最容易看见），再选中圈形状和贴地，再影子脱离 `Root`。
 
-## 23. 队伍色回绕，幻象不变色，虚无没反应
+## 22. 队伍色回绕，幻象不变色，虚无没反应
 
 - 客户端队伍色用 `TeamColorXX.blp`（0–27 号），替身 ID 2 的 `TeamGlowXX` 也跟着玩家色变；Launcher 只内置 12 个纯色，`ColorOf(player)` 取 `player % 12`，于是 12–23 号（中立、野怪）会回绕成玩家亮色——**野怪变成鲜红或亮蓝**。队伍色区域在 shader 里被平涂成纯色，没有原版的明暗纹理；光晕固定一种颜色。
 - 客户端的幻象按观察者关系染成 `(20,96,255)` 蓝；Launcher 的 `CreateIllusion` 只复制单位，幻象和真身一模一样。
@@ -224,7 +237,7 @@ Launcher 全仓没有 splat/decal，也没有 void：建筑脚下没有底座土
 
 要做：队伍色表补到 28 号并改成贴图替换；幻象、虚无、隐身的作用范围对齐。
 
-## 24. 飞行单位贴地站着，转身是 20Hz 一跳，炮塔不会转
+## 23. 飞行单位贴地站着，转身是 20Hz 一跳，炮塔不会转
 
 客户端模型 Z = 地形高 + `RenderFlyHeight`，飞行单位还有 MoveFloor 下限，建筑 +12 防 z-fighting；按 `ElevationSampleRadius/MaxPitch/MaxRoll` 采四点做俯仰横滚；朝向由 `FacingInterpolation` 逐渲染帧追；带 `LookAtBone` 的单位每帧把炮塔/龙头转向目标。
 
@@ -232,14 +245,14 @@ Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹�
 
 要做：飞行高度、坡面姿态、朝向插值、look-at 四件，先做飞行高度（一眼能看出）。
 
-## 25. 战斗动作：攻击只播一次，攻速不影响动作
+## 24. 战斗动作：攻击只播一次，攻速不影响动作
 
 - 客户端的动画由 `UpdateUnitAnimation` 统一管优先级，每次出手 `Set("Attack")` + `Queue("Stand", Ready)`，动画速率跟 `AttackSpeedFactor` 走，切序列时还做姿态混合。
 - Launcher 的 `Play` 里有 `if (found == CurrentAnimation) return;`，所以站桩连续攻击时第一刀之后一直停在攻击末帧，伤害照常结算；`SpeedScale` 只在 `Walk` 时设置，嗜血/攻速升级后动作节奏不变；没有 `Stand Ready`（进入战斗还没出手时的举刀待机），切换是硬切没有过渡；`SelectSequence` 返回第一个匹配项，所以同兵种待机完全同步、永远是同一个 `Stand` 变体（客户端按 rarity 随机）。
 
 要做：`Play` 允许重播同一序列，攻速接上，补 Ready 和姿态混合，待机变体加随机。
 
-## 26. 死亡、建造、升级的动作断在半路
+## 25. 死亡、建造、升级的动作断在半路
 
 - **死亡**：客户端 Death 播完按 `DeathAnimTime` 接 `Decay`（Flesh/Bone）或英雄的 `Dissipate`，`Fit` 压缩时长；Launcher 只 `Play("Death")`，非循环停在末帧，88 秒后直接隐藏——尸体不下沉不腐烂，英雄没有消散。
 - **建造**：客户端有专门的 `FindConstructionBirthSequence`（避免暗夜主城误选 `stand work ... birth`）；Launcher 是 `PickAnimation("Birth")`，精确匹配不到就取任意以 Birth 开头的，暗夜主城这类可能选错变体。
@@ -250,7 +263,7 @@ Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹�
 
 要做：死亡链、升级生长、金矿小精灵先补；切线信息要不要保留属于 Extract 侧的事，单开一条更合适。
 
-## 27. 特效只认一张手写表，`World.Effects` 根本不画
+## 26. 特效只认一张手写表，`World.Effects` 根本不画
 
 客户端的特效完全数据驱动：从物编按等级读 `CasterArt/TargetArt/EffectArt/AreaEffectArt` 和挂点，`world.Effects` 里的 `SpecialEffect`、Buff、`ImageVisual` 统一收集绘制，出生/死亡序列、脚本颜色都在里面；Buff 视觉按 `VisualModelPath` 生成，同一挂点的光环按 `AuraKey` 去重，飞行单位按 `VisualAllowedWhileAirborne` 过滤。
 
@@ -258,7 +271,7 @@ Launcher 在手写表 `EffectArtTable` 里维护了 147 条「技能码 → 目�
 
 要做：先把 `world.Effects` 接上渲染（这一步能一次性救回一大片缺失特效），再把 `EffectArtTable` 逐步换成按物编读 Art 字段，挂点改成骨骼。
 
-## 28. 粒子、丝带和模型事件都缺
+## 27. 粒子、丝带和模型事件都缺
 
 - **粒子**：客户端逐实例模拟位置/速度/重力/寿命/模型空间，支持替换贴图、实例染色、队伍色粒子、squirt 发射、头/尾；Launcher 转换时烘成 `GPUParticles3D`，数量硬夹 512，参数取待机帧快照，没有队伍色/实例色，重粒子明显更稀。
 - **丝带**：客户端有完整运行时丝带（发射时钟、历史点、上下高度、重力、颜色、纹理行列）；Launcher 只给 `gravity>0` 的丝带烘一张静态扫掠网格，其余只留 `metadata/war3_ribbon_*`，而且 Launcher 侧没有代码消费这些元数据——剑刃拖尾、魔法轨迹基本不出现。
@@ -266,7 +279,7 @@ Launcher 在手写表 `EffectArtTable` 里维护了 147 条「技能码 → 目�
 
 要做：丝带优先（视觉损失最大），然后粒子参数和实例色，最后模型事件（要动 Extract 侧）。
 
-## 29. 闪电是 20Hz 随机折线，弹道不俯仰、不裁剪
+## 28. 闪电是 20Hz 随机折线，弹道不俯仰、不裁剪
 
 - **闪电**：客户端每帧按 `id/index/time` 确定性抖动、UV 滚动、段数上限 64、颜色乘实例 RGBA、端点支持 `StartHeight/EndHeight`；Launcher 每 50ms 用 `GD.Randf()` 重建，最多 24 条，UV 不滚动，端点固定在「单位位置 + 0.55 身高」，JASS 建的闪电完全不显示。
 - **弹道**：客户端用模拟层的分段路径加 `RenderArcOffset`、`VisualPitch`（弹体沿抛物线俯仰）、`BulletDeathTime` 和迷雾可见性；Launcher 自己算抛物线、只设 Yaw，技能弹道弧强制 0，弹道在黑雾里照样可见。
@@ -274,7 +287,7 @@ Launcher 在手写表 `EffectArtTable` 里维护了 147 条「技能码 → 目�
 
 要做：闪电改成确定性抖动 + UV 滚动；弹道补俯仰和迷雾裁剪；把黄球和蓝盘去掉。
 
-## 30. 飘字是贴在 3D 世界里的字，而且是「Miss」
+## 29. 飘字是贴在 3D 世界里的字，而且是「Miss」
 
 客户端把伤害/资源数字（`World.Floats`）和 JASS `CreateTextTag` 都交给 `TextTagFrame` 在屏幕空间投影画，字号按 framebuffer 高度换算成像素，速度/寿命/淡出点来自 `UI\MiscData` 可覆盖的样式表，锚点是「地形高 + 飞行高度」，之后在屏幕上飘、不跟单位。
 
@@ -282,7 +295,7 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 
 要做：改成屏幕空间文字并接样式表；文本、颜色、时长逐项对齐。
 
-## 31. 进图不预载，第一次出现都卡一下
+## 30. 进图不预载，第一次出现都卡一下
 
 客户端的 loading 阶段会预载：地图现有单位、参战玩家的建造/训练/升级树、写死的 timer 兵线和野怪、每个单位的挂件模型、头像、所有武器弹道、技能的 Caster/Target/Special/Effect/Area 艺术、Buff 视觉模型（`Presentation.PreloadPresentationResources` + `PresentationPreloadCatalog`），并由 `PresentationResourceRegistry` 统一释放。
 
@@ -294,7 +307,7 @@ Launcher 在 `.90 预热单位与界面资源` 这一步后面没有预载循环
 
 ## 五、声音
 
-## 32. 单位应答变成 3D 音，命中音只认木头和肉
+## 31. 单位应答变成 3D 音，命中音只认木头和肉
 
 - **应答**：客户端的 `War3AckSoundService` 有完整节流——同一单位连续选择计数、Pissed 索引、每单位「语音时长 +250ms」冷却、同名 `ResponseUsername` 去重，并返回时长给头像做说话动作；应答是 `Play2D`，固定在监听者中心。Launcher 只有「12 秒内点 4 次切 Pissed」，没有节流，语音会叠在一起互相打断；而且走 `AudioStreamPlayer3D` 放在单位坐标 +80 高——点远处单位时「Yes sir」又小又偏声道。
 - **命中音**：客户端按 `weaponSound + 目标 ArmorType` 选 Flesh/Metal/Wood/Ethereal/Stone；Launcher 只有 `target.IsBuilding ? "Wood" : "Flesh"`，打步兵盾和骑士播的是砍肉声。
@@ -305,7 +318,7 @@ Launcher 在 `.90 预热单位与界面资源` 这一步后面没有预载循环
 
 要做：应答先改回 2D 并补节流（这两步最容易被听出来），再按材质补命中音、补界面音效。
 
-## 33. 音乐无缝连播，也没有脚步和建筑循环音
+## 32. 音乐无缝连播，也没有脚步和建筑循环音
 
 - **音乐**：客户端曲间有 20 秒间隔，支持主题音乐叠加并压低背景、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；Launcher 播完立刻下一首，`AudioStreamPlayer` 固定 `-10dB`，没有淡入淡出、没有脚本接口。
 - **循环音**：客户端的 `War3LoopingSoundService` 按 `MovementSoundLabel` 播脚步并跟随位置，建筑建造时播 `BuildingSoundLabel`；Launcher 没有循环音服务，行军完全没有脚步声。
@@ -313,13 +326,13 @@ Launcher 在 `.90 预热单位与界面资源` 这一步后面没有预载循环
 - **音量**：客户端有 `SoundVolume` / `MusicVolume` 并按 Unit/Combat/Ui/Effect/Ambient 分通道；Launcher 没有任何音量设置。
 - **表覆盖**：客户端加载 12 类（ack/ui/AnimSounds/Dialog/MIDI/Environment/Portrait/EAX 等），Launcher 合并成 5 张，`AnimSounds` 和 `Dialog` 没有源。
 
-要做：曲间间隔和淡入淡出，脚步循环音，然后音量设置（和 37 的选项界面一起做）。
+要做：曲间间隔和淡入淡出，脚步循环音，然后音量设置（和 36 的选项界面一起做）。
 
 ---
 
 ## 六、界面
 
-## 34. 所有提示语都石沉大海
+## 33. 所有提示语都石沉大海
 
 `MeleeHudController.SetHint` 只做 `_hint = text`，而 `_hint` 全工程除了声明和这一行赋值没有任何读者；`SetQueue(string)`、`SetClock(string)` 是空方法体，`SetPlayerInfo`、`SetBuffs`、`SetUnitSummary` 只写字段没人读。
 
@@ -329,7 +342,7 @@ Launcher 在 `.90 预热单位与界面资源` 这一步后面没有预载循环
 
 要做：先让 `SetHint` 有地方显示（或换成一个 `CommandErrorFrame` 等价物），再补信息面板悬停，最后升级 `TooltipFrame`。
 
-## 35. 命令卡少了四个功能格，混选时只剩通用命令
+## 34. 命令卡少了四个功能格，混选时只剩通用命令
 
 客户端 `CommandCardBuilder` 是 5 个 partial 加一整套原生状态机：技能卡第 (3,1) 是「学习技能」（`BTNSkillz`、热键 `O`、角标显示剩余点数），点开后按 `Researchbuttonpos` 重排、第 12 格是「返回」；第 9 格是「建造」（`B`）；法术书有 `OpenSpellBook` / `BackFromSpellBook`；目标选择或放置模式下第 12 格换成 `BTNCancel`；混选时按成员 `CollectCommands` 聚合成一格并显示数量。
 
@@ -343,7 +356,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 要做：按客户端拆 partial，先把「学习 / 建造 / 取消 / 聚合」四件做了，法术书随后。
 
-## 36. 命令卡的状态基本没画，热键只有一半能用
+## 35. 命令卡的状态基本没画，热键只有一半能用
 
 - **状态**：客户端 `ButtonFrame.SetCooldown(...)` 会触发冷却结束闪光、`AutoCastHighlight` 画自动施法绿框、`IconColor` / `DimWhenDisabled` 画禁用变暗；Launcher 直接 `button.Cooldown = ...`，上面三个都没设，所以冷却结束没有闪白、开自动施法按钮外观不变、禁用按钮不变暗。
 - **槽位**：客户端 `FindNativeSlot` 是「向 11 找空位、再往 0 回退、满卡就丢」；Launcher 是「从请求位往后找第一个空位，找不到就 break」。同一份物编配置，两边第 3/8/11 格放的可能是不同技能。
@@ -352,16 +365,16 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 要做：先把热键改成读按钮 `Hotkey`，再补三个状态，最后槽位算法和可用性判定。
 
-## 37. Esc 语义相反，顶部三个按钮点了没反应，也没有选项界面
+## 36. Esc 语义相反，顶部三个按钮点了没反应，也没有选项界面
 
 - **Esc**：客户端 Esc 是分层取消（取消待定命令 → 退出学习页），菜单开关是 F10；Launcher 里 Esc 第一件事就是 `_escMenu.Open()`，而且没有 F10。正在放置建筑时按 Esc，客户端取消放置，Launcher 弹菜单、关掉菜单后幽灵建筑还在。F4–F7（选英雄）、Backspace（循环主城）、PageUp/Down（缩放）、Ctrl+C/Alt+C（居中）、Alt+F（阵型）、Alt+G/T/A（小地图）也都没有。
 - **Esc 菜单本体**：客户端是 FDF 的 `EscMenuMainPanel` 强类型绑定，隐藏存档/读档/帮助/重开，保留选项/结束游戏/返回游戏；Launcher 用 `ColorRect + Label + Button` 手搓，只有「继续/暂停/返回列表」，坐标还写死在 1600×900，1920×1080 下遮罩只盖左上角。
 - **顶部按钮**：`TopBarFrame` 暴露了 `MenuButton` / `QuestButton` / `AlliesButton`，全仓没有一处 `.Clicked +=`，所以顶部「任务/菜单/盟友」可点但完全没反应。
 - **选项**：客户端的 `AboutDialogFrame` 有镜头距离、平移灵敏度、音乐/音效音量、帧率上限、渲染倍率滑块，关掉时 `Closed += _userSettings.Save`；Launcher 没有任何设置界面。
 
-要做：Esc 改回取消优先并补 F10，接上顶部三按钮（接不了就先隐藏），选项界面和 33 的音量一起做。
+要做：Esc 改回取消优先并补 F10，接上顶部三按钮（接不了就先隐藏），选项界面和 32 的音量一起做。
 
-## 38. 还缺这些面板
+## 37. 还缺这些面板
 
 客户端有的：`QuestDialogFrame`（任务）、`AllianceDialogFrame`（盟友，含 Shift 批量与资源转赠）、`LeaderboardFrame` / `MultiboardFrame`、`DialogFrame` / `TimerDialogFrame`（脚本对话框）、`TimedTextFrame`（系统消息/字幕）、`CinematicSceneFrame` + `CineFilterFrame` + `CinematicSkipFrame`（过场遮罩、滤镜、跳过提示）、`ItemDetailFrame`（地面物品详情）、`CheatDialogFrame`、`CommandErrorFrame`。
 
@@ -371,14 +384,14 @@ Launcher 一个都没有。玩家看到的：顶部「任务」「盟友」点�
 
 要做：按使用频率排——过场遮罩和跳过提示、地面物品详情、任务，然后才是排行榜/多面板。
 
-## 39. 聊天和控制组各写了一套
+## 38. 聊天和控制组各写了一套
 
 - **聊天**：客户端 `ChatFrame` 是 HUD 里的帧，行会淡出、自动换行、解析 `|c` 颜色、有 `AppendHistory`，Shift+Enter 全体、Ctrl+Enter 盟友；Launcher 的 `ChatFrame` 同名不同物，是独立 `CanvasLayer` 里的 `Label` + `LineEdit`，固定 224,560 / 620×110，不随 UI 缩放、不淡出、不换行，`Send` 只 `Add("[玩家] ...")` 加 `GD.Print`。
 - **控制组**：客户端屏幕左下有一排 1–9 编队按钮，支持双击居中；Launcher 只有键盘 0–9，触屏没法编队。
 
 要做：聊天挪回 HUD 帧体系并补换行/淡出/频道；编队按钮补上（触屏迟早要用）。
 
-## 40. 选择、子组、点头像
+## 39. 选择、子组、点头像
 
 - **点头像**：客户端 `SelectFromGroup` 保留整队、只换主位，还处理载具乘客和金矿工人；Launcher 的 `SelectUnitFromHud` 先 `ClearSelection()` 再 `Add(unit)`，**多选 8 个兵时点第二个图标，只剩那一个**，而且绕过了选择控制器，`Primary` 不更新。
 - **子组**：客户端 `PlayerSelectionController.CycleSubgroup` 先 `NativeSelectionOrder.Sort` 再只挪主位；Launcher 走场景自己的 `CycleSubgroup`（`Commands.cs`），按 `Type.Id` 重建 `_selected`，不排序、不区分英雄/幻象，控制器那份成了死代码。双击选中一排兵再按 Tab，切出来的顺序和屏幕排列不一致。
@@ -387,7 +400,7 @@ Launcher 一个都没有。玩家看到的：顶部「任务」「盟友」点�
 
 要做：点头像改成 `SelectFromGroup`，子组并回控制器版本，框选补 `CanControl` 和裁切。
 
-## 41. 右键的智能命令少一半分支
+## 40. 右键的智能命令少一半分支
 
 客户端 `War3WorldInteractionComponent` 的右键是一串分支，每支「吃掉能干的单位，剩下的继续执行本义」：集结点（逐单位 `CanSetRally`）、交资源回建筑、继续建造、修理、采金/伐木、传送门、运输机装卸、攻击/跟随（`EligibleAttackers` + `MoveUnhandled` 逐单位补全）、拾取地面物品，目标用真实拾取 `PickUnit`。
 
@@ -397,7 +410,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 要做：把分支按客户端补齐，目标判定换成拾取，放置模式支持 Shift 连造。
 
-## 42. 物品栏不能拖，拾取靠中心点
+## 41. 物品栏不能拖，拾取靠中心点
 
 客户端 `InventoryFrame` 有 `BeginDrag / MoveDrag / EndDrag / HitSlot`：拖到另一格换位、拖到友方英雄转交、拖到商店卖出、触屏 45px 矫正，否则丢地面。Launcher 只有 `SlotClicked`，右键是「给 450 范围内最近的友方英雄，否则丢地」——**物品不能在格子之间换位，也不能拖着去商店卖**。
 
@@ -405,7 +418,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 要做：拖拽（`UiEventRouter` 的 `CommandDragMoved/Released` 现成可用），拾取换成几何判定。
 
-## 43. 小地图少了图标，滤镜点了没效果
+## 42. 小地图少了图标，滤镜点了没效果
 
 - **图标**：客户端 `MinimapUnitView.Classify` 认金矿、缠绕金矿、闹鬼金矿、中立建筑、圈地、物品、野怪营地、出生点；野怪营地还有 `MinimapCampTracker`（按迷雾和等级画两张图标，位置走 MDX 模型）。Launcher 的 `MinimapUnitView` 只认几个硬编码 id，`SimulationId` 恒为 0，`ColorIndex` 直接等于 `unit.Player`；营地图标列表 `_minimapIcons` 声明了但从来没 `Add` 过，`GodotUiRenderDevice.DrawMinimapCamp` 直接 `return false`。小地图上**没有野怪营地、没有物品、没有出生点**，中立建筑也不显示中立色。
 - **滤镜**：`MinimapFilter` 只被赋值没人读，`SetFilterState` / `HandleAltShortcut` 都没有调用者。点「野怪/配色/阵型」按钮图标会变，游戏里没有任何效果；Alt+G/T/A 没反应；阵型按钮不改变移动阵型。
@@ -413,7 +426,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 要做：`Classify` 补全 + 营地图标，滤镜接上，腐地改用缓存那块。
 
-## 44. 界面拉满整窗，超宽屏不居中
+## 43. 界面拉满整窗，超宽屏不居中
 
 客户端把 `PixelOffsetX` 和 `ActivePixelWidth` 传给渲染设备，`War3UiViewport.FitPixelWidth` 把 HUD 限制在居中的 16:9 区域；Launcher 的 `GameHudScreen._Draw` 用 `scaleX = viewport.X/1024`、`scaleY = viewport.Y/768` 直接铺满，`_offsetX` 传 0。2560×1080 下 HUD 被横向拉宽三成，小地图变扁、命令卡格变宽、圆形按钮变椭圆。而且 `GameHudScreen` 自己又定义了一份 `DesignWidth/DesignHeight`，同一份 HUD 里混着两套常量。
 
@@ -421,9 +434,9 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 电影模式不隐藏 HUD：客户端 `SetInterfaceVisible` 会逐帧隐藏 19 个帧；Launcher 没有这个概念，过场时命令卡、小地图、资源条都还在。
 
-要做：把 `War3UiViewport` 用起来（加载屏已经在用），删掉重复常量，字号接设置，电影时隐藏界面。
+要做：把 `War3UiViewport` 用起来（选图页、加载屏已经在用），删掉重复常量，字号接设置，电影时隐藏界面。
 
-## 45. 界面渲染能力缺几项，FDF 生成的绑定没人用
+## 44. 界面渲染能力缺几项，FDF 生成的绑定没人用
 
 `GodotUiRenderDevice` 里：`DrawCooldownSweep` 是纯色扇形（客户端用 `cooldown.blp` 画），`DrawCooldownCompletion` / `DrawAutoCast` / `DrawMinimapCamp` 直接 `return false`，`DrawTexturedQuadAdd` 退化成普通的 `DrawTexturedQuad`（所有 ADD 混合的贴图偏暗）。所以冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、营地图标画不出来、高亮和光晕偏暗。
 
@@ -435,7 +448,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 ## 七、代码结构
 
-## 46. 同名不同物的文件
+## 45. 同名不同物的文件
 
 这些文件路径一样、类名一样，但职责完全不同，按名字对照会看错：
 
@@ -453,6 +466,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 | `Game/UI/MeleeHudController.cs` | 1096 行，持有 28 个帧并实现 `Render` | 181 行，转发壳 + 空实现 |
 | `Game/UI/CommandCardBuilder.cs` | 5 个 partial + 15 个 Native/Admission 类 | 103 行刷槽 |
 | `Game/UI/ChatFrame.cs` / `EscMenuFrame.cs` | FDF 帧 | Godot Control |
+| `Game/UI/MapSelectionScreen.cs` | `IMenuScreen` + FDF `Skirmish` 宿主 | `Control` + 手搭帧（第 1 条要改的就是这里） |
 | `Game/Audio/War3AudioSystem.cs` | 1022 行，24 声部 + 配额 + 抢占 | 75 行，16 个播放器 |
 | `Game/Scenes/War3GameScene/Ui.cs` | HUD 装配 + 文本标签 | 命令卡条目 + 商店 + 放置 + 小地图 |
 | `Game/Scenes/War3GameScene/CameraFollowTrack.cs` | 跟随状态机 | 4 个取景函数 |
@@ -461,7 +475,7 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 要做：改名或改路径，让「同名」等于「同职责」。这一步不产生画面收益，但后面每一条对齐都要靠它定位。
 
-## 47. 没有调用者的接口
+## 46. 没有调用者的接口
 
 这些接口看着像功能，实际没人调，按「已实现」判断会得出错误结论：
 
@@ -470,14 +484,15 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 - `MinimapFrame`：`SetFilterState`、`HandleAltShortcut` 无调用者；`War3GameScene.MinimapFilter` 只写不读；`_minimapIcons` 从不 `Add`。
 - `PlayerSelectionController`：`CycleSubgroup`、`SelectInitial`、`ApplyScriptSnapshot`、`RecallSnapshot`。
 - `War3Camera`：`SetField`、`GetField`、`PanTo`、`SetTargetController`、`SetOrientController`、`SetNoise`、`SetShake`、`ResetToGameCamera`。
+- `MapSelectionScreen`：`Cancelled` 事件（`LauncherApp` 只订阅了 `StartRequested`）。
 - 其他：`ConsoleSkinFrame.SetInventoryVisible`、`MenuScreenHost.RegisterCommand/Execute`、`Environment/LayerAtlas.cs`（整个文件无引用）、`GameHudScreen.ClearHover`。
 - 生成物：`ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`EscMenuMainPanelBinding`、`MainMenuBinding`。
 
 要做：要么接上，要么删掉。留着会让人误判「这块已经做了」。
 
-## 48. 各自写了一份的东西
+## 47. 各自写了一份的东西
 
-明明可以共用却各写一份的：`WeatherDefinition` / `WeatherType`（近乎逐字复制）、`AnimationTagCache` 的 `SplitProperties`（私有复制了一份）、`ShorelineWaveRenderer` 的角落判定、`MinimapBlightTexture`（内联进 `Ui.cs`）、`War3UiViewport` 的设计分辨率常量（`GameHudScreen` 里又定义一遍）。
+明明可以共用却各写一份的：`WeatherDefinition` / `WeatherType`（近乎逐字复制）、`AnimationTagCache` 的 `SplitProperties`（私有复制了一份）、`ShorelineWaveRenderer` 的角落判定、`MinimapBlightTexture`（内联进 `Ui.cs`）、`War3UiViewport` 的设计分辨率常量（`GameHudScreen` 和 `MapSelectionScreen` 里各定义了一遍）。
 
 `GameCore/L2_Core` 除 `MapBrowser` 外两侧逐字节相同，说明共用这条路是通的，上面这些只是没走。
 
@@ -487,26 +502,28 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 
 ## 建议的推进顺序
 
-先做不改变操作习惯、但决定画面一致率的一批：**9、10、11、12、14、15、16**（光照、雾、天空、地形、阴影、迷雾）。这一批做完，同一张图并排看已经能看出「像一个游戏」了。
+**先做第 1 条**（选图界面）。它是本轮的入口，也是唯一一条会把 FDF 宿主接起来的，后面 HUD 的 FDF 绑定能顺着它复用。
 
-腐地、水面、岸浪、天气、贴花（**17–21**）跟着 12 一起排，它们和地形用的是同一套环境和着色器代码，分开做会来回改同一个文件；地形高度变形（**13**）要改地形网格的写入方式，单独立一条，别和上面混在一起。
+接着做不改变操作习惯、但决定画面一致率的一批：**8、9、10、11、13、14、15**（光照、雾、天空、地形、阴影、迷雾）。这一批做完，同一张图并排看已经能看出「像一个游戏」了。
 
-再修一眼就能看出错的单位表现：**22、23、24、25、26**（血条圈影子、颜色、飞行与朝向、战斗动作、死亡升级）。这几条互不依赖，可以并行。
+腐地、水面、岸浪、天气、贴花（**16–20**）跟着 11 一起排，它们和地形用的是同一套环境和着色器代码，分开做会来回改同一个文件；地形高度变形（**12**）要改地形网格的写入方式，单独立一条，别和上面混在一起。
 
-声音（**32、33**）不依赖任何其他改动，可以随时插空做，适合在等编译或等跑图的间隙推进。
+再修一眼就能看出错的单位表现：**21、22、23、24、25**（血条圈影子、颜色、飞行与朝向、战斗动作、死亡升级）。这几条互不依赖，可以并行。
 
-然后补表现层的窟窿：**27、28、29、30、31**（特效来源、粒子丝带、闪电弹道、飘字、预载），其中 27 的「接上 `world.Effects`」性价比最高。
+声音（**31、32**）不依赖任何其他改动，可以随时插空做，适合在等编译或等跑图的间隙推进。
 
-进图那一段（**1–6**）单独成批，因为它要动 `LauncherApp` 和加载编排，和上面几条冲突小，可以安排在不方便跑图的时段做。
+然后补表现层的窟窿：**26、27、28、29、30**（特效来源、粒子丝带、闪电弹道、飘字、预载），其中 26 的「接上 `world.Effects`」性价比最高。
 
-界面放最后（**34–45**），不然后面底层行为一改就要返工。界面里也有例外：**34**（提示语）和 **36**（热键）现在的状态是「按了没反应」，属于功能性缺陷，可以提前。
+进图的加载段（**2–5**）单独成批，因为它要动 `LauncherApp` 和加载编排，和上面几条冲突小，可以安排在不方便跑图的时段做。
 
-**7、8**（镜头）建议跟着 9 一起做，因为昼夜和镜头都要动 `Lifecycle` 的每帧更新。
+界面放最后（**33–44**），不然后面底层行为一改就要返工。界面里也有例外：**33**（提示语）和 **35**（热键）现在的状态是「按了没反应」，属于功能性缺陷，可以提前。
 
-**46–48** 是结构清理，什么时候做都可以，但每接一条新功能之前先看一眼 46，能省掉一次找错文件。
+**6、7**（镜头）建议跟着 8 一起做，因为昼夜和镜头都要动 `Lifecycle` 的每帧更新。
+
+**45–47** 是结构清理，什么时候做都可以，但每接一条新功能之前先看一眼 45，能省掉一次找错文件。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **49** 开始。
-- 新发现的差异先判断是不是「平台差异」或「已知取舍」：受 Godot 与原生 GL 的差别限制、或者 Launcher 明确不做的范围（JASS、触发器、战役、存档、录像、联机），不要写进来。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **48** 开始。
+- 新发现的差异先判断是不是「平台差异」或「已知取舍」：受 Godot 与原生 GL 的差别限制、Launcher 固定 gmap 路径、或者明确不做的范围（JASS、触发器、战役、存档、录像、联机），不要写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
