@@ -32,14 +32,7 @@
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）已落地并合并到 Launcher，编号不复用。
-
-### 15. 地面物品没有影子，Powerup 没有金色光圈，离场也没有缩小
-
-- **客户端**：地面物品统一用 `ReplaceableTextures\Shadows\Shadow.blp` 投影，尺寸取模型包围盒，普通物品 alpha 0.45、Powerup 用金色 0.75（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:2121-2160`）；`Departing` 的物品（离场缩小）不投影。
-- **Launcher**：`CreateItemNode` 只加载模型、设缩放（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:281-294`），没有物品投影，也没有 Powerup 光圈/离场状态。
-- **表现差异**：地上物品“浮”在地表，没有影子；Powerup 与普通物品视觉上无法区分；物品被拾取/消失是瞬间消失，没有缩小过渡。
-- **要做**：补地面物品阴影与 Powerup 金色光圈；给物品加离场缩小状态并在离场期间停止投影。
+> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）、任务 15（地面物品影子/光圈/离场）已落地并合并到 Launcher，编号不复用。
 
 ## 模块四：特效与声音
 
