@@ -29,19 +29,10 @@
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
 > 任务 6（地形/悬崖动态光）、任务 7（装饰物死亡姿态）、任务 8（天气实例化）、任务 9（迷雾参数即时下发）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
 
-### 11. 单位转身比客户端慢五倍多（V1 #55）
+## 模块三：单位、技能与物品
 
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.TypeData.cs:139-140` 把 SLK 的 `turnRate` 当弧度/秒，`TurnRate = TurnSpeed(turnRate) / Period`，`Period = 0.03`（`Open-Warcraft3_Wiki/Src/Core/Pathing/NativeMirror/Combat/NativeTimedFacing.cs:7`），步兵约 20 rad/s。
-- **Launcher**：`Launcher/GameCore/L3_Simulation/Simulation/Configuration/UnitFactory.cs:357-358` 是 `Mathf.Clamp(turnRate * 6f, 1.5f, 14f)`，`Launcher/Src/World/World.MovementEvents.cs:155` 每仿真步最多转 `Mathf.Max(1.5f, TurnSpeed) * 0.05`；同一条 `turnRate` 只走出客户端五分之一到六分之一，1.5 的下限还会把慢速单位一起抬快。
-- **表现差异**：点攻击后单位跑到贴脸才开始转身，侧身追人/绕圈像滑行；攻击前摇被拉长，编队齐转像整体平移。
-- **要做**：`TurnSpeed` 按 `turnRate / 0.03` 换算并去掉 1.5 下限，上限对齐客户端量级；改完回归 `--combat-probe`、追击贴脸、编队转向、攻击前摇四项。
-
-> **执行结论（Launcher1，待合并）**：
-> - 换算改为客户端口径：`UnitFactory` 去掉 `Clamp(turnRate * 6f, 1.5f, 14f)`，改为 `turnRate / 0.03f`；`UnitType.TurnSpeed` 默认值从 3.6 改为 20（对应客户端 `Transform.TurnRate = 20` 的默认 0.6 rad / 0.03s）。不设上限，SLK 实际 `turnRate` 为 0.1–0.6，折合 3.33–20 rad/s；若沿用 14 会把 0.5/0.6 档的单位重新削慢。
-> - `World.MovementEvents.ApplyFacing` 去掉 `Mathf.Max(1.5f, ...)` 下限，每 tick 最大转角改为 `TurnSpeed * FrameSeconds`。
-> - 数值验收（临时探针打印，已还原）：`hfoo`/`hrif`/`ogru` 20 rad/s，`nftr`/`hgyr` 16.667 rad/s；半圈耗时 0.157s / 0.188s，修复前步兵为 3.6 rad/s、半圈 0.873s。
-> - 回归：`dotnet build Launcher.csproj` 0 错误；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知失败 `utod 研究项 4 vs 2`，阵型/命令/追击相关校验均通过。攻击前摇不经过朝向门控（`BeginAttack` 直接用同一 tick 的 `FaceTarget` 结果开火），本次只改视觉转角速度，前摇时序不变。
-> - 合并注意：无新增资源或探针代码，只改 `Launcher1` 的两个 C# 文件；文档结论随根仓库单独提交。
+> 模拟层的单位行为、Buff 技能与地面物品。
+> 任务 11（转身速率）已落地并合并到 Launcher，编号不复用。
 
 ### 12. Buff 类技能只消耗部分物编字段，护甲/回复/缩放/Buff 美术都没生效
 
@@ -84,6 +75,18 @@
 - **Launcher**：`ItemType.PowerUp` 只在 UI 里显示「一次性」（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/ItemCatalog.cs:28`、`:104`；`Launcher/GameCore/L4_Composition/Game/UI/MeleeHudController.cs:171`），没有运行时消费方；拾取后作为普通物品进背包（`Launcher/Src/Units/Unit.Items.cs:57` 的 `AddItem`），`ItemUseRules` 也没有 powerup 分支。
 - **表现差异**：捡到经验书/属性书会占一个背包格且无法使用，符文也不会在踩上去时立即生效；客户端是拾取即用、不占格。
 - **要做**：读取物编 `powerup`，在拾取路径上先执行物品技能再消耗，不进入背包；补齐 `PowerupSound`/拾取事件。
+
+> **执行结论（Launcher4，已实现，待合并）**：powerup 物品拾取即用、不占背包格，`PowerupSound` 与拾取事件已补齐。
+> - 数据：`ItemCatalog` 已读 ItemData 的 `powerup` 列（不按 `class=PowerUp` 推导；金币箱 `gold` 在原表里 `powerup=1`，会即时入账；普通装备是 0）。
+> - 统一入口：`Src/World/World.Items.cs` 新增 `AutomaticallyUsesPowerup` 与 `AcquireItem`（对标客户端 `JassGameNatives.AddItem` 的 powerup 分支）：powerup → `ItemUseEffect.UsePowerup` 执行 abilList 里已登记的一次性效果 → 派发 `ItemPickedUp` → `ConsumeItem` → 派发 `ItemUsed`，不进背包；普通物品仍走 `AddItem` + 加成 + 拾取事件。
+> - 执行：`Src/Items/ItemUseEffect.cs` 新增 `UsePowerup`，按 abilList 执行 `Handlers` 里的一次性效果（属性书 `AIsm/AIam/AIIm`、经验书 `AIem`、金袋/木堆 `AIgo/AIlu`、符文 `APh*/APmr/APmg/APra` 等），不看 `usable`、不需要目标；收下就消耗（客户端 `UseAutomaticPowerupChildren` 口径）。
+> - 拾取：`TickItemPickup` 改走 `AcquireItem`；`NearestPicker` 对 powerup 放宽空格限制，满包也能捡。
+> - 商店：`Production.cs` 买货改走 `AcquireItem`，powerup 满包也能买且当场使用，提示改「已使用」。
+> - 转交：`GiveItem` 走 `AcquireItem`，送给另一个英雄的 powerup 直接使用。
+> - 声音：`Units.cs` 的拾取回调先按 abilList 取子能力的 `Effectsound`（`AbilityCatalog.FuncField`）播 `PowerupSound`（金袋/木堆是 `ReceiveGold`/`ReceiveLumber`），再播 `ItemGet`。
+> - 回归：`--state-probe` 新增 10 条断言（属性书不占格 / 力量+1 / 离地消耗 / 拾取事件 / 满包可捡 / 满包敏捷+1 / 符文即时生效 / 符文离地消耗 / 金袋入账 / 金袋不占格）全部 OK；`--combat-probe` 全部通过；`--state-probe` 只剩改动前就有的 `utod 研究项` 一项失败。
+> - 合并提示：任务 13 合并后，`World.Items.cs` 的 `CompletePickup` 要改成调 `AcquireItem`（而不是 `unit.AddItem`），`IssuePickupItem` 的满包判定要对 `item.Type.PowerUp` 放行，否则满包时不给拾取订单；商店与转交两处已按同一入口改好。
+> - 操作：进 Turtle Rock，把英雄走到属性书/经验书/符文旁（或商店买一本）应即时消耗、不占格；背包满时仍能捡 powerup；符文/守卫类出 `PowerupSound`，金袋/木堆出 `ReceiveGold`/`ReceiveLumber`。
 
 ### 15. 地面物品没有影子，Powerup 没有金色光圈，离场也没有缩小
 
@@ -248,7 +251,7 @@
 
 ---
 
-## 核对结果（V1 剩余 17 条）
+## 核对结果（V1 剩余 16 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -261,7 +264,6 @@
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
-| 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
