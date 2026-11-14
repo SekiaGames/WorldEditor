@@ -75,7 +75,17 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 - 客户端 `UnitStateColor` 处理虚无（淡绿半透明）、`SetUnitVertexColor`、死亡 alpha；Launcher 模拟层有 `StateMod.Ethereal` 和 `VertexColorRgba` 字段，渲染从不消费，被放逐的单位外观完全不变。
 - 隐身：两边都压到 127/255，但客户端只作用于模型，Launcher 用 `GeometryInstance3D.Transparency` 把血条、选中圈、影子一起弄半透明。
 
-要做：队伍色表补到 28 号并改成贴图替换；幻象、虚无、隐身的作用范围对齐。
+已完成（2026-11-14），条目等合并后再删。
+
+**已完成**（2026-11-14）：
+
+1. 队伍色改成读 `ReplaceableTextures/TeamColor/TeamColor00..15.png` 的首个像素（12–15 号是中立灰 `#282828`），`ColorOf` 由 `% 12` 改成 `Clamp(0,15)`，野怪/中立不再回绕成玩家的鲜红/亮蓝。
+2. `war3_model_add` 且 base_texture 落在 `TeamGlow/` 的模型光晕层，按单位色号换成对应的 `TeamGlowXX.png`（原来恒为 `TeamGlow00` 的红色）。
+3. 新增 `UnitStateColor`（与客户端同路径同名）：`VertexColorRgba` × 虚无 `(.75,1,.5,.5)`，隐身且存活时 alpha 取 `min(127/255)`。
+4. 新增 `IllusionPresentation`（与客户端同路径同名）：己方/盟友的幻象染 `(20,96,255)`，敌方幻象与真身同色；观者关系走场景 `AreAllied`。
+5. 外观色落到模型：RGB 乘进 `geoset_tint`、alpha 走 `GeometryInstance3D.Transparency`，每帧只在值变化时写；血条/选中圈/影子已不在 `Root` 下，隐身不再把它们一起弄半透明。
+6. 删掉 `UnitSceneComponent.SetGhost` 与 `Environment` 里的调用，隐身改由上面的外观色统一处理。
+7. `UnitSceneComponent.Create` 的入参从 `Color` 改成色号索引，光晕换贴图需要索引。
 
 ## 17. 飞行单位贴地站着，转身是 20Hz 一跳，炮塔不会转
 
@@ -196,14 +206,6 @@ Launcher 只有四条：全选都是建筑时设集结点、点中残血友方�
 ---
 
 ## 九、加载流程
-
-## 31. 点「开始」之后有一段空档，屏幕上还停在刚点过的列表
-
-客户端点开始只是置标志位，真正的加载发生在主循环里：先 `DetachMenus()`，再把地图名写进标题，然后 `LoadMap()`；加载屏在 `LoadMap` 一开始就建好。
-
-Launcher 是回调里直接干（`LauncherApp` 里 `Clear(); StartGame(mapPath)`），而 `StartGame` 先把 w3e/w3i/units/doodads/wpm 全解析完（`MapSource.Open`），才 `Clear()` 旧菜单、`new War3GameScene`。解析期间画面停在已经点过的列表上。
-
-要做：先开加载屏再解析。
 
 ## 32. 加载屏少了缩略图和背景模型，节奏也不一样
 
@@ -390,7 +392,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 13 | 2、3 | 保留：悬空雾面 vs 片元采样 |
 | 14 | 2 | 保留：雾里建筑状态 |
 | 15 | 2 | 三块已完成，等合并后删 |
-| 16 | 2 | 保留：颜色与状态色 |
+| 16 | 2 | 已完成，等合并后删 |
 | 17 | 2 | 保留：贴地、姿态、朝向 |
 | 18 | 2 | 保留：动画优先级 |
 | 19 | 2 | 保留：死亡/升级/金矿 |
@@ -405,7 +407,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 28 | 1、3 | 保留：两套子组、点头像清队 |
 | 29 | 1 | 保留：右键分支 |
 | 30 | 1、3 | 保留：拖拽、拾取、地面物品详情 |
-| 31 | 1 | 保留：点开始到加载屏的空档 |
 | 32 | 1、2 | 保留：缩略图、时长、回退 |
 | 33 | 1 | 保留：阶段表与建世界顺序 |
 | 34 | 1 | 保留：出错处理 |
@@ -446,7 +447,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 22 的闪电和弹道最容易被玩家看出来。
 
-加载流程（**31–35**）要动 `LauncherApp` 和加载编排，和渲染改动冲突小，适合在不方便跑图的时候做。
+加载流程（**32–35**）要动 `LauncherApp` 和加载编排，和渲染改动冲突小，适合在不方便跑图的时候做。
 
 结构清理（**45、46**）什么时候做都行，但每接一条新功能之前先看一眼 45，能省一次找错文件。
 
