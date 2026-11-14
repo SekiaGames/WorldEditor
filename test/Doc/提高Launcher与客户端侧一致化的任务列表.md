@@ -34,79 +34,6 @@
 
 ## 六、单位实体
 
-## 16. 队伍色回绕，幻象不变色，虚无没反应
-
-- 客户端队伍色用 `TeamColorXX.blp`（0–27 号），`TeamGlowXX` 跟着玩家色变；Launcher 只内置 12 个纯色，`ColorOf(player)` 取 `player % 12`，于是 12–23 号（中立、野怪）会回绕成玩家亮色——野怪变成鲜红或亮蓝。队伍色区域在 shader 里被平涂成纯色，没有原版明暗纹理；光晕固定一种颜色。
-- 客户端幻象按观察者关系染成 `(20,96,255)` 蓝；Launcher 的 `CreateIllusion` 只复制单位，幻象和真身一模一样。
-- 客户端 `UnitStateColor` 处理虚无（淡绿半透明）、`SetUnitVertexColor`、死亡 alpha；Launcher 模拟层有 `StateMod.Ethereal` 和 `VertexColorRgba` 字段，渲染从不消费，被放逐的单位外观完全不变。
-- 隐身：两边都压到 127/255，但客户端只作用于模型，Launcher 用 `GeometryInstance3D.Transparency` 把血条、选中圈、影子一起弄半透明。
-
-已完成（2026-11-14），条目等合并后再删。
-
-**已完成**（2026-11-14）：
-
-1. 队伍色改成读 `ReplaceableTextures/TeamColor/TeamColor00..15.png` 的首个像素（12–15 号是中立灰 `#282828`），`ColorOf` 由 `% 12` 改成 `Clamp(0,15)`，野怪/中立不再回绕成玩家的鲜红/亮蓝。
-2. `war3_model_add` 且 base_texture 落在 `TeamGlow/` 的模型光晕层，按单位色号换成对应的 `TeamGlowXX.png`（原来恒为 `TeamGlow00` 的红色）。
-3. 新增 `UnitStateColor`（与客户端同路径同名）：`VertexColorRgba` × 虚无 `(.75,1,.5,.5)`，隐身且存活时 alpha 取 `min(127/255)`。
-4. 新增 `IllusionPresentation`（与客户端同路径同名）：己方/盟友的幻象染 `(20,96,255)`，敌方幻象与真身同色；观者关系走场景 `AreAllied`。
-5. 外观色落到模型：RGB 乘进 `geoset_tint`、alpha 走 `GeometryInstance3D.Transparency`，每帧只在值变化时写；血条/选中圈/影子已不在 `Root` 下，隐身不再把它们一起弄半透明。
-6. 删掉 `UnitSceneComponent.SetGhost` 与 `Environment` 里的调用，隐身改由上面的外观色统一处理。
-7. `UnitSceneComponent.Create` 的入参从 `Color` 改成色号索引，光晕换贴图需要索引。
-
-## 17. 飞行单位贴地站着，转身是 20Hz 一跳，炮塔不会转
-
-客户端模型 Z = 地形高 + `RenderFlyHeight`，飞行单位还有 MoveFloor 下限，建筑 +12 防 z-fighting；按 `ElevationSampleRadius/MaxPitch/MaxRoll` 采四点做俯仰横滚；朝向由 `FacingInterpolation` 逐渲染帧追；带 `LookAtBone` 的单位每帧把炮塔/龙头转向目标。
-
-Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹道用过，所以狮鹫、双足飞龙、冰龙全都贴地；没有俯仰横滚；朝向在 20Hz 仿真步里直接写 `Root.Rotation`，角速度上限还是 14 rad/s（客户端 20）；完全没有 look-at。
-
-三块都已完成（飞行高度、坡面姿态、朝向插值、look-at），条目等合并后再删。
-
-**已完成**（2026-11-14，飞行高度）：
-
-1. `UnitType` 补 `FlyHeight = UnitData.moveHeight`、`MoveFloor = max(0, moveFloor)`，此前 Launcher 把飞行高度写死成 `Flying ? 100 : 0`。
-2. `Unit.FlyHeight` 改成可写字段，未赋值时回落到类型的 `FlyHeight`，这样 `Type` 为空/后设的召唤、幻象、变形路径都不用单独初始化。
-3. 模型摆位统一收到 `UnitSceneComponent.SyncPlacement`：`y = 地面高 + RenderFlyHeight`，建筑再 +12 防 z-fighting，飞行单位按 `moveFloor` 兜底取大；每帧在 `_Process` 里跟着 `unit.Position` 走。
-4. `RenderFlyHeight` 按客户端 `UpdateRenderFlyHeight` 的方式平滑逼近 `unit.FlyHeight`（速度 = 本次变化量 / 仿真步长），起飞/落地不会瞬移。
-5. 影子与选中圈仍读 `unit.Position`（地面），飞行单位不会把影子带上天；血条读 `Root.GlobalPosition`，跟着模型升空。
-
-**已完成**（2026-11-14，坡面姿态）：
-
-1. `UnitType` 补 `TerrainTiltRadius = unitUI.elevRad`、`MaxPitchDegrees = maxPitch`、`MaxRollDegrees = maxRoll`（步兵 r=20/p=10、树 r=30、狮鹫 r=50/p=33/roll=25、建筑多为 0）。
-2. 新增 `UnitTerrainTilt.Compute`：沿朝向按半径采前/后/左/右四点，`pitch = atan2(前后, 2r)`、`roll = atan2(左右, 2r)`，各自 clamp 到上限；上限为负值时按客户端语义当成固定倾角。
-3. 姿态在 `SyncPlacement` 里写 `Root.Rotation = (pitch, yaw, -roll)`，Godot 默认 YXZ 欧拉正好是「先本地 roll、再本地 pitch、最后 yaw」；模型前向是 -Z（由 `Facing = π + atan2(-dx, dz)` 反推），所以 pitch 取正、roll 取负。
-4. `ApplyFacing` 转向时保留 X/Z 分量，不会每 20Hz 把倾角清一次。
-5. 平地实测不误倾斜（营地四个朝向的步兵都站正）；营地/岸边等有落差处 pitch 打满上限，与客户端同样被 `maxPitch` 限制。
-
-**已完成**（2026-11-14，朝向插值）：
-
-1. 仿真侧 `ApplyFacing` 只维护逻辑 `unit.Facing`，不再直接写 `Root.Rotation`；渲染侧由 `UnitSceneComponent.SyncFacing` 用指数平滑（时间常数 0.04s）逐帧逼近，20Hz 的台阶被抹平。
-2. `SyncPlacement` 用平滑后的 `RenderFacing` 写欧拉 Y 分量，倾角仍取当帧计算值。
-3. 首次出现、暂停恢复（`delta >= 1`）直接吸附，不会从 0 转过去；变形重建的 `View` 也是新组件，同样吸附。
-
-**已完成**（2026-11-14，look-at）：
-
-1. `Unit` 补 `LookAtBone` / `LookAtTarget`（与客户端同名字段）。
-2. `Step` 开头对建筑跑 `UpdateTurretLookAt`：有存活攻击目标且自身能攻击时置 `Bone_Turret`，目标消失或不再攻击时清掉（对应客户端 `Unit.Combat.UpdateTurretLookAt`）。
-3. `UnitSceneComponent.SyncLookAt` 在渲染帧把该骨骼指向目标：目标坐标转到 `Skeleton3D` 空间，构造「X=前向、Z=上」的基，用 `SetBoneGlobalPoseOverride` 覆盖；取消瞄准时以 weight 0 发一次恢复。
-4. 模型骨骼名与客户端一致（`HumanTower.glb` 里确有 `Bone_Turret`，第 15 根，且被蒙皮引用）；`FindBone` 失败或无骨骼的模型（地形装饰等）直接跳过。
-5. 验证：新增 `--turret-probe` 在亡灵基地旁摆一座人族塔 + 一个敌方步兵，塔的 `CanAttack/Target/aiming` 均为真；把 `Bone_Turret` 换成 `FlagPole` 强转 90° 时整座塔几何跟着变，确认 override 通路真的作用到渲染。
-
-## 18. 战斗动作：攻击只播一次，攻速不影响动作
-
-客户端动画由 `UpdateUnitAnimation` 统一管优先级，每次出手 `Set("Attack")` + `Queue("Stand", Ready)`，速率跟 `AttackSpeedFactor` 走，切序列时做姿态混合。
-
-Launcher 的 `Play` 里有 `if (found == CurrentAnimation) return;`，站桩连续攻击时第一刀之后一直停在攻击末帧，伤害照常结算；`SpeedScale` 只在 `Walk` 时设置；没有 `Stand Ready`，切换硬切；`SelectSequence` 返回第一个匹配项，同兵种待机完全同步、永远是同一个 `Stand` 变体（客户端按 rarity 随机）。
-
-已完成（2026-11-14），条目等合并后再删。
-
-**已完成**（2026-11-14）：
-
-1. `Play(kind, rate, restart)` 新增 `restart`：`Attack` 走 `restart = true`，连续出手每刀都从头播；同一序列且当前动画仍在候选集里时（待机、行走）保持不切换，避免每帧重播。
-2. `SpeedScale` 不再只给 `Walk`：任意序列都按传入 rate 设置。攻击传 `World.AttackSpeedFactor(unit)`（= `clamp(1 + 全部攻速加成, 0.2, 5)`），从 `AttackCooldownOf` 里抽出来共用，动作节奏与伤害节奏同一口径。
-3. 待机分支按是否有存活目标选 `Stand Ready` / `Stand`（对应客户端 `ready ? ReadyTag : NoTags`）；模型没有 Ready 变体时 `SelectSequence` 自然回退到普通 Stand。
-4. `SelectSequence` 增加 `candidates` 输出：只收集与「最佳序列同 form」的一组（不会把 `Stand Defend`、`Stand Victory` 混进来），切换时在这组里随机取，待机变体不再是同兵种整齐划一。
-5. 切序列用 `AnimationPlayer.Play(name, 0.1)` 做 0.1 秒姿态混合，替代硬切。
-
 ## 19. 死亡、建造、升级的动作断在半路
 
 - **死亡**：客户端 Death 播完按 `DeathAnimTime` 接 `Decay`（Flesh/Bone）或英雄的 `Dissipate`；Launcher 只 `Play("Death")`，非循环停在末帧，88 秒后直接隐藏。
@@ -166,61 +93,6 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 - **表覆盖**：客户端加载 12 类，Launcher 合并成 5 张，`AnimSounds` 和 `Dialog` 没有源。
 
 要做：曲间间隔和淡入淡出，脚步循环音，然后音量设置（和 40 的选项界面一起做）。
-
----
-
-## 八、镜头与输入
-
-## 27. 镜头不跟随、不吃设置、取景也和客户端不同
-
-- **跟随**：客户端每帧驱动肖像跟随、锁定跟随、总跟随和标记跟随，总跟随按选择队列挑目标、过滤建筑/敌方/中立，喂的是渲染插值坐标。Launcher 只有键盘、边缘滚屏和拖拽，长按头像时临时跟随，拿到的是 20Hz 仿真坐标，高帧率下一格一格跳；松手立刻停，客户端要滑到单位附近才解绑。
-- **设置**：客户端有 `DistanceScale` 和 `PanSensitivity`；Launcher 没有这两个概念，只有 6 档写死的距离。
-- **相机档位来源**：客户端按 `UI\MiscData.txt` 逐层合并（基础库→War3x→War3Patch→当前地图），地图可以覆盖 `[Camera]`；Launcher 只读构建期生成的固定表。
-- **取景**：客户端 `CameraBounds` 直接用 w3i，边界外靠 `CameraMargins` 放宽；Launcher 把 w3i 边界和地形网格矩形求了交集，带外围装饰的地图会被裁掉一截。开局客户端放在边界中心由脚本接管，Launcher 直接 `Focus` 出生点。世界投影客户端恒定 4:3 视锥，Launcher 走 Godot 相机默认的 `KeepHeight`。地形高度客户端按渲染网格同一条 TL–BR 三角面插值并查桥面，Launcher 是四角双线性、不查桥。
-
-要做：补跟随和两个设置项；相机档位改成读地图覆盖层；边界不要取交集；投影和高度采样向客户端看齐。
-
-执行情况（Launcher4，待合并）：
-
-1. **跟随**：新增 `GameCore/L4_Composition/Game/Scenes/War3GameScene/CameraFollow.cs`，把客户端 `War3CameraComponent.Update` 里那四条驱动补齐（肖像 / 锁定 / 总跟随 / 标记），调用顺序与客户端一致，位置也在 `camera.Update` 之前。喂镜头的是**渲染率样本**：`AdvanceFollowSample` 按单位速度每渲染帧追赶仿真坐标（客户端 `RenderPosition` + `SnapRenderTransform` 同一套，差超过 max(64, 3 步) 直接贴合），不再把 20Hz 仿真坐标直接喂镜头。肖像跟随改用客户端的「目标控制器 + 表现坐标」通道，且**松手不立刻停**：先立 `releasePending`，等可见镜头进到 32 单位内才解绑。锁定/总跟随/标记走 soft-follow（换目标带 0.3~0.75s 滑翔）。玩家中键拖镜头打开 0.1 秒失锁定窗口，窗口内解绑让位、归零后自动滑回。
-2. **跟随入口**：桌面端用热键替代安卓面板 —— `Ctrl+F` 总跟随、`Ctrl+Shift+F` 锁定跟随、`Ctrl+Alt+F` 标记并跟随；必须排在物编热键**之前**（`TrySelectionHotkey` 不判修饰键，放后面 Ctrl+F 会被当成 F 技能）。总跟随的四个过滤开关按客户端默认（建筑参与，敌人/中立/友军不参与，自己的单位恒允许），留了 `SetCameraFollowTrackFilter` 供将来接面板。
-3. **两个设置项**：`War3Camera.DistanceScale`（量程 [0.5,4]，与客户端 `GameUserSettings.MinScale/MaxScale` 同源）盖住三处距离消费点（`SnapToPreset` / `RestorePresetFields` / 每帧 `ResolveField(0)`），`SetPlayerDistanceScale` 走「玩家命令」立即生效；`Update(..., panSensitivity)` 把灵敏度乘在方向键/边缘滚屏的**速度**上（=1 与旧行为逐字一致）。
-4. **档位来源**：`LoadSettings` 先读地图自己那层 MiscData（`war3mapMisc.txt` → `UI/MiscData.txt`，低→高，与客户端「地图层最高」一致），再落构建期生成表；`[Camera]` / `[CameraRates]` / `[CameraMargins]` 都可被覆盖，命中时打 `[CAMERA] 地图覆盖 [Camera]`。
-5. **边界**：`SetCameraBounds` 直接取 w3i 那 8 个角点的包围盒（原来只取了前两个点当矩形，还和地形网格求交集），世界坐标 X 取负后左右翻转；只有 w3i 缺失/写坏才退回地形矩形。放宽仍由 `CameraMargins` 负责。
-6. **投影**：世界相机改成客户端口径 —— 恒定竖直 70° 视锥（`KeepAspect=Height`，宽屏只扩水平视野），删掉把游戏内竖直视锥压到 54.43° 的魔数；电影镜头 FOV 改成 `modelFov*0.5` 直接存半角量纲，不再绕 `PlatformGodotFov` 往返。
-7. **高度采样**：`CameraTargetHeightAt` = max(地形渲染网格表面（同一条 TL–BR 三角面 + 斜坡抬升，`SurfaceHeightAt`）, 双线性水面 `WaterPlaneHeightAt`, 可通行面)；原来走四角双线性 `HeightAt`，水面还是取最近角点。
-8. **桥面**：新增 `GameCore/L4_Composition/Game/Environment/WalkableSurfaceProbe.cs` —— 把 SLK `walkable=1` 的装饰物/破坏物（共 117 条，全是 `Doodads\Terrain\*Bridge*`）的模型三角面在进树后烘成世界坐标，垂直射线取最高命中点，与客户端 `DoodadRenderer.TryGetWalkableHeight` 同口径。两张测试图都没有桥，路径按数据实现、待有桥地图复核。
-9. **顺带修**：天空球壳（半径 1957）原来挂在目标点上，镜头距离倍率一拉远眼点就钻出壳外、整屏只剩壳外侧渐变色；改成按眼距等比放大（正常档位 scale=1，取景与之前逐像素一致）。
-10. **探针**：`--camera-follow=track|lock|marked|portrait`、`--camera-distance=`、`--pan-sensitivity=`，用户参数要放在 `--` 之后，截图要加 `--rendering-driver opengl3`。
-
-验证数据（`(4)Turtle Rock.gmap`）：相机边界从「地形∩w3i」变成 w3i 原值 `(-14336,1664)-(-2048,14464)`；预设仍是 1650/1600/1500/1400/1275/1100、AOA 304..339（说明没误读覆盖层）；距离倍率 2 → 第 1 档 3300，取景正常。跟随探针：单位每 0.4s 前进 72 单位时镜头目标点同步推进（本机 2.5FPS，60FPS 下滞后仅一帧）；肖像跟随松手后继续跟到单位停步、进到 32 单位内才解绑（`following=True → False`）。
-
-## 28. 选择、子组、点头像
-
-- **点头像**：客户端 `SelectFromGroup` 保留整队、只换主位，还处理载具乘客和金矿工人；Launcher 的 `SelectUnitFromHud` 先 `ClearSelection()` 再 `Add(unit)`——多选 8 个兵时点第二个图标只剩那一个，而且绕过选择控制器，`Primary` 不更新。
-- **子组**：客户端 `CycleSubgroup` 先 `NativeSelectionOrder.Sort` 再只挪主位；Launcher 走场景自己的 `CycleSubgroup`，按 `Type.Id` 重建 `_selected`，不排序、不区分英雄/幻象，控制器那份成了死代码。双击选一排兵再按 Tab，切出来的顺序和屏幕排列不一致。
-- **框选**：客户端判 `CanControl`（含共享控制）、用 `ScreenViewport.TryClipRect` 裁超宽屏、会 `CancelPending`、有选中音；Launcher 只判 `unit.Player == ViewPlayer`。
-- **双击**：客户端双击或 Ctrl+点击都能选屏幕内同类，Launcher 只有双击。
-
-要做：点头像改成 `SelectFromGroup`，子组并回控制器版本，框选补 `CanControl` 和裁切。
-
-## 29. 右键的智能命令少一半分支
-
-客户端 `War3WorldInteractionComponent` 的右键是一串分支，每支「吃掉能干的单位，剩下的继续执行本义」：集结点（逐单位 `CanSetRally`）、交资源回建筑、继续建造、修理、采金/伐木、传送门、运输机装卸、攻击/跟随（`EligibleAttackers` + `MoveUnhandled` 逐单位补全）、拾取地面物品，目标用真实拾取 `PickUnit`。
-
-Launcher 只有四条：全选都是建筑时设集结点、点中残血友方建筑时修理、屏幕距离最近的敌人攻击（金矿转采金）、最近的树伐木，其余移动。目标判定用的是「屏幕像素距离 ≤55px」的启发式。
-
-玩家看得到：选农民右键正在建造的兵营，Launcher 当成移动；选 5 个农民 + 2 个步兵右键残血主基地，Launcher 让所有单位 `return`，步兵站着不动；混选兵营 + 步兵右键不设集结点；重叠单位点到的东西可能和客户端不同。另外放置建筑没有「Shift 连造」。
-
-要做：把分支按客户端补齐，目标判定换成拾取，放置模式支持 Shift 连造。
-
-## 30. 物品栏不能拖，拾取靠中心点
-
-客户端 `InventoryFrame` 有 `BeginDrag / MoveDrag / EndDrag / HitSlot`：拖到另一格换位、拖到友方英雄转交、拖到商店卖出、触屏矫正，否则丢地面；点地面物品会开 `ItemDetailFrame` 看详情。Launcher 只有 `SlotClicked`，右键是「给 450 范围内最近的友方英雄，否则丢地」——物品不能在格子之间换位，也不能拖着去商店卖，点地面物品也没有详情。
-
-拾取也不同：客户端射线先打 MDX 的 `CLID` 碰撞体，再逐三角形打网格，按 geoset alpha 和 `SelectionFlags` 过滤；Launcher 把单位中心投到屏幕，取 55 像素内最近的一个。高模型、翅膀、武器伸出去很远的单位，点边缘选不中；点旁边空地反而可能选中。
-
-要做：拖拽（`UiEventRouter` 的 `CommandDragMoved/Released` 现成可用），拾取换成几何判定，补地面物品详情。
 
 ---
 
@@ -388,7 +260,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **55** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **60** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
