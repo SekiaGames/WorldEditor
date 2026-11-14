@@ -88,6 +88,12 @@
 - **玩家可见**：悬崖底部与顶部的土带刷成第 1 组悬崖的贴图，和崖体不同色（达拉然、外域的崖壁配洛丹伦土色）；同一 cliffCode 的多个变体会取到和客户端不同的一款，崖面花纹接缝断开。
 - **要做**：补 5×5 搜索与两趟顺序，变体改走每种 cliffCode 的最大值表。
 
+> **执行结论（Launcher6，待合并）**：已修复。
+> - 地表土带：`RealTileTexture` 改为客户端两趟顺序（先 ramp 后 cliff），2×2 扫描后接 `CliffIdOf` 的 5×5 邻域；删除 `15 - 14` 的硬映射，cliff 邻接地表统一由邻域找到的 cliffId 取 `groundTile/upperTile`。
+> - ramp 矩阵：`BuildCliiffs` 在斜坡模型被接受时按客户端 Romp 口径标记 2×2 与 facing 方向的第二格，供第一趟使用；原有 `_cliffTransitions` 的遮挡行为未改。
+> - 变体：`CliffModelLibrary` 内建 Cliffs/CityCliffs 的 cliffCode 最大变体表，取 `variation < max ? variation : variation % (max+1)`；cliff code 四角高度差按客户端封顶 +2，变体来源改为 5×5 找到的那格 `CliffVariation`，不再向下回退找模型。
+> - 验证：`dotnet build` 0 错误；BootyBay headless 日志为悬崖 2400、斜坡 20、无缺模型；临时探针出现 `ACCA v=7 max=1 -> 1`、`CCCA v=6 -> 0` 等取模结果，ramp 邻格取到 `CLgr`。Turtle Rock/BootyBay 都没有 15 哨兵格，5×5 分支按客户端代码平移，需在含 15 的地图（达拉然/外域类）上复验土带颜色。
+
 ### 7. 天空穹顶被当普通模型着色，吃大气雾还吃战争迷雾
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/SkyboxRenderer.cs:102-116` 天空壳与日月用 `FogSettings.None` 绘制，`applyFogOfWar:false`，不写深度。
@@ -115,19 +121,6 @@
 - **Launcher**：`Extract/assets/shaders/water_map.gdshader:2` 是 `render_mode unshaded, blend_mix, depth_draw_always, cull_disabled, fog_disabled;`。
 - **玩家可见**：浅水区的单位阴影、选中圈、施法贴花会间歇性消失，换个视角又出现（Godot 透明排序不同）；水块之间也会互相遮挡出硬边。
 - **要做**：改 `depth_draw_never`，其余参数不动。
-
-### 10. 装饰物开局用地形光照，游戏时间走过 0.05 小时后整片跳亮
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Rendering.cs:431` 装饰物始终用 `unitLight` 绘制，和单位同一套光照。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:315` 加载时 `SceneLightRig.Apply(_worldRoot, Terrain, Terrain)`，两个参数都传地形；`Scenes/War3GameScene/Environment.cs:58-62` 只有 `|tod - hour| >= 0.05` 才重刷成 `Units`。
-- **玩家可见**：进图后树木比站在里面的步兵更亮或更冷；游戏时间走过约 0.05 小时，整片森林亮度突变一次。
-- **要做**：`Lifecycle.cs:315` 第二个参数改 `Units`。
-
-> **执行结论（Launcher10，待合并）**：已修复。
-> - 定位：`LoadTerrainPresentation` 用 `SceneLightRig.Apply(_worldRoot, Terrain, Terrain)`，装饰物模型材质（`war3_model_*`）拿到的是地形光；实测 8 点 `(4)Turtle Rock.gmap` 下地形环境光 `0.168/0.168/0.196`，单位环境光 `0.252/0.252/0.294`，`TickClock` 走过 0.05 小时后重刷成单位光，森林整体跳一次。
-> - 修复：开局第二个参数改为 `_sceneLighting.Units`，装饰物与单位同光；后续 `TickClock` 仍按 0.05 小时步进刷新，不再改变光源口径。
-> - 验证：新增 `--doodad-light-probe`，读取 `_worldRoot` 下第一个模型材质的 `war3_scene_color`/`war3_scene_ambient` 与 `Units` 比对。把参数临时改回 `Terrain` 时环境光不符（材质 `0.168` vs 单位 `0.252`），恢复后三项全过。
-> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --doodad-light-probe`。
 
 ### 11. 地面阴影按均匀网格细分，斜坡上会陷进去或浮起来
 
@@ -463,7 +456,7 @@
 
 模块顺序是从底层到表层，模块内从上往下做。
 
-现在最容易被玩家一眼看出的是 **第 4 条（迷雾遮挡）**、**第 10 条（装饰物跳光）**、**第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、10、25、29、34、45。
+现在最容易被玩家一眼看出的是 **第 4 条（迷雾遮挡）**、**第 12 条（不索敌）**、**第 29/31/32 条（键鼠语义）**、**第 37 条（加载屏分带）**、**第 41 条（Esc 菜单在跑）**。改动最小的几条是 9、25、29、34、45。
 
 ## 收尾规则
 
