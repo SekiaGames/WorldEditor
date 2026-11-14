@@ -8,7 +8,7 @@
 4. Launcher 可以共用代码的情况下没有共用。
 5. Launcher 的 C# 文件在有对应客户端侧 C# 文件时，相对路径、文件名、类名不一致。
 
-**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..32，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **33** 起，做完一条删一条，序号不复用。
+**本次按模块分组、模块内从底层到表层重排**：V2 编号 1..33，已落地任务删除后编号留空、不复用；标题后的 `（V1 #xx）` 是上一份文档的原编号，便于追溯；本文之后的新任务从 **34** 起，做完一条删一条，序号不复用。
 
 ## 范围
 
@@ -21,85 +21,7 @@
 ## 模块一：数据、资源与导出
 
 > L1 格式、L3 物编/地图与 Extract 导出。这一层不改，上层表现无从对齐。
-> 任务 1（V1 #51）、任务 2（V1 #53）已落地并合并到 Launcher，编号不复用。
-
-### 3. `EfctID` 这条艺术链没接（V1 #49）
-
-- **客户端**：`War3EffectArtResolver` 把物编 `EfctID`（`X***`）解析成 `Effects\*.mdl` 并挂到单位/技能上（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/War3EffectArtResolver.cs`；`RuntimeClassicSummonAndArmorAbilities.cs` 也沿这条链取）。
-- **Launcher**：通用美术解析只读 `CasterArt` / `TargetArt` / `SpecialArt` / `EffectArt` / `AreaEffectArt` 五个字段（`Launcher/Src/Abilities/Ability.cs:438-446`）；`EfctID` 只有火雨一处特判读取（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRainOfFireAbility.cs:48`）。Extract 也没有导出 `Effects/` 目录（`Extract/assets` 下只有 `mesh` / `fallback` / `shaders`）。
-- **表现差异**：物编里挂 `EfctID` 的常驻/施法特效不会出现，玩家只能看到其它五个字段的美术。
-- **要做**：Extract 先导出 `Effects/` 目录，再在 `AbilityArt` 补 `EfctID` 的通用解析。
-
-**执行结论（Launcher3，已修复，待合并）**
-
-前提先纠正：1.27 资源里**没有 `Effects/` 目录**。`test/war3-unpack` 顶层没有 `Effects`，`strings extract.pck | grep -c "extract/Effects/"` 为 0；客户端别名表登记的 `Effects\WispExplode.mdl`、`Effects\InfernoSpawn.mdl`、`Effects\Rebirth.mdl` 用 `find -iname` 全部为空。所以不需要重导 pck，「导 `Effects/`」这条不成立。
-
-`EfctID` 的真实美术写在 `Units\*AbilityFunc.txt` 的 `X***` 条目里（`[XHbz] Effectart=Abilities\Spells\Human\Blizzard\BlizzardTarget.mdl`），指向 `Abilities\`，这些模型早就在 pck 里。Launcher 的断点其实是三处，不是一处：
-
-1. `AbilityType` 根本没解析 `EfctID1..4` 列 → `AbilityTypeObjectData` 不透出 → 任何 `ReadString(ObjectData,"EfctID")` 恒返回 ""。火雨那条特判取到的 `EffectRawcode` 一直是空串。
-2. `objects.GetBuff("X***")` 读 `EffectArt` 恒空（`UnitsAbilityBuffData` 只有 9 个结构列，`War3ObjectData.cs:73-95` 只填了 code/comments/isEffect/race）。
-3. 没有与客户端对应的解析器。
-
-改动（全部在 Launcher3）：
-
-- 新增 `GameCore/L3_Simulation/Simulation/Configuration/War3EffectArtResolver.cs`，与客户端同名同路径。解析顺序：先按已合并的 8 张 `Units*AbilityFunc` 表取该特效 ID 的 `Effectart`/`Buffart`/`Targetart`，取不到再退回客户端那张别名表（原样保留，因为 1.27 无 `Effects/`，这张表目前只在自定义地图自带该目录时才有落点）。
-- `AbilityCatalog`：`AbilityType` 补 `EffectId[]`（读 `EfctID1..4`）与 `EffectAt(level)`；`AbilityTypeObjectData` 补 `efctid`/`efctid1`/`aeff`。
-- `RuntimeAbilityFactory`：补 `ReadEffectRawcode` / `ResolveEffectArt`，与客户端 `RuntimeAbilityFactory.cs:730`、`:744` 同口径。
-- `RuntimeRainOfFireAbility`：删掉本地那份走 `GetBuff(...).GetString("EffectArt")` 的死实现，改用上面的公共入口。
-- `Src/Skills/RuntimeBlizzardAbility`：`const ShardArt` 拿掉，改成读 `EfctID`(XHbz) 的解析结果，物编改了美术跟着变；`RuntimePreloadArts` 一并接上（客户端 `_runtimePreloadArts` 同做法），只在解析为空时才用原常量兜底。
-
-实跑取数（`Godot --headless --path Launcher3 -- --effect-probe`）：
-
-```
-[FX] 物编 976 条，美术引用 656，可加载 654，缺 2
-[FX] EfctID 引用 113，解析到美术 88，模型缺失 2，无美术登记的 ID 4: XIct,XNcs,XNhs,XNvc
-```
-
-修复前这条链是 0 条可用。现在 113 处引用里 65 处按 Func 表拿到真实模型（`XHbz→BlizzardTarget`、`XErf→RainOfFireTarget`、`XHfs→FlameStrikeEmbers`、`XUdd→DeathAndDecayTarget`、`XEtq→Tranquility`、`XEsf→StarfallCaster`、`XOeq→EarthquakeTarget`、`XNmo→MonsoonRain`、`Xclf→CloudOfFog`、`Xfla→FlareTarget`、`XEsn→Owl`…），23 处落到客户端别名表指向的 `Effects\*`（1.27 无此目录，所以只有 `XOre`、`XErc` 两条报缺失），剩 25 处落在 4 个在 1.27 里完全没有美术登记的 ID 上。
-
-回归（`--state-probe`）新增两条断言，均通过：
-
-```
-OK 暴风雪冰片美术来自 EfctID XHbz    Abilities\Spells\Human\Blizzard\BlizzardTarget.mdl
-OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\RainOfFireTarget.mdl
-```
-
-`utod 研究项=4 期望 4 实际 2` 这条 FAIL 在改动前就有（已用 `git stash` 复跑确认），与本次无关。
-
-剩下没接的（不在本条范围，建议另立任务）：客户端另外 5 个自己读 `EfctID` 的技能——烈焰风暴余烬（`XHfs`）、云雾（`Xclf`）、季风（`XNmo`）、哨兵（`XEsn`）、火山——在 Launcher 侧是**整套美术都没写**（这些类重写过，没有对应的美术字段与生成循环），不只是 `EfctID` 取不到；`RuntimeMeteorRainAbility` 在 Launcher 没有对应类。这些要各自按客户端补美术生成，不属于「解析链」。
-
-### 4. 两条技能美术资源 Extract 没导出（V1 #50）
-
-- **客户端**：技能美术由资源管理器按 `Abilities\...` 路径直接解析，这两个模型原版存在。
-- **Launcher**：本轮实跑 `Godot --headless --path Launcher -- --effect-probe`：文本表 1100 条、美术引用 656、可加载 654、缺 2，缺的仍是：
-  - `Arsp` 的 `Abilities\Spells\Other\Stampede\MissileDeath.mdl`
-  - `AIga` 的 `Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdl`
-- **表现差异**：践踏的落地死亡特效和自然之触的目标特效缺失。
-- **要做**：Extract 补导出这两个模型，复跑 `--effect-probe` 应变成「缺 0」。
-
-**执行结论（Launcher4，已定位，探针口径已修，待合并）**
-
-清单前提要纠正：这两个模型在 1.27a 资源里**不存在**，不是 Extract 漏导出，也没有可导出的源文件。
-
-证据：
-
-1. 探针稳定复现两条缺失（`Godot --headless --path Launcher4 -- --effect-probe`）。
-2. 用 Extract 的 MPQ 读取器（`Extract/src/Core/Formats/Mpq/MpqArchive.cs`）对 1.27a 的四个包 `war3.mpq / War3x.mpq / War3xLocal.mpq / War3Patch.mpq` 同时按 listfile 和哈希表查询：`Abilities\Spells\Other\Stampede\MissileDeath.mdx|.mdl`、`Abilities\Spells\NightElf\NatureTouch\NatureTouchTarget.mdx|.mdl` 全部 `Contains=False`；`NatureTouch` 目录在解包目录和名单里都不存在。
-3. 同目录真实存在的是 `StampedeMissileDeath.mdx`（War3x.mpq，4589 字节）。兽王终极 `ANst`（`Units/NeutralAbilityFunc.txt:773`）指的就是它，探针本来就解析到 `Abilities/Spells/Other/Stampede/StampedeMissileDeath.tscn`。`Arsp` 是 `ANst` 的战役变体（`Units/AbilityData.slk` 里 `code=ANst`，名 "Rexxar - Stampede"），`Units/CampaignAbilityFunc.txt:297` 写的是过期路径，战役里由战役对象数据覆盖；Launcher 不跑战役。
-4. `AIga` 只有 `Units/ItemAbilityFunc.txt:433` 一条孤儿行，没有任何物品/单位引用（铁木树枝 `iwbr` 的 `abilList` 是 `AIs1`），1.27 里没有消费方会播这条 `EffectArt`。
-5. 客户端也会静默丢弃：`Presentation.NormalizeModelPath` 只做 `.mdl`→`.mdx`，随后 `GetVisualEffectRenderer` 加载失败走 catch 记日志并返回 null（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:1266-1286`）。所以「客户端有、Launcher 没有」的表现差异不成立，硬造同名别名等于原创资源。
-
-改动（1 个文件）：
-
-- `Platform/Godot/App/LauncherApp.cs`：`RunEffectProbe` 在 `PathResolve.ModelScene` 失败后，用 Extract 的同一个源目录 `test/war3-unpack` 判断该路径在源里是否存在——源里没有的记为「原版资源不存在」，源里有但 pck 里没有的仍计入「缺」；源目录不存在时保持原口径（计「缺」）。
-
-验证：
-
-1. `dotnet build Launcher.csproj` 0 错误（4 条既存警告）。
-2. 探针末行变为 `[FX] 物编 976 条，美术引用 656，可加载 654，缺 0，原版资源不存在 2`，两条逐行打「原版资源不存在」。
-3. 源目录判定正反向各验一次：`StampedeMissileDeath.mdl` 判 True（源里是 `.mdx`），`MissileDeath.mdl` 判 False；以后真出现「源里有、导出漏」时仍会计入「缺」，回归检测能力没有丢。
-
-复验：`cd Launcher4 && "$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --headless --path . -- --effect-probe`。进游戏看不到变化是符合预期的：兽王践踏走 `ANst` 的 `StampedeMissileDeath`，这两条坏引用在 1.27 里没有消费者，不需要重导 `extract.pck`。
+> 任务 1（V1 #51）、任务 2（V1 #53）、任务 3（V1 #49）、任务 4（V1 #50）已落地并合并到 Launcher，编号不复用。
 
 ### 5. 转成 Godot 动画时丢掉了关键帧切线（V1 #60）
 
@@ -231,6 +153,13 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 - **表现差异**：混战里少了「基地被打」和「英雄阵亡」的听觉提示。
 - **要做**：在 `World` 的建筑受伤路径上区分城镇与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。
 
+### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
+
+- **客户端**：这五个技能都把 `EfctID` 解析出的模型接进生成循环：烈焰风暴余烬取 Buff 的 `EffectArt`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs:51`、`:73-80`），云雾取 `Effectart` 常驻雾团（`RuntimeCloudOfFogAbility.cs:46`、`:69-76`），季风取雨幕与闪电落点（`RuntimeMonsoonAbility.cs:32`、`:85-87`），哨兵在树上生成猫头鹰（`RuntimeSentinelAbility.cs:29-31`、`:50-52`），火山生成喷发视觉与熔岩弹（`RuntimeVolcanoAbility.cs:127`、`:151`、`:226`）；另外客户端有独立的 `RuntimeMeteorRainAbility.cs`。
+- **Launcher**：上述五个类（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs`、`RuntimeCloudOfFogAbility.cs`、`RuntimeMonsoonAbility.cs`、`RuntimeSentinelAbility.cs`、`RuntimeVolcanoAbility.cs`）只结算伤害/状态，没有 `Art`、`Effect`、`Spawn` 相关的美术字段与生成循环；全仓也没有 `RuntimeMeteorRainAbility` 对应类。
+- **表现差异**：烈焰风暴只有伤害数字没有柱状余烬，云雾没有雾团遮挡，季风没有雨幕和落点闪电，哨兵没有停在树上的猫头鹰，火山没有喷发和熔岩弹；陨石雨技能整个缺失。
+- **要做**：逐个按客户端补美术字段、`RuntimePreloadArts` 与生成/销毁循环；火山和陨石雨还要补对应的 `Effect`/`Missile` 类。
+
 ## 模块五：输入与镜头
 
 > 键鼠语义、Esc/菜单与快捷键。
@@ -329,7 +258,7 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 
 ---
 
-## 核对结果（V1 剩余 23 条）
+## 核对结果（V1 剩余 21 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -342,8 +271,6 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 47 | 仍成立 | 地形/悬崖着色器无 `uDynamicLights`（`terrain_map.gdshader:9-11`） |
-| 49 | 仍成立 | 只有火雨特判读 `EfctID`（`RuntimeRainOfFireAbility.cs:48`），Extract 无 `Effects/` 导出 |
-| 50 | 仍成立 | 实跑 `--effect-probe`：文本表 1100 条、656 引用、654 可加载、缺 2 |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
 | 54 | 仍成立 | 只有可见性冻结（`Environment.cs:91-95`），无 `ScoutingMemory` |
 | 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
@@ -386,6 +313,6 @@ OK 火焰雨落地美术取 EfctID XErf      Abilities\Spells\Demon\RainOfFire\R
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **33** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **34** 开始。
 - 新发现的差异先判断是不是平台差异或已知取舍：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来时必须带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
