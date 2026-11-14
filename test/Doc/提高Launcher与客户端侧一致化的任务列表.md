@@ -34,14 +34,6 @@
 
 ## 七、特效与声音
 
-## 22. 闪电是 20Hz 随机折线，弹道不俯仰、不裁剪
-
-- **闪电**：客户端每帧按 `id/index/time` 确定性抖动、UV 滚动、段数上限 64、颜色乘实例 RGBA、端点支持 `StartHeight/EndHeight`；Launcher 每 50ms 用 `GD.Randf()` 重建，最多 24 条，UV 不滚动，端点固定在「单位位置 + 0.55 身高」。
-- **弹道**：客户端用模拟层的分段路径加 `RenderArcOffset`、`VisualPitch`、`BulletDeathTime` 和迷雾可见性；Launcher 自己算抛物线、只设 Yaw，技能弹道弧强制 0，弹道在黑雾里照样可见。
-- **占位与引导**：客户端模型缺失只记日志；Launcher 丢一颗金色 `SphereMesh`。客户端引导技能用技能自己的 `AreaEffectArt`；Launcher 自己画一个半透明蓝圆盘。
-
-要做：闪电改成确定性抖动 + UV 滚动；弹道补俯仰和迷雾裁剪；把黄球和蓝盘去掉。
-
 ## 25. 音乐无缝连播，也没有脚步和建筑循环音
 
 - **音乐**：客户端曲间有 20 秒间隔，支持主题音乐叠加、淡入淡出、`SetMapMusic/PlayMusic/StopMusic`、三层音量；Launcher 播完立刻下一首，固定 `-10dB`，没有淡入淡出、没有脚本接口。
@@ -57,14 +49,6 @@
 ## 九、加载流程
 
 ## 十、界面
-
-## 37. 命令卡少了四个功能格，混选时只剩通用命令
-
-客户端 `CommandCardBuilder` 是 5 个 partial 加一整套原生状态机：技能卡第 (3,1) 是「学习技能」（`BTNSkillz`、热键 `O`、角标显示剩余点数），点开后按 `Researchbuttonpos` 重排、第 12 格是「返回」；第 9 格是「建造」（`B`）；法术书有 `OpenSpellBook` / `BackFromSpellBook`；目标选择或放置模式下第 12 格换成 `BTNCancel`；混选时按成员 `CollectCommands` 聚合成一格并显示数量。
-
-Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就完了：没有学习页（学习直接点技能图标上的「+」，格位按 `HeroAbilList` 顺序硬排，和物编 `Buttonpos` 无关）；没有建造页（建筑直铺 12 格，多族建筑放不下，也没有「返回」）；没有法术书；没有取消格；混选只走 `_selected[0]`，加 5 个通用命令就 `break`。
-
-要做：按客户端拆 partial，先把「学习 / 建造 / 取消 / 聚合」四件做了，法术书随后。
 
 ## 38. 命令卡的槽位、热键和可用性判定
 
@@ -144,7 +128,6 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 18 | 2 | 已完成，等合并后删 |
 | 19 | 2 | 三块已完成，等合并后删 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
-| 22 | 2 | 保留：闪电与弹道 |
 | 23 | 2 | 保留：飘字样式 |
 | 24 | 2、3 | 保留：应答、命中音、界面音效 |
 | 25 | 2、3 | 保留：音乐、循环音、声部 |
@@ -185,11 +168,11 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 
 底层那一批里，**第 2、3、10** 是「一改就能并排看出差别」的，建议先啃这三个；**第 12** 跟在后面，因为它们和前面共用同一套地形/环境代码，隔开做会来回改同一个文件。
 
-单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 22 的闪电和弹道最容易被玩家看出来。
+单位实体那一批（**15–19**）互不依赖，可以并行；特效与声音（**21–25**）里 21 的丝带和弹道链路最容易被玩家看出来。
 
 ## 收尾规则
 
-- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **63** 开始。
+- 一条做完就从本文删掉，序号不复用，后面的不重排；下一条新任务从 **64** 开始。
 - 新发现的差异先判断是不是「平台差异」或「已知取舍」：Godot 与原生 GL 的差别、Launcher 固定 gmap 路径、不跑 JASS/触发器/战役/存档/录像/联机，这些不写进来。
 - 写进来的时候要带三个东西：客户端在哪、Launcher 在哪、玩家看得到什么。只有「不一样」没有证据的，等复核清楚再写。
 
@@ -308,3 +291,25 @@ Launcher 在 Extract 侧把发射器烘成 `GPUParticles3D`：参数取待机帧
 Launcher 的 `War3UiSoundService` 已经建好冷却表与种族前缀，但上述四个键没有调用点：建筑被攻击不报警，英雄阵亡也不出声，玩家在混战里少一层听觉提示。
 
 要做：在 `World` 的建筑受伤路径上区分「城镇」与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。`MapPing` 并进第 42 条的地图标记交互一起做。
+
+## 63. 飞弹模型几乎不可见
+
+客户端弹道用 `CharacterRenderer` 画模型，箭、火球、投石在游戏里都看得很清楚。
+
+Launcher 侧 `ArrowMissile`（弓箭手 earc）在 Turtle Rock 上实测看不到：弹道节点存在、位置在相机视野中心、`Visible=true`，模型 `scale` 放大 4 倍和 12 倍后截图里依然没有箭；模型场景结构是 `Node3D → Model/Skeleton3D → geoset0`，材质 `war3_model_opaque`（`alpha_cutoff 0.75`、贴图 `ArrowMissile.png`）完整，所以问题在渲染这一侧而不是导出。
+
+要做：先确认是骨骼/Stand 动画把网格挪走、还是 `MapWorldBuilder.ApplyUnitTextureFilter` 换了材质，修好后用弓箭手对射复验箭、火球、投石三类飞弹。
+
+## 64. 法术书没有页面，子技能进不了命令卡
+
+客户端把法术书做成命令卡的一个页面：`OpenSpellBook(selected, book)` / `BackFromSpellBook()`，
+`CollectAbilityCommands` 在 `spellBook != null` 时只收 `ContainerAbility` 与这本书同源的子技能
+（`book.SharesMenuWith(parent)`），子技能序号当格号落在 0..10、第 12 格放「返回」；
+`UpdateMenuSelection` 会在书的主人死亡、书被移除或子技能不可用时自动 `_menus.Back()`。
+
+Launcher 侧 `Ability` 只有 `ContainerRawcode` / `ContainerAbility` 两个字段，全仓没有一处赋值，
+`RuntimeSpellBookAbility` 也没有，所以法术书物品（sbok / Aspb）用出去什么都不发生。
+
+要做：补 `RuntimeSpellBookAbility`（物编 MenuOrderId + 子技能 `Requires` 链），在
+`CommandCardBuilder` 的菜单栈里加 `MenuKind.Book` 与 `OpenSpellBook` / `BackFromSpellBook`，
+`AddAbilityCommands` 的收子分支按容器过滤并把序号当格号，点开/关页条件与客户端一致。
