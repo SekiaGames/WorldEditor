@@ -65,3 +65,4 @@
     9. Launcher使用自有光照收集系统，.tscn上Node3D节点记录元数据，这是已知差异。
         Extract/Demo/testMDX.tscn和Launcher的地图选择界面和游戏界面都支持该系统。
     10. 重新生成任务列表时，将任务从底层到表层进行排序。
+    11. 使用Godot自定义shader，不使用Godot内置shader。
