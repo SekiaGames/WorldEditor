@@ -119,7 +119,16 @@ Launcher 的 `SetFogFrozen` 只是 `Player.Pause()` + `Root.Visible = true`，�
 - **选中圈**：客户端读 `SelectionRadius/Height`，用原版 `SelectionCircleMed.blp` 铺在地形三角面上，坡地贴合，敌红友绿；Launcher 是固定 32 段程序化圆环，颜色恒为 `3ce03c`，`y=6` 固定在 `Root` 下，所有兵种一样大，坡上会插地或悬空。
 - **影子**：客户端是世界坐标轴对齐的地面贴花、逐顶点贴地，建筑按 30%/70% 锚点偏移；Launcher 的影子是 `Root` 的子节点，`Root` 每帧按朝向旋转，单位一转身影子跟着转；SLK 里没写尺寸的单位会回退成 64+ 世界单位的巨大黑影。
 
-要做：三块拆开做，血条先做（最容易看见），再选中圈形状和贴地，再影子脱离 `Root`。
+要做：选中圈形状和贴地，再影子脱离 `Root`。
+
+**已完成**（2026-11-14，血条）：
+
+1. `UnitType.SelectionDiameter = unitUI.scale × MiscData [SelectionCircle] ScaleFactor`（缺省 72），血条宽度走 `UnitStatusBarGeometry.Pixels` 换算屏幕像素，不再用 56 / 建筑 90 的世界 Quad。
+2. 血条改屏幕空间：`BattleOverlayRenderer`（与客户端同名同路径）挂在 CanvasLayer 20，按模型顶投影画矩形，HUD(45) 仍压在它上面，相机俯仰不再把它拉变形。
+3. 全部可见存活单位都画（去掉「受伤或被选中才显示」和 Alt 逻辑），敌方恒红、其余按血量走绿黄红连续色，补了蓝条（厚度系数 0.0028，贴在血条正下方）。
+4. 填充用 `human-healthbar-fill.blp` 按血量截 UV + 顶点色，黑底用矩形；不再有两档离散色和填充右漂。
+5. 顺带修 `MeasureHeight`：只统计可见 mesh，隐藏的升级形态 geoset 不再把血条顶高（Necropolis 708 → 417）。
+6. 删掉 `UnitSceneComponent` 的 `BarRoot/BarFill/SetHp/SetBarVisible`，以及 20 处 `SetHp` 调用。
 
 ## 16. 队伍色回绕，幻象不变色，虚无没反应
 
@@ -462,7 +471,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 13 | 2、3 | 保留：悬空雾面 vs 片元采样 |
 | 14 | 2 | 保留：雾里建筑状态 |
-| 15 | 2 | 保留：三块贴片 |
+| 15 | 2 | 保留：选中圈与影子两块贴片 |
 | 16 | 2 | 保留：颜色与状态色 |
 | 17 | 2 | 保留：贴地、姿态、朝向 |
 | 18 | 2 | 保留：动画优先级 |
