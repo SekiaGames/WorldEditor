@@ -65,21 +65,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-
-### 22. 命令卡的槽位、热键和可用性判定（V1 #38）
-
-- **客户端**：`FindNativeSlot` 是「向 11 找空位、再往 0 回退、满卡就丢」（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/CommandCardBuilder.cs:426`）；热键按按钮真正显示的 `Hotkey` 分发（`:90` 的 `CommandAtHotkey`），训练/研究/建造/升级都能用键盘；可用性走 `NativeManaAdmission` / `NativeSpellOrderAdmission` / `NativeSelectionCommandPolicy`。
-- **Launcher**：`TrySelectionHotkey` 完全不看命令卡，只认 `ability.Hotkey` 和硬编码的 M/S/H/A/P（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs:411-417`、`:449-457`），遇到建筑直接返回 false；槽位算法是「从请求位往后找第一个空位，找不到就 break」；可用性判定写死在 `QuickCast.cs` 里。
-- **表现差异**：同一份物编，两边第 3/8/11 格可能放不同技能；命令卡上的热键字母是装饰，建筑训练/研究不能用键盘；带法力修正符的单位会出现「亮着却放不出」。
-- **要做**：先把热键改成读按钮 `Hotkey`，再改槽位算法和可用性判定；冷却闪光、自动施法高亮、禁用变暗在第 30 条。
-
-> **执行结论（Launcher2，待合并）**：热键、槽位与可用性已按客户端对齐。
-> - 热键分发：新增 `GameHudScreen.CommandAtHotkey`，按 `NativeCommandCard.HotkeySlot` 的列优先次序扫描已落格的 12 个按钮，跳过不可见与禁用项，匹配按钮真正显示的 `Hotkey`（物编热键或 QWER/ASDF/ZXCV 兜底）；`War3GameScene.TrySelectionHotkey` 改为直接执行命中按钮的 `Action`，移动/停止/保持/攻击/巡逻、英雄与单位技能、训练、建造、研究、升级都能用键盘，并保留 A/S 等键的镜头平移屏蔽。删掉原来硬编码 M/S/H/A/P 的 `TryStandardCommandHotkey`，小键盘 1~6 物品热键保留。
-> - 槽位：训练与建筑升级改用单位物编 `Buttonpos`（`TryGetUnitConfiguredSlot`），研究改用升级物编 `Buttonpos`（`UpgradeType` 从 `*UpgradeFunc.txt` 读入，新增 `TryGetUpgradeConfiguredSlot`）；技能没有 `Buttonpos` 时不再顺序补格（客户端同样不把无效位置塞进空格）。落位算法本身已是 `FindNativeSlot`（向 11 找空、再向 0 回退、满卡丢弃），本次未改。
-> - 热键数据：训练/升级取 `UnitStrings` 的 `Hotkey`，研究取 `UpgradeStrings` 的逐级 `Hotkey`，因此按钮字母不再是装饰。
-> - 可用性：技能按钮在“已学/冷却/法力/开关例外”之外，再要求 `!ability.IsDisabled` 与 `Owner.State.CanCast`（沉默、眩晕等），与 `TryCast` 的实际门禁一致；英雄与非英雄技能卡同一口径。Launcher 没有客户端那套法力消耗修正符系统，所以“法力修正符导致亮着放不出”在 Launcher 不会出现，本次让可用性与真实施法门禁一致。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`Turtle Rock --card-probe` 输出：英雄卡 `8:神圣之光 9:神圣护甲 10:虔诚光环`，热键 `T→AHhb`、`D→AHds`、`V→无`（被动已禁用）；兵营卡 `0/1/2` 训练 + `8/9/10` 研究，热键 `F/R/K → hfoo/hrif/hkni`；铁匠铺卡 `0/1/4/5`，热键 `S/G/P/A → Rhme/Rhra/Rhar/Rhla`，与物编 `Buttonpos` 一致。`--state-probe` 仍只剩基线已知失败 `utod 研究项`。
-> - 合并注意：改动落在 `QuickCast.cs`、`Commands.cs`、`Ui.cs`、`GameHudScreen.cs`、`MeleeHudController.cs`、`CommandCardBuilder*.cs`、`TechTree.cs`；命令卡探针新增在 `Cheats.cs` 的 `RunCardProbe` 里，和其它 Launcher 副本易冲突。未改 Extract，无需重建 `extract.pck`。
+> 任务 22（命令卡槽位/热键/可用性）已落地并合并到 Launcher，编号不复用。
 
 ### 23. 法术书没有页面，子技能进不了命令卡（V1 #64）
 
@@ -179,11 +165,10 @@
 
 ---
 
-## 核对结果（V1 剩余 11 条）
+## 核对结果（V1 剩余 10 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 38 | 仍成立 | 无 `CommandAtHotkey`/`FindNativeSlot`；`QuickCast.cs:411-417` 只认物编热键 |
 | 39 | 仍成立 | `SetHint` 只赋值（`MeleeHudController.cs:150`），无 `CommandErrorFrame`；Buff 图标另立第 27 条 |
 | 41 | 仍成立 | 聊天独立 CanvasLayer（`ChatFrame.cs:23-28`），无 `ControlGroupFrame` |
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
