@@ -42,6 +42,14 @@
 - **表现差异**：树被砍倒没有倒地/枯木过渡，模型一帧消失；地图开局就已毁坏的装饰物完全不显示，而客户端保留死亡姿态。
 - **要做**：装饰物实例补 `death` 序列播放与定格，死亡后按可见性记忆保留；初始已毁的实例也要建出来并播死亡姿态。
 
+> **执行结论（Launcher7，待合并）**：已修复。导出资源本身已带 `death` 序列（如 `Extract/extract/Doodads/Terrain/LordaeronTree/LordaeronTree7.02_death.tres`），问题只在 Launcher 侧：
+> - `TreeState` 绑定 `AnimationPlayer`，新增 `EnterDeath`（播放 `death`）与 `HoldDeathPose`（定格末帧）；`Chop` 和 `ConsumeTree` 不再 `Visible = false`。
+> - `BuildDoodads` 不再跳过 `Dead` 实例，实例化后立即定格死亡姿态；已毁实例不投树影、不登记可通行面。
+> - 关掉导出的 `AnimationTree`，改为 `AnimationPlayer` 驱动，避免状态机把死亡姿态自动切回 `stand`。
+> - 验证：`dotnet build` 0 错误；headless 加载 `(2)BootyBay`、`(4)Turtle Rock` 分别 2011/2255 个装饰物无异常；`LordaeronTree7` 实测死亡末帧枯木 geoset 可见、活树 geoset 隐藏，存活态相反；`animation_finished` 回调能把砍倒的树停在末帧。
+> - 两张样例地图初始已毁实例数均为 0，初始死亡姿态复用同一套定格逻辑；Launcher 不做装饰物迷雾剔除，死亡姿态全时段常驻，等价于客户端“见过即保留”。
+> - 复核方式：用 Godot 启动本工作区的 Launcher7，进入 `(4)Turtle Rock`，派农民砍树，树倒地后停在枯木姿态且树影消失。
+
 ### 8. 天气粒子还是每格一个 CpuParticles3D，跨格重启整窗雨（V1 #56）
 
 - **客户端**：一次 `DrawElementsInstanced` 画整个窗格（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/WeatherRenderer.cs:328`），相位由 `CellSeed(weather,col,row)` 确定性生成（`:350`），跨格只 `RebuildVisibleWindow` 重传实例缓冲（`:368`），并让散布平面随 `angx/angy` 倾斜。
