@@ -44,6 +44,18 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 要做：加载 `skyLight` 并按时辰旋转；天空改按 `SkyboxType` 选；全景底只在完全没有天空壳时兜底。
 
+已完成（Launcher5 `任务12` 提交）：
+
+- **顶栏 24 小时时间指示器补上了**：新增 `Game/Rendering/TimeOfDayViewport`，用 `SubViewport` + 正交相机把皮肤里 `TimeOfDayIndicator`（`UI\Console\<race>\<race>UI-TimeIndicator.mdl`）画到设计空间。位置不是手写坐标，而是取模型自身包围盒乘 `FdfScale.ToDesignUnits(1280)`：`x 431.36 / y -9.79 / 163.84×91.71`，正好落在顶栏中段 `439~587` 的空缺上，与客户端 `RenderTimeOfDayIndicator` 的投影口径一致。绘制顺序放在 `_root.Render` 之前，和客户端「先画指示器再画 FDF 帧」一致。
+- **anim 由时辰驱动**：`Stand` 序列长 60，`SetClock(时)` 直接 `Seek(时/24×60)`，日月走模型自带的 `GeoSphere01` 旋转轨道与 geoset 显隐轨道，不再自己算角度。
+- **数字时间显示出来了**：`TopBarFrame._timeText` 一直存在但从来没显示——`SetChromeVisible` 全仓无人调用，`Visible` 初始 false 就再没翻过来。现在建 HUD 时按客户端 `SetChromeVisible(!UseFdfResourceBar)` 的口径调 `SetChromeVisible(true)`。
+- **UI 模型材质换了一套**（Extract 那份 `war3_model_opaque` 在这只模型上取不到 frame 贴图 alpha，石框整个被 discard 掉）：不透明层改 `StandardMaterial3D`（unshaded、cull off、nearest、alpha scissor 0.5）；ADD 层改用本工程自带的加色 shader。ADD 在透明离屏里会把 alpha 也累加成不透明，导致「黑方块」，所以按亮度写 alpha：`ALBEDO = rgb·a·gain`、`ALPHA = a·max(rgb)·gain`。代价是这三层 `geoset_tint` 的动画轨道不再驱动颜色（材质已不是原 ShaderMaterial），显隐轨道和旋转轨道照常生效。
+- **天空改按 `SkyboxType` 选**：`MapSource` 从 gmap 的 `war3mapMisc.txt` 读 `SkyboxType`；`SkyDomeRenderer` 用客户端 `SkyboxRenderer.SkyModels` 那张 0..14 表选壳，`SkyboxRenderer` 的全景底只在壳模型缺失时创建（原来两级都建，全景底从半透明处漏出亮带）。
+- **日月载入 `Environment\Sky\Sky\skyLight`**：跟相机同心，`Rotation.Y = 2π·时/24`（客户端是 `CreateRotationZ`，MDX 的 Z-up 映射到 Godot 就是绕 Y）。skyLight 自带的天空壳（3911）与 8 片云条（5600~6500）会把地形盖住——这些层在客户端是 `BackgroundPass` 不写深度、先画后被地形覆盖，Godot 里没法这么排，所以按包围盒尺寸 >3000 剔除，只留日月两块（716/450）。
+- 验证：`--play="(4)Turtle Rock.gmap" --rendering-driver opengl3 --shot=...` 看顶栏；小时可以用 `--day-seconds=` 快进。`[SKY] 穹顶 ... 日月 已载入`、`[TOD] 时间指示器 ... 序列 Stand 长 60 秒 区域 ...` 是日志取证口。日月是否在天上肉眼不好验（顶视角基本看不到天空），按 8 点/12 点打印过日月中心随时刻转动、高度恒为 1057。
+
+未做：`skyLight` 的云层（上面剔了）；`geoset_tint` 动画；`SetSkyModel`（Launcher 没有 JASS 运行时，`SkyModelOverride` 这条没有对应物）。
+
 ---
 
 ## 五、战争迷雾
@@ -77,7 +89,7 @@ Launcher 只加载天空壳（`SkyDomeRenderer`），不加载 `skyLight`（Extr
 
 Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹道用过，所以狮鹫、双足飞龙、冰龙全都贴地；没有俯仰横滚；朝向在 20Hz 仿真步里直接写 `Root.Rotation`，角速度上限还是 14 rad/s（客户端 20）；完全没有 look-at。
 
-要做：朝向插值、look-at 两件（飞行高度、坡面姿态已完成）。
+三块都已完成（飞行高度、坡面姿态、朝向插值、look-at），条目等合并后再删。
 
 **已完成**（2026-11-14，飞行高度）：
 
@@ -94,6 +106,20 @@ Launcher 的 `Spawn` 把模型 Y 设成 `SurfaceY(...)`，`FlyHeight` 只给弹�
 3. 姿态在 `SyncPlacement` 里写 `Root.Rotation = (pitch, yaw, -roll)`，Godot 默认 YXZ 欧拉正好是「先本地 roll、再本地 pitch、最后 yaw」；模型前向是 -Z（由 `Facing = π + atan2(-dx, dz)` 反推），所以 pitch 取正、roll 取负。
 4. `ApplyFacing` 转向时保留 X/Z 分量，不会每 20Hz 把倾角清一次。
 5. 平地实测不误倾斜（营地四个朝向的步兵都站正）；营地/岸边等有落差处 pitch 打满上限，与客户端同样被 `maxPitch` 限制。
+
+**已完成**（2026-11-14，朝向插值）：
+
+1. 仿真侧 `ApplyFacing` 只维护逻辑 `unit.Facing`，不再直接写 `Root.Rotation`；渲染侧由 `UnitSceneComponent.SyncFacing` 用指数平滑（时间常数 0.04s）逐帧逼近，20Hz 的台阶被抹平。
+2. `SyncPlacement` 用平滑后的 `RenderFacing` 写欧拉 Y 分量，倾角仍取当帧计算值。
+3. 首次出现、暂停恢复（`delta >= 1`）直接吸附，不会从 0 转过去；变形重建的 `View` 也是新组件，同样吸附。
+
+**已完成**（2026-11-14，look-at）：
+
+1. `Unit` 补 `LookAtBone` / `LookAtTarget`（与客户端同名字段）。
+2. `Step` 开头对建筑跑 `UpdateTurretLookAt`：有存活攻击目标且自身能攻击时置 `Bone_Turret`，目标消失或不再攻击时清掉（对应客户端 `Unit.Combat.UpdateTurretLookAt`）。
+3. `UnitSceneComponent.SyncLookAt` 在渲染帧把该骨骼指向目标：目标坐标转到 `Skeleton3D` 空间，构造「X=前向、Z=上」的基，用 `SetBoneGlobalPoseOverride` 覆盖；取消瞄准时以 weight 0 发一次恢复。
+4. 模型骨骼名与客户端一致（`HumanTower.glb` 里确有 `Bone_Turret`，第 15 根，且被蒙皮引用）；`FindBone` 失败或无骨骼的模型（地形装饰等）直接跳过。
+5. 验证：新增 `--turret-probe` 在亡灵基地旁摆一座人族塔 + 一个敌方步兵，塔的 `CanAttack/Target/aiming` 均为真；把 `Bone_Turret` 换成 `FlagPole` 强转 90° 时整座塔几何跟着变，确认 override 通路真的作用到渲染。
 
 ## 18. 战斗动作：攻击只播一次，攻速不影响动作
 
@@ -175,6 +201,21 @@ Launcher 用 `Label3D`（世界单位、Billboard），拉远镜头字就变小�
 - **取景**：客户端 `CameraBounds` 直接用 w3i，边界外靠 `CameraMargins` 放宽；Launcher 把 w3i 边界和地形网格矩形求了交集，带外围装饰的地图会被裁掉一截。开局客户端放在边界中心由脚本接管，Launcher 直接 `Focus` 出生点。世界投影客户端恒定 4:3 视锥，Launcher 走 Godot 相机默认的 `KeepHeight`。地形高度客户端按渲染网格同一条 TL–BR 三角面插值并查桥面，Launcher 是四角双线性、不查桥。
 
 要做：补跟随和两个设置项；相机档位改成读地图覆盖层；边界不要取交集；投影和高度采样向客户端看齐。
+
+执行情况（Launcher4，待合并）：
+
+1. **跟随**：新增 `GameCore/L4_Composition/Game/Scenes/War3GameScene/CameraFollow.cs`，把客户端 `War3CameraComponent.Update` 里那四条驱动补齐（肖像 / 锁定 / 总跟随 / 标记），调用顺序与客户端一致，位置也在 `camera.Update` 之前。喂镜头的是**渲染率样本**：`AdvanceFollowSample` 按单位速度每渲染帧追赶仿真坐标（客户端 `RenderPosition` + `SnapRenderTransform` 同一套，差超过 max(64, 3 步) 直接贴合），不再把 20Hz 仿真坐标直接喂镜头。肖像跟随改用客户端的「目标控制器 + 表现坐标」通道，且**松手不立刻停**：先立 `releasePending`，等可见镜头进到 32 单位内才解绑。锁定/总跟随/标记走 soft-follow（换目标带 0.3~0.75s 滑翔）。玩家中键拖镜头打开 0.1 秒失锁定窗口，窗口内解绑让位、归零后自动滑回。
+2. **跟随入口**：桌面端用热键替代安卓面板 —— `Ctrl+F` 总跟随、`Ctrl+Shift+F` 锁定跟随、`Ctrl+Alt+F` 标记并跟随；必须排在物编热键**之前**（`TrySelectionHotkey` 不判修饰键，放后面 Ctrl+F 会被当成 F 技能）。总跟随的四个过滤开关按客户端默认（建筑参与，敌人/中立/友军不参与，自己的单位恒允许），留了 `SetCameraFollowTrackFilter` 供将来接面板。
+3. **两个设置项**：`War3Camera.DistanceScale`（量程 [0.5,4]，与客户端 `GameUserSettings.MinScale/MaxScale` 同源）盖住三处距离消费点（`SnapToPreset` / `RestorePresetFields` / 每帧 `ResolveField(0)`），`SetPlayerDistanceScale` 走「玩家命令」立即生效；`Update(..., panSensitivity)` 把灵敏度乘在方向键/边缘滚屏的**速度**上（=1 与旧行为逐字一致）。
+4. **档位来源**：`LoadSettings` 先读地图自己那层 MiscData（`war3mapMisc.txt` → `UI/MiscData.txt`，低→高，与客户端「地图层最高」一致），再落构建期生成表；`[Camera]` / `[CameraRates]` / `[CameraMargins]` 都可被覆盖，命中时打 `[CAMERA] 地图覆盖 [Camera]`。
+5. **边界**：`SetCameraBounds` 直接取 w3i 那 8 个角点的包围盒（原来只取了前两个点当矩形，还和地形网格求交集），世界坐标 X 取负后左右翻转；只有 w3i 缺失/写坏才退回地形矩形。放宽仍由 `CameraMargins` 负责。
+6. **投影**：世界相机改成客户端口径 —— 恒定竖直 70° 视锥（`KeepAspect=Height`，宽屏只扩水平视野），删掉把游戏内竖直视锥压到 54.43° 的魔数；电影镜头 FOV 改成 `modelFov*0.5` 直接存半角量纲，不再绕 `PlatformGodotFov` 往返。
+7. **高度采样**：`CameraTargetHeightAt` = max(地形渲染网格表面（同一条 TL–BR 三角面 + 斜坡抬升，`SurfaceHeightAt`）, 双线性水面 `WaterPlaneHeightAt`, 可通行面)；原来走四角双线性 `HeightAt`，水面还是取最近角点。
+8. **桥面**：新增 `GameCore/L4_Composition/Game/Environment/WalkableSurfaceProbe.cs` —— 把 SLK `walkable=1` 的装饰物/破坏物（共 117 条，全是 `Doodads\Terrain\*Bridge*`）的模型三角面在进树后烘成世界坐标，垂直射线取最高命中点，与客户端 `DoodadRenderer.TryGetWalkableHeight` 同口径。两张测试图都没有桥，路径按数据实现、待有桥地图复核。
+9. **顺带修**：天空球壳（半径 1957）原来挂在目标点上，镜头距离倍率一拉远眼点就钻出壳外、整屏只剩壳外侧渐变色；改成按眼距等比放大（正常档位 scale=1，取景与之前逐像素一致）。
+10. **探针**：`--camera-follow=track|lock|marked|portrait`、`--camera-distance=`、`--pan-sensitivity=`，用户参数要放在 `--` 之后，截图要加 `--rendering-driver opengl3`。
+
+验证数据（`(4)Turtle Rock.gmap`）：相机边界从「地形∩w3i」变成 w3i 原值 `(-14336,1664)-(-2048,14464)`；预设仍是 1650/1600/1500/1400/1275/1100、AOA 304..339（说明没误读覆盖层）；距离倍率 2 → 第 1 档 3300，取景正常。跟随探针：单位每 0.4s 前进 72 单位时镜头目标点同步推进（本机 2.5FPS，60FPS 下滞后仅一帧）；肖像跟随松手后继续跟到单位停步、进到 32 单位内才解绑（`following=True → False`）。
 
 ## 28. 选择、子组、点头像
 
@@ -318,7 +359,7 @@ Launcher 的 `CommandCardBuilder` 只有 103 行，把 12 个槽刷成按钮就�
 | 12 | 2、3 | 保留：日月、选天空依据 |
 | 15 | 2 | 三块已完成，等合并后删 |
 | 16 | 2 | 已完成，等合并后删 |
-| 17 | 2 | 保留：朝向、look-at |
+| 17 | 2 | 已完成，等合并后删 |
 | 18 | 2 | 保留：动画优先级 |
 | 19 | 2 | 保留：死亡/升级/金矿 |
 | 20 | 2、3 | 保留：手写表 vs 数据驱动 |
