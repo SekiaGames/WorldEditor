@@ -78,6 +78,13 @@
 - **表现差异**：混战里少了「基地被打」和「英雄阵亡」的听觉提示。
 - **要做**：在 `World` 的建筑受伤路径上区分城镇与其他建筑，派 `TownAttack/UnderAttack`；在死亡路径上区分英雄、自己与盟友，派 `HeroDies/AllyHeroDies`。
 
+> **执行结论（Launcher10，待合并）**：已修复。
+> - 被攻击：对齐客户端在挥击起手发布 `EVENT_UNIT_ATTACKED` 的时机（`CAbilityAttack.cs:223-231`，避免远程晚一个弹道、闪避丢失事件），`World` 新增 `UnitAttacked(attacker, victim)` 并在 `BeginAttack` 起手时派发；场景 `OnUnitAttacked` 只对 `victim.Player == ViewPlayer` 响应，建筑播 `TownAttackSound`、单位播 `UnderAttackSound`，沿用服务里 30 秒冷却。
+> - 英雄阵亡：`HeroPresentation` 补 `AnnounceDeath` / `DeathSound`，按客户端口径过滤幻象与 `hideHeroDeathMsg`；`OnUnitDied` 里自己播 `HeroDiesSound`、盟友播 `AllyHeroDiesSound`、敌方不播。`UnitType` 补读 UnitUI 的 `hideHeroDeathMsg` 列。
+> - 音效条目确认存在：`TownAttackHuman/Orc/NightElf/Undead`、`UnderAttack*`、`HeroDies*`、`AllyHeroDies*` 都在 `UISoundInfoUISounds` 表里，不需要补资源。
+> - 验证：新增 `--event-sound-probe` 8 项全过（自己/盟友/敌方/幻象/hideHeroDeathMsg 的英雄死亡音选择，起手派发 `UnitAttacked`，建筑与单位分别选 TownAttack/UnderAttack）；`--combat-probe` 全部通过；`--state-probe` 仅剩基线已知的 `utod` 1 项失败。
+> - 复现：`Godot --headless --path Launcher10 -- --play="(4)Turtle Rock.gmap" --event-sound-probe`。听效果：正常开局后让敌方 AI 打到你的建筑/单位（30 秒内只报一次），或让英雄阵亡；日志会打印 `[AUDIO] UI TownAttackSound` / `UnderAttackSound` / `HeroDiesSound`。
+
 ### 33. 烈焰风暴/云雾/季风/哨兵/火山的美术没写，陨石雨技能缺失（新增）
 
 - **客户端**：这五个技能都把 `EfctID` 解析出的模型接进生成循环：烈焰风暴余烬取 Buff 的 `EffectArt`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeFlameStrikeAbility.cs:51`、`:73-80`），云雾取 `Effectart` 常驻雾团（`RuntimeCloudOfFogAbility.cs:46`、`:69-76`），季风取雨幕与闪电落点（`RuntimeMonsoonAbility.cs:32`、`:85-87`），哨兵在树上生成猫头鹰（`RuntimeSentinelAbility.cs:29-31`、`:50-52`），火山生成喷发视觉与熔岩弹（`RuntimeVolcanoAbility.cs:127`、`:151`、`:226`）；另外客户端有独立的 `RuntimeMeteorRainAbility.cs`。
