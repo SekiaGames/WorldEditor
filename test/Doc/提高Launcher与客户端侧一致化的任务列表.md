@@ -48,6 +48,17 @@
 
 > **复核评价**：五个技能那半成立，陨石雨这半越界。`ANme` 在 `test/war3-unpack/Units/AbilityData.slk` 里没有行（大小写都查过），`UnitAbilities.slk` 里没有任何单位携带，全仓只出现在战役脚本和 `Blizzard.j`；客户端 `RuntimeAbilityFactory.Constructors.cs:167` 的注册在 1.27 数据下是死代码。按本清单范围「只有脚本能触发的效果不进清单」，陨石雨应从本条删除，`RuntimeMeteorRainAbility` 不必补。另外编号 33 夹在 20 和 21 之间，破坏了「模块内从上往下」的读法，技能美术应排到模块三末尾。
 
+> **执行结论（Launcher3，待合并）**：五个技能的美术循环已按客户端补齐；陨石雨按复核意见不做，没有新增 `RuntimeMeteorRainAbility`。
+> - 美术来源：全部走物编合并层 `War3ObjectData` + `AbilityArt`，与客户端同口径——烈焰风暴 `XHfs.Effectart=FlameStrikeEmbers.mdl`、喷发取 `AHfs.Specialart`；云雾 `Xclf.Effectart=CloudOfFog.mdl`；季风 `XNmo.Effectart=MonsoonRain.mdl`、落雷 `ANmd.Targetart=MonsoonBoltTarget.mdl`；哨兵 `XEsn.Targetart=Owl.mdl`；火山 `Volcan` 破坏物模型 `Volcano.mdl`、`XNvc.Missileart=VolcanoMissile.mdl`（速度 400、弧 0.8）。
+> - 烈焰风暴：`RuntimeFlameStrikeAbility` 施法时随机播一个喷发模型（`Dur` 时长），`FlameStrikeBurn` 每 0.33s 在半径内撒 10 个余烬、存活 1s（`Launcher3/Src/Skills/FlameStrikeBurn.cs`）。
+> - 云雾：施法时在落点挂常驻 `CloudOfFog.mdl`（`PlayStandAfterBirth`、队伍色），云区提前结束或主人死亡时播 Death（`RuntimeCloudOfFogAbility.cs`、`Src/Skills/CloudOfFogSpell.cs`）。
+> - 季风：引导开始挂 `MonsoonRain.mdl` 雨幕，每波对命中的单位挂 `MonsoonBoltTarget.mdl` 落雷；断引导/正常结束销毁雨幕（`RuntimeMonsoonAbility.cs`）。同时补了 `ANmo` 注册（此前只有 `ACmo`，两者同实现）。
+> - 哨兵：保留 Launcher 现有的点地面施法与 `AddFogReveal`，在落点按 `DataC`（275）高度生成 `Owl.mdl` 猫头鹰，持续 `DataA`。Launcher 没有可破坏物目标管线，未改成客户端的树目标模式。
+> - 火山：引导时在落点生成 `Volcano.mdl` 喷发体；每波保留现有 `DataE` 范围伤害，并新增 `RuntimeVolcanoMissileEffect` 按 `RuntimeVolcanoWavePattern` 从火山口抛出一批熔岩弹（复用 `MissileEffect` 渲染路径，不参与伤害结算，避免改动已对齐的逐波伤害与探针）。断引导时喷发体播 Death。
+> - 预载：五个类都实现 `RuntimePreloadArts`，加载流程的 `PreloadAbility` 会把喷发/雾团/雨幕/落雷/猫头鹰/熔岩弹模型一起预载。
+> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 新增 18 项美术断言全 OK（预载数量、喷发/余烬/雾团/雨幕/落雷/猫头鹰/喷发体/熔岩弹生成、断引导销毁），仅剩基线 `utod` 一项；`--combat-probe` 全部通过（火山第一波伤害仍为 `DataE`）。
+> - 操作：`"$HOME/Applications/Godot_mono.app/Contents/MacOS/Godot" --path Launcher3 -- --state-probe` 可直接看断言；画面验证在 `(4)Turtle Rock.gmap` 用血法师/火焰领主放烈焰风暴/火山、龙鹰放云雾、女猎手放哨兵，季风可用风暴术士（`ACmo`）观察雨幕与落雷。
+
 ## 模块五：输入与镜头
 
 > 键鼠语义、Esc/菜单与快捷键。
@@ -56,7 +67,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）已落地并合并到 Launcher，编号不复用。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
 
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
@@ -71,19 +82,6 @@
 - **Launcher**：`DrawCooldownSweep` 是纯色扇形（`GodotUiRenderDevice.cs:132`），`DrawCooldownCompletion` / `DrawAutoCast` 返回 false（`:155`、`:159`），`DrawTexturedQuadAdd` 退化成普通 alpha（`:98`）；`FdfBindGen` 生成了 5 个绑定（`Launcher/GameCore/L4_Composition/Game/Diagnostics/FdfBindGen.cs:17-44`），但只有 `LoadingScreenBinding` 有调用者（`Launcher/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:95`），HUD 走手写 `TopBarFrame + ConsoleSkinFrame`。
 - **表现差异**：冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、ADD 高亮/光晕偏暗；FDF 皮肤改了也不会反映到 HUD。
 - **要做**：先补三个渲染能力和 ADD 混合，再决定 FDF 绑定是接上还是删掉。
-
-### 34. 打开设置页时没有暂停模拟（新增）
-
-- **客户端**：`MeleeHudController.AutoPauseRequested` 在 `_aboutDialog.Visible` 等对话框可见时为 true（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/MeleeHudController.cs:551`），`War3GameScene/Ui.cs:34` 把它作为 `MenuPauseRequested` 交给游戏循环暂停模拟。
-- **Launcher**：`GameHudScreen` 只负责 `AboutDialog` 的显示/隐藏（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:247-253`），没有把可见性接到 `Paused`；`Paused` 只由 Esc 菜单的暂停按钮切换（`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:70-74`），而模拟只在 `Paused` 时停（`Lifecycle.cs:794`）。
-- **表现差异**：打开选项/设置页时单位仍在移动、AI 仍在出兵、计时继续；客户端会自动暂停模拟。
-- **要做**：让设置页的显示/关闭驱动 `Paused`（或实现 `AutoPauseRequested`），关闭时恢复原暂停状态；Esc 菜单本身不算，按客户端口径只认对话框。
-
-> **执行结论（Launcher4，已修复，待合并）**：按客户端 `AutoPauseRequested` 口径实现，不改写手动暂停状态。
-> - `GameHudScreen` 新增 `AutoPauseRequested => AboutDialogVisible`（后续任务/盟友对话框补齐时并进同一属性）。
-> - `War3GameScene` 新增 `MenuPauseRequested`（读 `_newHud.AutoPauseRequested`）与 `SimulationBlocked => Paused || MenuPauseRequested`；`_PhysicsProcess` 的模拟入口从 `if (Paused)` 改为 `if (SimulationBlocked)`。世界推进、时钟、订单、AI 波次与各家 AI 都在这一个入口后面，因此设置页打开时全部停步；`Paused` 本身不被改写，关页即恢复，Esc 菜单暂停与设置页叠加时仍保持暂停（不会出现“关设置页把 Esc 暂停一起解掉”）。
-> - 回归：新增场景探针 `--pause-probe`（`War3GameScene.RunPauseProbe`），在 Turtle Rock 实跑 6 条全过：初始未暂停 / 设置页打开暂停模拟 / 不改写手动暂停 / 关闭恢复 / 手动暂停下开关设置页仍暂停 / 暂停状态还原。`--ui-hud-probe` 增加“设置页请求暂停、关闭恢复”两条，全部通过；`--combat-probe` 全过；`--state-probe` 仍只剩基线的 `utod 研究项`。
-> - 复验：进任意测试图，按 Esc →「选项」打开设置页，单位/AI/昼夜计时应立即停住；点「返回」关闭后继续。点 Esc 菜单的暂停按钮再开关设置页，暂停不会被设置页关闭顺手解除。
 
 ### 35. 命令卡悬停说明没有结构化成本图标（新增）
 
