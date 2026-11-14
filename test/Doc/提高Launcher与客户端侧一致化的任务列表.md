@@ -47,7 +47,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）、任务 26（小地图营地图标/Alt/阵型）、任务 27（Buff 图标栏）、任务 28（头像 Portrait/Talk）、任务 30（冷却/自动施法/ADD/FDF 绑定清理）、任务 34（设置页暂停）已落地并合并到 Launcher，编号不复用。
 
 ### 29. 界面拉满整窗，超宽屏不居中（V1 #43）
 
@@ -55,22 +55,6 @@
 - **Launcher**：`GameHudScreen._Draw` 用 `viewport.X / DesignWidth`、`viewport.Y / DesignHeight` 直接拉伸（`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:515-535`），没有 `FitPixelWidth`/`PixelOffsetX`；`UiFontScale` 默认 1.2，但全仓没有一处 `Set`（`Launcher/GameCore/L2_Core/UI/UiFontScale.cs:18`），依赖它的选项界面也不存在。
 - **表现差异**：2560×1080 下 HUD 被横向拉宽三成，小地图变扁、命令卡格变宽、圆形按钮变椭圆；字号无法调。
 - **要做**：HUD 改用 `War3UiViewport`（选图页、加载屏已经在用），删掉重复常量；字号接选项设置。
-
-### 30. 界面渲染能力缺几项，FDF 生成的绑定没人用（V1 #44）
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/UiRenderDevice.cs:367` 的 `DrawCooldownSweep` 用 `cooldown.blp` 画扇形，`DrawCooldownCompletion` / `DrawAutoCast` / `DrawTexturedQuadAdd` 都有真实实现（`:382`、`:389`、`:496`，含 ADD 混合）。`War3FdfUi` 真的用 `ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`EscMenuMainPanelBinding` 切换 `_console.Visible` 和 `SetChromeVisible`（`War3FdfUi.cs:11-56`）。
-- **Launcher**：`DrawCooldownSweep` 是纯色扇形（`GodotUiRenderDevice.cs:132`），`DrawCooldownCompletion` / `DrawAutoCast` 返回 false（`:155`、`:159`），`DrawTexturedQuadAdd` 退化成普通 alpha（`:98`）；`FdfBindGen` 生成了 5 个绑定（`Launcher/GameCore/L4_Composition/Game/Diagnostics/FdfBindGen.cs:17-44`），但只有 `LoadingScreenBinding` 有调用者（`Launcher/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:95`），HUD 走手写 `TopBarFrame + ConsoleSkinFrame`。
-- **表现差异**：冷却遮罩没有原版质感、冷却结束不闪、自动施法没有旋转光环、ADD 高亮/光晕偏暗；FDF 皮肤改了也不会反映到 HUD。
-- **要做**：先补三个渲染能力和 ADD 混合，再决定 FDF 绑定是接上还是删掉。
-
-> **执行结论（Launcher10，待合并）**：已修复。
-> - 冷却遮罩：`DrawCooldownSweep` 改成从 Extract 导出的 `UI/Feedback/Cooldown/cooldown.png` 取 UV，按扇形顶点映射纹理（中心 0.5,0.5、外缘按角度采样），保留原图 60% 透明度；纹理缺失时退回原纯色扇形。
-> - 冷却完成：`DrawCooldownCompletion` 用 `star4.png` 加法叠加，缩放曲线直接取 `UI-Cooldown-Indicator.01_Death.tres` 的关键帧，时长 1 秒；`CommandCardBuilder` 改用 `ButtonFrame.SetCooldown` 并带稳定 `CooldownId`，冷却归零才会触发这段闪光（之前直接写 `Cooldown`，完成动画永远进不去）。
-> - 自动施法：`DrawAutoCast` 用 `GlowStar.png` 在按钮四边循环移动 1.667 秒一圈，加法叠加并带呼吸透明度；命令卡把 `CommandEntry.Active` 接到 `AutoCastHighlight`（之前全仓没人设这个标志，光环即使能画也不会出现）。
-> - ADD 混合：实测 Godot `DrawMesh` 不使用网格表面材质；改为在 HUD 下挂一个 `CanvasItemMaterial{BlendMode=Add}` 的子 CanvasItem，`Begin` 时清空、每次加法绘制用 `RenderingServer.CanvasItemAddTextureRectRegion` 写入，CPU 裁剪沿用原 rect/uv 逻辑。按住 Esc 菜单是更高层 CanvasLayer，不受这层影响。
-> - FDF 绑定：删掉 5 个没有调用者的生成文件（`ConsoleUiBinding`/`ResourceBarBinding`/`UpperButtonBarBinding`/`MainMenuBinding`/`EscMenuMainPanelBinding`），保留在用的 `LoadingScreenBinding`；`FdfBindGen` 的 FDF 源清单保留，哪个任务真要接 HUD 时用 `--fdf-bindgen` 重新生成。理由：HUD 顶栏/控制台/菜单是带状态、提示和布局逻辑的手写帧，光有绑定类接不上行为，留着只是死代码。
-> - 验证：`dotnet build` 0 错误；`--ui-hud-probe` 全部通过；`--combat-probe` 全部通过；`--card-probe` 输出（学习页/建造页/法术书/热键/混选）与改动前一致。运行时截图 `Godot --path Launcher10 -- --ui-hud --shot=/tmp/hud.png@2` 目视确认：圣光术槽有带圆角的方形冷却遮罩、自动施法槽四角出现加法星光、冷却归零后出现十字闪光。
-> - 复现：正常开局后放一个带冷却的技能看遮罩与结束闪光；右键开自动施法看四角星环。首屏样张可直接用上面的 `--ui-hud` 命令。
 
 ### 35. 命令卡悬停说明没有结构化成本图标（新增）
 
@@ -93,12 +77,11 @@
 
 ---
 
-## 核对结果（V1 剩余 3 条）
+## 核对结果（V1 剩余 2 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
-| 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
 
 > **复核评价**：这一表的 21 行里，20 行能在正文找到对应任务，只有 #60 是孤行：标着「仍成立」，正文却没有它的条目，等于永远排不上。而且证据也失效了——`ModelBundle.cs:2403` 现在落在 `CameraNodes` 函数里，`interp` 的真正写入在 `:2644`、`:2656`、`:2666`，并且按 `Interpolation == 0` 分别写 0 和 1，「固定 `interp = 1`」这个描述本身就不准了。要么按规则 12 补成一条新任务，要么把这一行删掉。
