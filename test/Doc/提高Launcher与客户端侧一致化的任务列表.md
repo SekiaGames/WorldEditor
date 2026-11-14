@@ -107,6 +107,12 @@
 - **表现差异**：聊天窗口和 HUD 不同步缩放、超长消息被裁；看不到编队按钮，也不能双击居中。
 - **要做**：聊天挪回 HUD 帧体系并补换行/淡出；补 1–9 编队按钮。
 
+> **执行结论（任务25，Launcher5，待合并）**：已修复。
+> - 聊天：`ChatFrame` 改成 HUD 的 `UiContainer`，几何/字号取客户端 `WorldFrameTextMetrics`（左 8、宽 990.4、底 512、字号 16.64、30 行容量），`UiText.WrapToWidth` 按帧宽折行，行寿命 `3s + 0.1s/字`、归零后 3s 淡出；`|cAARRGGBB` / `|r` / `||` 由 `GodotUiRenderDevice.DrawTextLine` 统一解析（客户端 `ParseColorRuns` 同口径），普通文本走零分配快路径。输入行在 HUD 内画「聊天: …_」，隐藏 `LineEdit` 只负责焦点/IME，Enter 打开、Esc 取消、回车发送的链路保持原样。
+> - 编队：新增 `ControlGroupFrame`，在控制台左上方（小地图上方）排 1–9 个按钮，点击调用场景 `RecallControlGroup(group, center)`，0.5s 内再次点击同一按钮即镜头居中；键盘 0–9 与按钮共用同一个场景方法，编队逻辑只剩一份。
+> - 验证：`dotnet build Launcher.csproj` 0 错误；`--play=<(4)Turtle Rock.gmap>` 截图可见聊天按 HUD 缩放、长消息 11 行折行、输入行与 1–9 按钮；临时探针日志 316 字→11 行、模拟键入 `hi`+回车得到 `[CHAT] hi`、淡出开始→3s 后结束、编队单击 `center=False` 紧接着双击 `center=True`；`--item-probe` 回归 0 条 SCRIPT ERROR。
+> - 查看：合并后 `./RunLauncher.command`，左下角/小地图上方可见 1–9；Ctrl+1 存编队后点「1」选中、0.5s 内再点一次镜头居中；Enter 打开聊天输入，长消息自动折行并在约 3~5 秒后淡出。
+
 ### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
 
 - **客户端**：`MinimapUnitView.Classify` 认金矿、缠绕金矿、闹鬼金矿、中立建筑、圈地、物品、野怪营地、出生点（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/MinimapUnitView.cs:58`）；野怪营地还有 `MinimapCampTracker`（按迷雾和等级画两种图标，`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Ui.cs:1338`）；`MinimapFilter` 和 `Alt+G/T/A` 都接到真实状态；腐地用 `MinimapBlightTexture` 缓存（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/MinimapBlightTexture.cs:10`）。
