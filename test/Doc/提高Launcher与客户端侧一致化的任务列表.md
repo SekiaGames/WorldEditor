@@ -32,26 +32,7 @@
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）已落地并合并到 Launcher，编号不复用。
-
-### 14. Powerup 物品（经验书/属性书/符文）不会自动使用
-
-- **客户端**：`powerup` 字段为 1 的物品，拾取时走自动使用管线（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.OrdersAndItems.cs:409-411`、`:517-561`），执行子技能后消耗（`:993-1020`；`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.ItemUseRuntime.cs:47-57`）。
-- **Launcher**：`ItemType.PowerUp` 只在 UI 里显示「一次性」（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/ItemCatalog.cs:28`、`:104`；`Launcher/GameCore/L4_Composition/Game/UI/MeleeHudController.cs:171`），没有运行时消费方；拾取后作为普通物品进背包（`Launcher/Src/Units/Unit.Items.cs:57` 的 `AddItem`），`ItemUseRules` 也没有 powerup 分支。
-- **表现差异**：捡到经验书/属性书会占一个背包格且无法使用，符文也不会在踩上去时立即生效；客户端是拾取即用、不占格。
-- **要做**：读取物编 `powerup`，在拾取路径上先执行物品技能再消耗，不进入背包；补齐 `PowerupSound`/拾取事件。
-
-> **执行结论（Launcher4，已实现，待合并）**：powerup 物品拾取即用、不占背包格，`PowerupSound` 与拾取事件已补齐。
-> - 数据：`ItemCatalog` 已读 ItemData 的 `powerup` 列（不按 `class=PowerUp` 推导；金币箱 `gold` 在原表里 `powerup=1`，会即时入账；普通装备是 0）。
-> - 统一入口：`Src/World/World.Items.cs` 新增 `AutomaticallyUsesPowerup` 与 `AcquireItem`（对标客户端 `JassGameNatives.AddItem` 的 powerup 分支）：powerup → `ItemUseEffect.UsePowerup` 执行 abilList 里已登记的一次性效果 → 派发 `ItemPickedUp` → `ConsumeItem` → 派发 `ItemUsed`，不进背包；普通物品仍走 `AddItem` + 加成 + 拾取事件。
-> - 执行：`Src/Items/ItemUseEffect.cs` 新增 `UsePowerup`，按 abilList 执行 `Handlers` 里的一次性效果（属性书 `AIsm/AIam/AIIm`、经验书 `AIem`、金袋/木堆 `AIgo/AIlu`、符文 `APh*/APmr/APmg/APra` 等），不看 `usable`、不需要目标；收下就消耗（客户端 `UseAutomaticPowerupChildren` 口径）。
-> - 拾取：`TickItemPickup` 改走 `AcquireItem`；`NearestPicker` 对 powerup 放宽空格限制，满包也能捡。
-> - 商店：`Production.cs` 买货改走 `AcquireItem`，powerup 满包也能买且当场使用，提示改「已使用」。
-> - 转交：`GiveItem` 走 `AcquireItem`，送给另一个英雄的 powerup 直接使用。
-> - 声音：`Units.cs` 的拾取回调先按 abilList 取子能力的 `Effectsound`（`AbilityCatalog.FuncField`）播 `PowerupSound`（金袋/木堆是 `ReceiveGold`/`ReceiveLumber`），再播 `ItemGet`。
-> - 回归：`--state-probe` 新增 10 条断言（属性书不占格 / 力量+1 / 离地消耗 / 拾取事件 / 满包可捡 / 满包敏捷+1 / 符文即时生效 / 符文离地消耗 / 金袋入账 / 金袋不占格）全部 OK；`--combat-probe` 全部通过；`--state-probe` 只剩改动前就有的 `utod 研究项` 一项失败。
-> - 合并提示：任务 13 合并后，`World.Items.cs` 的 `CompletePickup` 要改成调 `AcquireItem`（而不是 `unit.AddItem`），`IssuePickupItem` 的满包判定要对 `item.Type.PowerUp` 放行，否则满包时不给拾取订单；商店与转交两处已按同一入口改好。
-> - 操作：进 Turtle Rock，把英雄走到属性书/经验书/符文旁（或商店买一本）应即时消耗、不占格；背包满时仍能捡 powerup；符文/守卫类出 `PowerupSound`，金袋/木堆出 `ReceiveGold`/`ReceiveLumber`。
+> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）、任务 14（Powerup 拾取即用）已落地并合并到 Launcher，编号不复用。
 
 ### 15. 地面物品没有影子，Powerup 没有金色光圈，离场也没有缩小
 
