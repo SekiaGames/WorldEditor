@@ -32,13 +32,13 @@
 
 ## 二、地形与地表
 
-## 6. 地面贴花和地图边缘都是空的
+## 6. 技能的地面贴花还是空的
 
-客户端的 `War3SplatSystem` 支持 `SPL`/`UBR` 与 `CreateUberSplat`，带 Birth/Pause/Decay 颜色和 BlendMode，用贴地 Quad 批量画；建筑底座（`UnitUI.uberSplat`）也走这条管线，拆掉时会淡出。地图四边还有 `MapVoidRenderer` 生成贴边裙边和外圈。
+客户端的 `War3SplatSystem` 支持 `SPL`/`UBR` 与 `CreateUberSplat`，带 Birth/Pause/Decay 颜色和 BlendMode，用贴地 Quad 批量画。
 
-Launcher 全仓没有 splat/decal，也没有 void：建筑脚下没有底座土圈，技能的地面符文、传送门地毯、焦痕、血迹全都不出现；镜头拉到地图边缘会直接看到地形网格外的天空或水面断口。
+Launcher 已经有贴地贴花管线和建筑底座（`Rendering/ShadowRenderer.cs`、`Presentation.cs` 的底座记录池），但没有 MDX 事件对象管线：技能的地面符文、传送门地毯、焦痕、血迹全都不出现。
 
-要做：先补建筑底座和地图边缘裙边，再补技能 splat。
+要做：补 MDX 事件对象里的 `SPL`/`UBR` 解析与实例生命周期，接到现有 `ShadowRenderer` 上。`CreateUberSplat` 是脚本触发的，按范围规则不进清单。
 
 ---
 
@@ -46,20 +46,10 @@ Launcher 全仓没有 splat/decal，也没有 void：建筑脚下没有底座土
 
 ## 7. 水面只学了形状，没学参数
 
-- **UV 密度**：客户端用 `Water.slk` 的 `cells` 列，纹理每 N 格重复一次；Launcher 按格号直接当 UV，等于 `cells=1`，大水面波纹明显更碎。
-- **深浅阈值**：客户端用 `MinimumDepth` / `DeepLevel` / `MaximumDepth` 分段插值，并乘地图水色 `BaseColor`；Launcher 写死 `5/64`、`27/64`、`0.5`、`0.0625`，也不读地图水色。
-- **动画相位**：客户端 `(elapsed*rate + texOffset) % count`，Launcher `(1 + elapsed*rate) % count`，起点差一帧以上。
-- **光照与雾**：客户端水面吃方向光、环境光、距离雾和战争迷雾；Launcher 是 `unshaded, fog_disabled`，还让波纹 alpha 二次调制不透明度。
+- **雾**：客户端水面吃距离雾和战争迷雾；Launcher 的 `water_map.gdshader` 仍是 `fog_disabled`，战场迷雾也不作用于水面。
+- **alphaMode**：`Water.slk` 的 `alphaMode` 列没读，水面一律按 ripple alpha 相乘。
 
-要做：`Water.slk` 的字段补齐（`War3WaterConfig` 现在连 `cells` / `alphaMode` / `lighting` 都没有），水面接光照和雾。
-
-## 8. 岸浪逐格实例化，偶发大浪没了
-
-客户端把岸浪模型的 `ParticleEmitter2` 展开成实例化粒子，保留段颜色、透明度、缩放、重力、`TimeMiddle`，还有 7% 概率的 rare `Stand` 脉冲。
-
-Launcher 的 inside/straight/outside 判定和旋转常量跟客户端一致，但每格都 `Instantiate` 一个完整场景，没有 rare 序列/脉冲。
-
-要做：至少把偶发大浪补上；实例化方式可以后面再优化。
+要做：水面接距离雾与战争迷雾，补 `alphaMode`。
 
 ## 9. 只有全局天气，跨一格整片雨雪重来
 
