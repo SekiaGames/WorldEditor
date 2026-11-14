@@ -84,10 +84,10 @@ fi
 
 printf '\n[7/8] config to C#: tables, texts, fdf, lighting\n'
 mkdir -p "$ROOT/Launcher/Generated"
-"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
-"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
-"$GODOT" --headless --quiet --path "$PROJECT" "--source-dir=$WORK" "--fdf-codegen=$ROOT/Launcher/Generated"
-"$GODOT" --headless --quiet --path "$PROJECT" "--lighting-codegen=$WORK|$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--table-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--text-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--source-dir=$WORK" "--fdf-codegen=$ROOT/Launcher/Generated"
+"$GODOT" --headless --quiet --path "$PROJECT" "${GD_ARGS[@]}" "--lighting-codegen=$WORK|$ROOT/Launcher/Generated"
 
 printf '\n[8/8] pack %s\n' "$PACK"
 rm -f "$PACK"
