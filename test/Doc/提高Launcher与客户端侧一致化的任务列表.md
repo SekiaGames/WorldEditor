@@ -27,7 +27,7 @@
 ## 模块二：地形与环境
 
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
-> 任务 7（装饰物死亡姿态）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
+> 任务 7（装饰物死亡姿态）、任务 9（迷雾参数即时下发）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
 
 ### 6. 地形与悬崖不接收 MDX 动态光（V1 #47）
 
@@ -49,25 +49,6 @@
 - **Launcher**：`_cellsPerSide × _cellsPerSide` 个 `CpuParticles3D`（`Launcher/GameCore/L4_Composition/Game/Environment/WeatherRenderer.cs:69-94`），`AcquireWindow` 跨格时 `emitter.Restart()`（`:199`），`Preprocess = LifeSpan` 再跑一遍；发射域是水平 `Box`（`:85-87`），不随风向倾斜。
 - **表现差异**：镜头跨格滑动时整窗雨/雪会跳一次相位；斜风雨的落点分布和客户端不同。
 - **要做**：改成实例化 billboard 走 `weather.gdshaderinc`，相位按 cell 索引确定性生成，跨格只重建实例缓冲；散布按 `angx/angy` 倾斜；几何继续用方片，不按 `taillen` 拉伸。
-
-### 9. 雾纹理参数搭着光照刷新才下发，进图后有一段时间没雾（V1 #57）
-
-- **客户端**：`FogOfWarRenderer.Draw` 每帧算完淡变就 `FogOfWarUniforms.Publish(...)`；六个接收者在各自 draw 里 `Upload(shader)`，纹理更新同一帧生效。
-- **Launcher**：`FogOfWar.Upload()` 只调 `SceneFog.SetFogOfWar(...)` 存静态字段（`Launcher/Src/Core/FogOfWar.cs:185`），真正写材质在 `SceneLightRig.Apply` 里的 `SceneFog.Write`（`SceneLighting.cs:297`），而 `Apply` 只在 `LoadTerrainPresentation` 调一次（`Lifecycle.cs:294`），之后靠时辰跳变触发；`_fog.Build()` 要到 `LoadPathing` 才跑（`Lifecycle.cs:381-386`）。
-- **表现差异**：进图后地图先全亮，等下一次时辰跳变雾才突然铺上去。
-- **要做**：`FogOfWar.Upload()` 写完静态字段后立刻把 `fog_of_war_texture/uvp/enable` 重写进已创建的材质，不搭光照刷新的车。
-
-> **复核评价**：证据成立，但本条与第 32 条改的是同一处（`FogOfWar` / `SceneFog` / `SceneLightRig.Apply`）。按模块顺序先做 9 再做 32，同一批材质要改两遍，而 32 的「拆开」本身就会顺带消掉这里的延迟。建议合并：先做 32 的拆分，让 `FogOfWar.Upload` 直接写进 `FogOfWarUniforms` 的接收者，本条随 32 一起销账。
-
-> **执行结论（Launcher9）**：已按「接收者」机制落地，未做 32 的改名/移目录，留给 32 一次搬走。
-> - `SceneFog` 增加战争迷雾接收者集合：`RegisterFogReceiver(material)` 登记材质并立刻写入当前 `fog_of_war_texture/uvp/enable`；`SetFogOfWar` 在纹理/UV/开关真正变化时立刻回写全部接收者，不再等光照刷新；`Set(War3FogConfig)` 顺带清空接收者与雾参数，避免第二张图沿用上一张图的雾纹理。
-> - `SceneLightRig` 抽出 `ForEachMaterial(Node|MeshInstance3D, action)`，`Apply` 改为复用它；`SceneFog.Write` 只负责大气雾并在末尾登记接收者。
-> - `FogOfWar` 在 `Build` 上传纹理后扫一遍场景登记已存在的材质，并在进树期间订阅 `SceneTree.NodeAdded` 登记之后新建的 MeshInstance3D 材质（训练单位、特效、丝带等）。
-> - 验证：`--shot=…@3 --day-seconds=2400`（光照刷新周期被拉长到 5 秒）时，临时探针显示 `Build` 时已登记 4595 个接收者、截图前没有任何 `LightApply`，画面仍按视野正常压黑；改回默认昼夜周期后进图即带雾。`--state-probe` 只剩基线已知的 `utod 研究项` 一条失败。
-
-## 模块三：单位、技能与物品
-
-> 模拟层的单位行为、Buff 技能与地面物品。
 
 ### 11. 单位转身比客户端慢五倍多（V1 #55）
 
@@ -262,7 +243,7 @@
 
 ---
 
-## 核对结果（V1 剩余 20 条）
+## 核对结果（V1 剩余 19 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -278,7 +259,6 @@
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
 | 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
 | 56 | 仍成立 | 每格 `CpuParticles3D` + 跨格 `Restart`（`WeatherRenderer.cs:69-94`、`:199`） |
-| 57 | 仍成立 | `Upload` 只存静态字段（`FogOfWar.cs:185`），材质写入在 `SceneLightRig.Apply` |
 | 58 | 仍成立 | `SceneFog` 同时管两类雾（`SceneFog.cs:10-41`） |
 | 59 | 仍成立 | 独立 `Rendering/UnitTerrainTilt.cs`，客户端是场景 partial（`Presentation.cs:489`） |
 | 60 | 仍成立 | 动画轨道固定 `interp = 1`（`ModelBundle.cs:2403`） |
