@@ -32,25 +32,7 @@
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）已落地并合并到 Launcher，编号不复用。
-
-### 12. Buff 类技能只消耗部分物编字段，护甲/回复/缩放/Buff 美术都没生效
-
-- **客户端**：以 Roar 为例读取 `DataA`（攻击）、`DataB`（护甲）、`DataC`（回血）、`DataD`（回蓝）、`DataG`（目标上限）、`BuffID`（Buff 美术/名称）和 `HeroDur`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:27-48`）；Bloodlust 还读 `DataC`（模型缩放）与 `BuffID`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:24-47`），并生成对应 Buff 对象数据。
-- **Launcher**：`RuntimeRoarAbility` 只有 `DamagePct => Data('A')`，施法时给一个只带攻击力的 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs:10`、`:20`）；`RuntimeBloodlustAbility` 只有 `DataA/DataB`，同样用 `StatBuff`（`Launcher/GameCore/L3_Simulation/Simulation/Configuration/RuntimeBloodlustAbility.cs:10-11`、`:25-29`）。没有读 `BuffID`，也不绑 Buff 物编，所以没有 Buff 美术、没有护甲/回复、没有模型放大、英雄持续时间也与普通单位共用。
-- **表现差异**：咆哮只加攻击力，不给护甲和回血回蓝；嗜血不会把模型放大；两种增益在单位身上都没有对应的 Buff 图标/特效；英雄吃到的持续时间与客户端不同。
-- **要做**：按客户端补 `DataB/C/D/G`、`HeroDur`、`BuffID` 与目标规则；Buff 实例绑到 `BuffData`，让 `Buff` 的美术与名称走物编。
-
-> **复核评价**：证据成立，「要做」漏了两处客户端规则：`RefreshRoarData` 还读 `DataF`（`PreferSharedSpellRecipients`），并用「护甲或回血非零」推出 `AllowsRecipientsWithoutAttack`，让没有攻击能力的接收者也能吃到咆哮。这两条不补，改完仍会出现「一队里有些单位吃不到增益」的差异。建议在「目标规则」后面点名 `DataF` 和 `AllowsRecipientsWithoutAttack`。
-
-> **执行结论（Launcher2，待合并）**：Roar/Bloodlust 已按客户端搬运，补齐物编字段、Buff 物编绑定与目标规则。
-> - Roar：`GameCore/L3_Simulation/Simulation/Configuration/RuntimeRoarAbility.cs` 改为客户端结构，读 `DataA/B/C/D/F/G`、`Dur/HeroDur`、`BuffID`、`targs`；攻击加成用 `BonusDamagePct`，护甲/回血/回蓝写入 `BonusArmor`/`AlwaysLifeRegenBonus`/`ManaRegen`，幻象按 `IllusionsGetDefenseBonus`/`IllusionsCanRestoreLife`/`IllusionsCanRestoreMana` 放行；`AllowsRecipientsWithoutAttack` 由「护甲或回血非零」推出；`DataF` 参与 `TargetLimit` 排序，取数上限与排序按客户端。新增 `RuntimeRoarBuff` 增量施加并精确回退，绑定 `Broa` 物编后名称与美术（`RoarTarget.mdl` → `overhead`）走物编。
-> - Bloodlust：`RuntimeBloodlustAbility.cs` 读 `DataA/B/C`、`Dur/HeroDur`、`BuffID`、`targs`；新增 `RuntimeBloodlustBuff` 负责攻速/移速/模型缩放，缩放同时写 `VisualScale` 与场景根节点，刷新时按客户端只换攻速/移速、不重复叠加缩放；绑定 `Bblo` 后美术取 `BloodlustTarget.mdl`（客户端同样只取第一个 TargetArt），`RuntimePreloadArts` 同步预载。英雄与普通单位时长按 `UsesHeroSpellRules` 分开。
-> - 物品路径：`AIrr`（野兽卷轴）随工厂改用带物编构造后，`World.UseItemAbility` 只调 `OnCast`，因此在 `RuntimeRoarAbility.OnCast` 补了「按 `Type` 绑定数据后转 `OnEffect`」的入口，避免物品技能失效。
-> - 配置：`War3GameplayConfig` 补 `IllusionsCanRestoreLife`（`Misc.IllusionsCanRestoreLife`），供咆哮回血判定使用。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`-- --state-probe` 新增断言全部通过——嗜血缩放 1.3、`Bblo` 绑定、`BloodlustTarget` 美术与预载；咆哮 `Broa` 绑定、`RoarTarget` 美术、护甲/回血/回蓝增量与移除回退；野兽卷轴恢复可用。整轮仅剩基线已知失败 `utod 研究项`。
-> - 说明：Launcher 侧 AI 自动施法仍是简化的友军扫描，未移植 `TryAcquireAutoCastTarget` 里依赖 `NativeAutoCastScanRadius`/`PredictedObjectPoint` 的选目标细节；本次对齐的是增益数值、目标规则、时长与表现。
-> - 合并注意：`Src/Abilities/RuntimeAbilityFactory.cs` 把 `Aroa/Ara2/ACro/AIrr/Ablo/ACbl/ACbb` 改为 `WithObjects<>`，与其它 Launcher 副本同名行易冲突；探针断言加在 `CombatProbe.UnitSkills.cs` 的 `CheckBloodlust`/`CheckRoar`。本次未改 Extract，无需重建 `extract.pck`。
+> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）已落地并合并到 Launcher，编号不复用。
 
 ### 13. 地面物品靠走近自动吸走，客户端要求右键下单
 
