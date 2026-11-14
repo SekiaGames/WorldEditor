@@ -68,19 +68,6 @@
 > - 验证：`dotnet build Launcher.csproj` 0 错误；`[CLIFF]` 日志 `normals=verts`（临时统计每个悬崖模型 10~11 个不同法线，确认逐面）；新 shader 由 Godot 解析通过（15 个 uniform，无 SHADER ERROR），临时本地加载截图显示崖壁各面明暗不同、没有黑面/破面；`[SHADOW] ... 悬崖材质 已绑定`；Turtle Rock 悬崖 799 格、0 条 SCRIPT ERROR。
 > - 注意：shader 改动在 Extract 提交 `a6e9cce84`，需要重跑 `extract.command` 的 `--export-pack`（或全流程）后 Launcher 才能看到新悬崖光照/阴影；Launcher5 提交 `2eb03ab`。
 
-### 6. 悬崖邻接地表贴图：15 被硬映射成 1，ramp 优先级与变体上限表都缺
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Environment/TerrainRenderState.cs:245-271` 分两趟（先 ramp 后 cliff），`:260` 遇到 `texture==15` 走 `FindCliffTexture` 的 5×5 邻域搜索（`:205-228`），变体由 `GetCliffVariation` 按每种 cliffCode 的最大值表取模。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Environment/TerrainGridFactory.cs:329-346` 里 `if (num3 == 15) num3 -= 14;`，只查一趟、只按 `IsCliffTile` 判断；变体由 `CliffModelLibrary.cs:36-43` 从 variation 向下逐个回退取第一个存在的模型。
-- **玩家可见**：悬崖底部与顶部的土带刷成第 1 组悬崖的贴图，和崖体不同色（达拉然、外域的崖壁配洛丹伦土色）；同一 cliffCode 的多个变体会取到和客户端不同的一款，崖面花纹接缝断开。
-- **要做**：补 5×5 搜索与两趟顺序，变体改走每种 cliffCode 的最大值表。
-
-> **执行结论（Launcher6，待合并）**：已修复。
-> - 地表土带：`RealTileTexture` 改为客户端两趟顺序（先 ramp 后 cliff），2×2 扫描后接 `CliffIdOf` 的 5×5 邻域；删除 `15 - 14` 的硬映射，cliff 邻接地表统一由邻域找到的 cliffId 取 `groundTile/upperTile`。
-> - ramp 矩阵：`BuildCliffs` 在斜坡模型被接受时按客户端 Romp 口径标记 2×2 与 facing 方向的第二格，供第一趟使用；原有 `_cliffTransitions` 的遮挡行为未改。
-> - 变体：`CliffModelLibrary` 内建 Cliffs/CityCliffs 的 cliffCode 最大变体表，取 `variation < max ? variation : variation % (max+1)`；cliff code 四角高度差按客户端封顶 +2，变体来源改为 5×5 找到的那格 `CliffVariation`，不再向下回退找模型。
-> - 验证：`dotnet build` 0 错误；BootyBay headless 日志为悬崖 2400、斜坡 20、无缺模型；临时探针出现 `ACCA v=7 max=1 -> 1`、`CCCA v=6 -> 0` 等取模结果，ramp 邻格取到 `CLgr`。Turtle Rock/BootyBay 都没有 15 哨兵格，5×5 分支按客户端代码平移，需在含 15 的地图（达拉然/外域类）上复验土带颜色。
-
 ### 7. 天空穹顶被当普通模型着色，吃大气雾还吃战争迷雾
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/SkyboxRenderer.cs:102-116` 天空壳与日月用 `FogSettings.None` 绘制，`applyFogOfWar:false`，不写深度。
