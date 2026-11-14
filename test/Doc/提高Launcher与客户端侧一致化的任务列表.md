@@ -32,24 +32,7 @@
 ## 模块三：单位、技能与物品
 
 > 模拟层的单位行为、Buff 技能与地面物品。
-> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）已落地并合并到 Launcher，编号不复用。
-
-### 13. 地面物品靠走近自动吸走，客户端要求右键下单
-
-- **客户端**：拾取是显式订单：`IssuePlayerPickupItem`（`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Jass/JassGameNatives.cs:800-819`）由右键/交互层下发（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:268`）；接受半径读 `Misc.PickupItemRange`（默认 250，`Open-Warcraft3_Wiki/Src/Configuration/War3GameplayConfig.cs:274`），单位走到物品旁再执行拾取。
-- **Launcher**：每 tick 由 `TickItemPickup` 扫描所有地面物品，任何 `CanCarryItems` 且有空格、距离小于硬编码 `PickupRange = 150f` 的单位都会被直接塞进背包（`Launcher/Src/World/World.Items.cs:14`、`:282-303`、`:351-367`）；右键物品只是下一条「走到物品位置」的移动单（`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:323-333`），真正的拾取仍由走近触发。
-- **表现差异**：单位路过就自动吸走物品，甚至可以抢走敌方单位附近的掉落；客户端不右键就不会捡，且拾取距离由 `PickupItemRange` 决定。玩家会看到掉落物莫名其妙进背包。
-- **要做**：去掉按距离自动拾取，改成明确的拾取订单；半径读 `Misc.PickupItemRange`，通过寻路走到物品旁再结算。
-
-> **执行结论（Launcher3，待合并）**：拾取已改为显式订单，走近不再自动吸入。
-> - 订单：`Launcher3/Src/World/World.Orders.cs` 新增 `UnitOrderKind.PickupItem` 与 `UnitOrder.Pickup(item)`，`Unit` 增加 `PickupTarget`；`ApplyOrder`/`ClearOrders`/`HasActiveOrder` 一并纳入，新指令、停止都会打断拾取。
-> - 结算：`Launcher3/Src/World/World.Items.cs` 新增 `IssuePickupItem`（对齐客户端 `IssuePlayerPickupItem`，返回 `None/Issued/InventoryFull`）与 `StepPickupItem`（走到半径内再 `AddItem` 并入包发事件）；删除 `TickItemPickup`/`NearestPicker` 全量扫描，`World.Advance` 不再自动捡物。
-> - 半径：`Launcher3/Src/Configuration/War3GameplayConfig.cs` 读取 `Misc.PickupItemRange`（缺省 250）；当前表值 150，与客户端默认 250 的差异来自数据本身。
-> - 输入：`Launcher3/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs` 右键物品改为主位单位下发拾取订单，满包提示「物品栏已满。」且不移动；接单后其余选中单位仍走向物品落点（客户端 `MoveUnhandled`）。
-> - 联动：商店买满包落地、作弊与探针的旧 `TickItemPickup` 调用改为显式下单；`--state-probe` 新增「未下令不会自动拾取 / 下发拾取订单 / 英雄走到物品旁拾取 / 非英雄拾取被拒」四项。
-> - 验证：`dotnet build -t:Rebuild` 0 错误；`--state-probe` 上述四项全 OK（唯一失败仍是基线的 `utod 研究项`），`--combat-probe` 全部通过。
-> - 操作：用 `Godot --path Launcher3 -- --play="(4)Turtle Rock.gmap"` 进入游戏，英雄丢下一件物品后另一名英雄从旁边走过不会拾取；右键物品才会寻路走到 `Misc.PickupItemRange` 内入包，背包满时只出提示。
-> - 范围说明：Launcher 的 AI 没有物品拾取逻辑，改动后 AI 英雄也不会再顺路吸走掉落物；若要 AI 主动拾取，属于客户端 melee AI 系统的迁移，另立任务。
+> 任务 11（转身速率）、任务 12（咆哮/嗜血物编字段与 Buff 美术）、任务 13（地面物品拾取订单）已落地并合并到 Launcher，编号不复用。
 
 ### 14. Powerup 物品（经验书/属性书/符文）不会自动使用
 
