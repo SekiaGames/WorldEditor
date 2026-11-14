@@ -65,20 +65,7 @@
 ## 模块六：界面
 
 > 命令卡、提示、小地图、头像与 HUD 布局。
-> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）已落地并合并到 Launcher，编号不复用。
-
-### 25. 聊天和控制组各写了一套（V1 #41）
-
-- **客户端**：`ChatFrame` 是 HUD 里的帧，行会淡出、自动换行、解析 `|c` 颜色、有 `AppendHistory`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/ChatFrame.cs`）；屏幕左下有 1–9 编队按钮 `ControlGroupFrame`（`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/ControlGroupFrame.cs`），支持双击居中。
-- **Launcher**：`ChatFrame` 同名不同物，是独立 `CanvasLayer` 里的 `Label + LineEdit`，固定 `224,560 / 620×110`，不随 UI 缩放、不淡出、不换行（`Launcher/GameCore/L4_Composition/Game/UI/ChatFrame.cs:23-28`）；没有 `ControlGroupFrame`，只有键盘 0–9。
-- **表现差异**：聊天窗口和 HUD 不同步缩放、超长消息被裁；看不到编队按钮，也不能双击居中。
-- **要做**：聊天挪回 HUD 帧体系并补换行/淡出；补 1–9 编队按钮。
-
-> **执行结论（任务25，Launcher5，待合并）**：已修复。
-> - 聊天：`ChatFrame` 改成 HUD 的 `UiContainer`，几何/字号取客户端 `WorldFrameTextMetrics`（左 8、宽 990.4、底 512、字号 16.64、30 行容量），`UiText.WrapToWidth` 按帧宽折行，行寿命 `3s + 0.1s/字`、归零后 3s 淡出；`|cAARRGGBB` / `|r` / `||` 由 `GodotUiRenderDevice.DrawTextLine` 统一解析（客户端 `ParseColorRuns` 同口径），普通文本走零分配快路径。输入行在 HUD 内画「聊天: …_」，隐藏 `LineEdit` 只负责焦点/IME，Enter 打开、Esc 取消、回车发送的链路保持原样。
-> - 编队：新增 `ControlGroupFrame`，在控制台左上方（小地图上方）排 1–9 个按钮，点击调用场景 `RecallControlGroup(group, center)`，0.5s 内再次点击同一按钮即镜头居中；键盘 0–9 与按钮共用同一个场景方法，编队逻辑只剩一份。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；`--play=<(4)Turtle Rock.gmap>` 截图可见聊天按 HUD 缩放、长消息 11 行折行、输入行与 1–9 按钮；临时探针日志 316 字→11 行、模拟键入 `hi`+回车得到 `[CHAT] hi`、淡出开始→3s 后结束、编队单击 `center=False` 紧接着双击 `center=True`；`--item-probe` 回归 0 条 SCRIPT ERROR。
-> - 查看：合并后 `./RunLauncher.command`，左下角/小地图上方可见 1–9；Ctrl+1 存编队后点「1」选中、0.5s 内再点一次镜头居中；Enter 打开聊天输入，长消息自动折行并在约 3~5 秒后淡出。
+> 任务 22（命令卡槽位/热键/可用性）、任务 23（法术书页面）、任务 24（命令提示/悬停/Tooltip）、任务 25（聊天/编队按钮）已落地并合并到 Launcher，编号不复用。
 
 ### 26. 小地图少了图标，滤镜和快捷键没接全（V1 #42，部分修复）
 
@@ -155,11 +142,10 @@
 
 ---
 
-## 核对结果（V1 剩余 8 条）
+## 核对结果（V1 剩余 7 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
-| 41 | 仍成立 | 聊天独立 CanvasLayer（`ChatFrame.cs:23-28`），无 `ControlGroupFrame` |
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
