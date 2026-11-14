@@ -27,21 +27,7 @@
 ## 模块二：地形与环境
 
 > 地形、悬崖、水面、天气、战争迷雾、装饰物与光照。
-> 任务 7（装饰物死亡姿态）、任务 9（迷雾参数即时下发）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
-
-### 6. 地形与悬崖不接收 MDX 动态光（V1 #47）
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Terrain.vert.glsl:25-35`、`Cliff.vert.glsl:13` 都有 `uDynamicLights` / `dynamicLightFactor`，把火把、法术特效的动态光按距离衰减累加进顶点光照。
-- **Launcher**：`Extract/assets/shaders/terrain_map.gdshader:9-11`、`cliff_map.gdshader` 只吃 `war3_scene_direction/color/ambient`，没有 `war3_light_data`；动态光只进了模型着色器（`Extract/assets/shaders/war3_model.gdshaderinc:30`）。
-- **表现差异**：单位脚下的地面和悬崖不会被火光/技能光照亮，火把、献祭、火焰雨只有模型亮、地面不亮。
-- **要做**：把 `war3_light_data` 也传进地形、悬崖、水面三个世界着色器，按客户端公式累加。
-
-> **执行结论（Launcher6，待合并）**：地形与悬崖已接入场景动态光。
-> - 着色器：`Extract/assets/shaders/terrain_map.gdshader`、`cliff_map.gdshader` 增加 `war3_light_data` / `war3_light_count` 和 `war3_dynamic_light()`，按客户端 `dynamicLightFactor` 的环境/方向/点光三种类型累加进 `shade` 后再 clamp。
-> - 光源收集：`War3GameScene.TickTerrainLights` 每 0.1 秒收集相机视锥内、模型可见的装饰物与单位光源（雾中冻结建筑跳过），上限 8 个，写入 `MapWorldBuilder.TerrainMaterial` 与新增的 `CliffMaterial`；`UnitSceneComponent`、`MapWorldBuilder` 的装饰物在建模时缓存各自的灯光节点。
-> - 水面未接：客户端 `Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Shaders/Water.frag.glsl:11-13`、`:26-27` 只吃方向光，没有 `uDynamicLights`；按 AGENTS 规则 6 以客户端为准，水面保持原样，任务原文「三个着色器」中的水面一项不做。
-> - 验证：`dotnet build Launcher.csproj` 0 错误；Godot headless 解析两份着色器成功且能读到新增 uniform；Turtle Rock 运行时日志出现「地形动态光 4」，确认收集/下发链路执行。截图受并行 Launcher 实例占满 GPU 影响（Metal fence 超时）全黑，未作为画面证据。
-> - 合并注意：着色器改动在共享的 `Extract` 工作区（与其它任务共用），需随本任务一起合入并重新生成 `extract.pck`；不重建 pck 时 Launcher 端的新 uniform 不会生效。
+> 任务 6（地形/悬崖动态光）、任务 7（装饰物死亡姿态）、任务 9（迷雾参数即时下发）、任务 10（雾中建筑定格记忆）已落地并合并到 Launcher，编号不复用。
 
 ### 8. 天气粒子还是每格一个 CpuParticles3D，跨格重启整窗雨（V1 #56）
 
@@ -276,7 +262,7 @@
 
 ---
 
-## 核对结果（V1 剩余 19 条）
+## 核对结果（V1 剩余 18 条）
 
 | V1 # | 状态 | 关键证据 |
 |---|---|---|
@@ -288,7 +274,6 @@
 | 42 | 部分修复 | 腐地已用缓存；`Classify` 只认金矿（`MinimapUnitView.cs:43`），Alt 快捷键无调用者，阵型滤镜未接 |
 | 43 | 仍成立 | HUD 直接拉伸（`GameHudScreen.cs:515-535`），`UiFontScale` 无 `Set` |
 | 44 | 仍成立 | `DrawCooldownCompletion/DrawAutoCast` 返回 false（`GodotUiRenderDevice.cs:155-159`），FDF 绑定只有加载屏在用 |
-| 47 | 仍成立 | 地形/悬崖着色器无 `uDynamicLights`（`terrain_map.gdshader:9-11`） |
 | 52 | 部分修复 | 天气/丝带已吃雾；`war3_particle.gdshader` 仍无雾 |
 | 55 | 仍成立 | `turnRate * 6` 且 1.5–14 夹紧（`UnitFactory.cs:357-358`） |
 | 56 | 仍成立 | 每格 `CpuParticles3D` + 跨格 `Restart`（`WeatherRenderer.cs:69-94`、`:199`） |
