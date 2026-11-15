@@ -53,6 +53,24 @@
 - **玩家可见**：单位能否挤过建筑与树林之间的缝、绕建筑拐角的走法、被围住时能否蹭出去，仍与客户端不同；窄口会出现客户端能过而 Launcher 判不可达，或反向卡位。
 - **要做**：接入客户端 footprint 接触解算与粗/细/出口搜索，单位移动写回网格；验收口径：窄口与围堵场景下，Launcher 与客户端逐格可达性一致。
 
+> **进展（Launcher1，第一批已提交 `1666a39`，任务未完成）**
+>
+> 先按「与 Godot+对战是否冲突」核过 `Src/Core`：446 个顶层类型里 **0 处** 引用 Godot / 渲染 / 音频 / 输入 / 窗口，**0 处** 依赖 JASS 解释器、战役、录像。grep 命中的 4 个文件是 `NativePlacementSearchInput` 之类的名字误匹配，`FromJassId`、`Campaign` 分别是伤害类型映射和 AI 字段名。这一层本身是纯模拟/数据，不在平台冲突面上。
+>
+> 挡住搬运的是**宿主面**。`Src/Core` 与 Launcher 有 24 个同名类型（`Weapon`、`DamageData`、`FogOfWar`、`TargetRules`、`SpecialEffect`、`Effect`、`State`、`World`、`AbilityContainer`、`MovementType`、`NativeSoftFloat`、`CantPathSearchPoint`…），按「同名留 Launcher、冲突处裁剪」处理完，仍剩 1002 处编译错误，集中在大约 30 个宿主成员：
+>
+> - `World`：`PathingWork`(96)、`PathingMap`(64)、`MovementTick`(34)、`CLrPathingAcc`(24)、`MovementBatchStub.Enqueue/InstalledMovementVelocity`(18/18)
+> - `Unit`：`MoveReqId`(76)、`Transform`(72)、`MovingPresenceFilteredForPlanning`(32)、`PathingEnabled`(30)、`Current`(30)、`PathingQueryMask`(20)、`RequestPresenceFilteredForPlanning`(18)、`MoveReqCellX/Y`(14/14)、`Weapons`(12)
+> - 其它：`AbilityContainer.Move`(36)、`CAbilityAttack`(14)、`Weapon.Kind`(12)
+>
+> 硬卡点是 `Unit.Transform`：客户端寻路长在「组件化 Unit」上（`Transform`/`Current`/`Weapons` 三个分量），Launcher 的 `Unit` 是扁平字段（`Position`/`Facing`，订单在 `World`）。加 shim 会让位置有两份状态互相漂移，裁剪解决不了，属于第 47/49 条的下游。
+>
+> 已落地的第一批：`Src/Core` 里既不碰平台、又不碰宿主面的 11 个文件（`GameClock`、`DualEffectTargetRules`、`ImageVisual`、`NativeAbilityClassification.Generated`、`NativeDiagnosticClock`、`NativeInfoPanelName`、`NativeInventoryTooltip`、`NativeSpellBlockRules`、`NativeTargetMask`、`ObjectDataDiagnostics`、`SimPhaseProbe`），加 `Src/Configuration/War3MapCompatibility.cs`，逐字复制、无调用方、行为不变；`GlobalUsings` 补 `SeekOrigin` 别名。`--state-probe` 仍只剩既存 `utod 研究项` 1 条。
+>
+> 试过但裁掉的两处：`War3GameplayConfig`（客户端 1063 行 vs 本地 232 行）的玩家颜色段要 `OpenWC3.Color3`，而 Launcher 的颜色辅助签名是 `Godot.Color?`——这是整个 `Src/Core` 里唯一一处「Godot 渗进来」，换配置类会连锁到渲染层；`Footprint.cs`/`TerrainGrid.cs` 依赖 `PathingOverlay`/`PathingTextureBits` 与镜像层 `NativeWpmGrid`，得等寻路整块换装时一起进。
+>
+> 下一步二选一：甲、给 `Unit`/`World` 补这 30 个成员、`Unit` 往组件化靠，之后可整块搬 `Pathing/**` 33,279 行 + 客户端 104 条契约用例；乙、只搬 `NativeMirror/{Core,Placement,Search,Cursor,Cluster,Execution}` 这 10,876 行零 `OpenWC3` 引用的算法层，宿主面用一层显式适配器收口。
+
 ## 模块三 地形与环境
 
 > 地形、悬崖、水面、迷雾、天气、阴影。整屏可见，改动集中在渲染数据与 shader。
@@ -145,6 +163,14 @@
 - **玩家可见**：以伐木音为例（表值 Min 600 / Max 10000 / Cutoff 2100），客户端 2100 外听不到，Launcher 要到 10000 才静音，在自己基地能听到半个地图外的伐木、交战、施法。
 - **要做**：`Start` 前按 `DistanceCutoff` 做一次距离门。
 
+> **执行结论（Launcher5，已修复，待合并）**：
+> - **定位**：`War3AudioSystem.Start` 整条路径没有任何距离判断，只有 Godot 的 `UnitSize/MaxDistance` 衰减；`War3SoundTables.Entry.DistanceCutoff` 解析出来后确实无人读取，`War3UnitSound` 的 `Play3D / PlayLooping / PlayOneShot` 只传 `MinDistance / MaxDistance`。另有一个前置缺口：Launcher 连「监听点」这个概念都没有，所以无从比较。
+> - **改动**：`War3AudioSystem` 补 `UpdateListener(position)` 与 `WithinListenerDistance`（平方距离比较），`Start` / `Play3D` 末尾加 `cutoffDistance` 参数，`Start` 里按客户端口径 `gate = cutoff > 0 ? cutoff : maxDistance`，只对定位播放生效；`War3UnitSound` 三条定位播放把 `Entry.DistanceCutoff` 传下去；`Lifecycle._Process` 每帧喂 `_camera.Position` 给听者。共 3 文件，`War3AudioSystem` +21、`War3UnitSound` +6/-3、`Lifecycle` +1。
+> - **验证**（临时探针按 key 去重打印被挡的音，跑完已撤）：`[AGATE] 挡 AxeMediumChopWood 距离 2109 门 2100`——正是本条举的例子（表值 Min 600 / Max 10000 / Cutoff 2100），改前要到 10000 才静音。另两档：`PlaceBuildingDefault 距离 10938 门 10000`（这条行里没有 cutoff，按客户端口径退回 maxDistance）、`Aren / Arst 距离 5202 / 12511 门 900`（法术 fallback 走程序化定义，同样按 maxDistance 兜底）。近处不受影响：`Repair`、`BuildingConstructionLoop`、`PlaceBuildingDefault` 照常播。
+> - **监听点位置**：现在用相机位置，与 Godot 自己的 3D 听者一致，门和玩家实际听到的衰减对得上。第 27 条会把听者挪到镜头目标点并挂 `AudioListener3D`，届时这里跟着改成同一个点，两条要一起看。
+> - **未做**：门只在 `Start` 时判一次，已经在播的循环音不会因为镜头拉远而中断，客户端同样只在建声部时判，保持现状。
+> - **玩家侧验证**：开一局，镜头放在自家基地能听到自己的砍树、建造、交战音；把镜头拖到地图另一角，远处的砍树与交战音不再响（改前 10000 距离内都听得见）。
+
 ### 27. 3D 听者绑在相机上，客户端放在镜头目标点
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Rendering.cs:283-285` 每帧 `_audio.UpdateListener(cameraPosition, cameraTarget)`；`War3AudioSystem.cs:181-195` 明确把听者放在地面目标点，理由是高空相机会把地面单位压没。
@@ -223,6 +249,25 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:301-347` 只到伐木（限能砍木的工人）和地面物品，没有可破坏物攻击、没有吃树，全仓也没有 `EnterWaygate`。
 - **玩家可见**：剑士、火枪右键点树或桥不会攻击它，而是绕过走到落点，清树开路和拆桥失效；山岭巨人右键树不会吃树；带传送门的地图右键无效。
 - **要做**：按客户端顺序补齐这几支，目标类型不完备是第 30 条的同根问题。
+
+> **执行结论（Launcher9，已提交，待合并）**
+>
+> **可破坏物攻击：已补。** Launcher 的可破坏物只有树（`TreeState`：Hp + `CreationNumber` + pathTex 撤除），所以「攻击可破坏物」落成「右键点树，走过去按武器伤害砍」。新增 `Unit.AttackTree`、`World.SetAttackTree`、`StepAttackTree`（`Src/World/World.MechanismMembers.cs`，紧挨 `StepChop`）：`Advance` 到 `AttackReach+48` 内，按 `AttackCooldownOf` 的节奏挥一次，`tree.Chop(武器骰 + DamageBonus)`、播 `PlayAttack`，砍倒后 `ClearTreePathing` 撤掉那格阻挡再收单。订单复位挂进 `ApplyOrder` / `ClearOrders`，任何新指令都会撤销。右键分支排在伐木之后，只吃 `CanAttack` 的非建筑单位。
+>
+> **吃树：已补。** `Aeat` 在 Launcher 原来是 `IsPassive=true` 的自动行为（血低于 70% 就吃最近的树，源码注释自己写着「原版是玩家主动点树；这里退化成…」）。改成客户端形态：`TargetMode = Destructable`、`IsPassive` 取消、`OnEffect` 吃掉点到的树并按 `DataC / Dur` 挂 `HealOverTimeBuff`，`CheckTarget` 用 `TakeNearestTree(point, 120)` 拒掉空点。右键顺序与客户端 `:837 → :856 → :869` 一致：伐木 → 吃树 → 攻击可破坏物 → 地面物品。命令卡的「吃树」按钮走 `QuickCast` 的 `Destructable` 分支（`PickTree` 取落点），补上了第 30 条留下的那个口子。
+>
+> 顺带一个行为确认：生产型古树（`eaom` 这类）右键树仍然是**设集结点**，因为客户端的集结点分支在 `:746` 就在吃树之前，Launcher 的 `TryIssueRallyAt` 也是第一支，两侧同序。真正吃树的是 `etrp` 这种非生产古树。
+>
+> **传送门：不做。** 客户端 `WaygateConfigured / WaygateActive` 只有 JASS 写（`Tool/Tests/Game/WaygateEffectTests.cs:151` 的断言原话是「campaign script did not activate/configure gates」，native 侧也只有 `WarpNativesTests` 覆盖 setter）。Launcher 不跑 JASS，melee 图没有传送门，属范围第 10 条排除的脚本表现。
+>
+> **非树可破坏物（桥、箱子）：不做，另立第 60 条。** `DoodadPlacement` 只有 `Life` 百分比字节，没有运行时 HP、死亡动画和掉落，树之外连状态对象都没有。
+>
+> 实测（临时在 `Cheats.cs` 挂演示，跑完已撤）：
+> - 步兵右键树：派单后 `AttackTree=True`，20 秒后树 `HP 50→0`、`存活=False`，步兵停在距树 136（射程 88+48）。
+> - 古树 `etrp` 右键树：`树木存活=False`，血 `300→472`（200 tick ≈ 10 秒 × 500/30）。
+> - 命令卡点「吃树」再点树：`点击=True`，点中的树被消耗。
+> - 伐木回归：工人 `接单=True`、`携带=10`、树 `HP 50→30`。
+> - `--state-probe` 只剩既有的 `utod` 一项；`Aeat` 的自检改成「先 TryCast 再验回血」，三项 OK。
 
 ### 32. 左键点敌方或友方单位会清空当前选择
 
@@ -406,6 +451,13 @@
 - **Launcher**：`GameCore/L1_Adapter/Formats/War3Pathing.cs:54-73` 定义 `PathingTextureBits`（`byte` 枚举）、`PathingTextureMask`（`record`，`PathingTextureBits[] Cells`）、`PathingOverlay`（`record`，9 个参数，带 `UseBuildingRotation`/`SourceIsDead`）；`Src/Core/Pathing/Search/PathingTextureMasks.cs:8-34` 又定义了一遍 `PathingTextureBits`（成员完全相同）、`PathingTextureMask`（`class`，`byte[] Cells`）、`PathingOverlay`（`record`，6 个参数）。可破坏物 footprint（任务3）走后者，WPM 解析走前者，同名不同物，`dots`/`doo` 的快照字段只在 L1 那份上有。
 - **玩家可见**：暂时看不出来，但两边字段不一致（`UseBuildingRotation`、`SourceIsDead`、`OcclusionHeight` 的有无），一处加了字段另一处不知道，摆放旋转与死亡后 footprint 的行为会分叉。
 - **要做**：留一份、以 L1 那份为准（字段全），`Src/Core` 的消费方改成引用它；搬的时候注意 `Cells` 从 `byte[]` 变 `PathingTextureBits[]`，读到的地方要做转换。
+
+### 60. 树以外的可破坏物没有运行时，桥和箱子点不动也打不掉
+
+- **客户端**：可破坏物是统一对象（`JassGameNatives.DestructableRef`：`Life`、`Invulnerable`、`Removed`、`DeathProcessed`、`TargType`），`DoodadRenderer` 与 `IssuePlayerAttackDestructable` 都按这个模型走，树只是 `targType` 里带 `tree` 的一个子集。
+- **Launcher**：只有树有状态（`Src/World/TreeState.cs`：Hp/Alive/CreationNumber/Node），由 `MapWorldBuilder.BuildDoodads` 单独建；其余 doodad 是纯静态 `Node3D`，`DoodadPlacement` 只留了 `Life` 百分比字节（`GameCore/L3_Simulation/Simulation/Maps/War3MapDoodads.cs:14-24`），没有 HP、死亡序列和掉落集，`_picking` 里也只有 `PickTree`，没有通用 `PickDestructable`。
+- **玩家可见**：任务 31 补齐后树能砍了，但桥、木箱、木桶这些东西右键还是走到跟前站住，打不掉也挡路；依赖拆桥开门的地图过不去。
+- **要做**：把 `TreeState` 提升成通用 `DestructableState`（HP/死亡动画/掉落/`targType`），`PickTree` 扩成 `PickDestructable`，`StepAttackTree` 与 `World.AttackTree` 换成可破坏物版本；树保留 lumber 专用的额外通道（`Tree`/`BuildingNow` 那条）。
 
 ---
 
