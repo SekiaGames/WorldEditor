@@ -308,6 +308,16 @@
 
 > **复核评价**：方向成立，证据有两处要修。一是落盘位置：绑定生成到 `GameCore/L4_Composition/Game/UI/Generated/`（`FdfBindGen.cs:56-58`），不是顶层 `Generated/`，那个目录里只有表数据。二是目标数量：`FdfBindGen.Targets` 现在是 6 个（`ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`LoadingScreenBinding`、`MainMenuBinding`、`EscMenuMainPanelBinding`），成品只有 `LoadingScreenBinding.g.cs` 一个。清单只点了 4 个，漏了 `EscMenuMainPanelBinding` 和 `MainMenuBinding`；而第 41 条要把 Esc 菜单换成 FDF 面板，正需要 `EscMenuMainPanelBinding`。这条把「补哪些绑定」写全，41 才有得依赖。
 
+> **执行结论（Launcher7，已修，待合并）**：
+> - **绑定生成**：`--fdf-bindgen` 本来就能出 6 个，只是产物一直没落盘。这次把 `ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`MainMenuBinding`、`EscMenuMainPanelBinding` 一起生成进 `GameCore/L4_Composition/Game/UI/Generated/`（`LoadingScreenBinding` 重跑后与原文件逐字节相同）。数量按 `FdfBindGen.Targets:15-50` 的 6 个走，`EscMenuMainPanelBinding` 第 41 条直接可用。
+> - **`InventoryCoverBinding` 生不出来**：客户端那份的来源是 `UI\FrameDef\SmashUI\InventoryCover.fdf`（client `Assets/` 内置覆盖），extract 导出的 `Generated/FdfTables.g.cs` 里没有这张文件，也没有 `FrameDef.toc`/`SmashFrameDef.toc`。所以空背包遮罩继续走手写 `ConsoleSkinFrame` 的 `HumanUITile-InventoryCover.blp`，位置与 UV 与 FDF 同源（0.3125..1 的底条），改前改后逐像素相同。要真的走 FDF，得先让 Extract 把 Smash 那套 FDF 导进表里。
+> - **HUD 改成 FDF 优先**：新增 `UI/HudFdfUi.cs`，照客户端 `War3FdfUi` 的顺序装配：`ConsoleUI` 作根、`ResourceBarFrame` 贴 `TopRight`、`UpperButtonBarFrame` 贴 `TopLeft`、资源文字宽度借 `ResourceBarUpkeepText` 并右对齐、竖直居中。`GameHudScreen.BuildFdfChrome:211` 把它插到 `_root` 第 0 位并 `SetAllPoints`（chrome 画在动态内容之下，也才收得到鼠标），`MenuButton` 接 `MenuClicked`。资源值走 `HudFdfUi.SetResources:79`，维护费改成 `No/Low/Heavy Upkeep`（颜色同客户端 `(1,.25,.25)/(1,.78,.25)/(.38,1,.38)`）。
+> - **兜底**：`OPENWC3_FDF_UI=0` 或不满足条件时仍用 `ConsoleSkinFrame`/`TopBarFrame`；FDF 生效时 `_console.SetTilesVisible(false)` 只关底板、保留背包遮罩（否则 FDF 底板的背包格会顶替遮罩，非英雄选中时会露出背包美术），`_topBar.SetChromeVisible(false)` 关掉手写的按钮与资源组，`FPS` 读数改挂到 `UpkeepText.RenderBounds` 下沿。
+> - **验证**：`--ui-hud` 探针对比，改前/改后整图差异只有 `(255,6)-(1872,55)` 这条顶栏：菜单按钮变成 FDF 的「菜单 (F10)」，三个资源组按 FDF 锚点右移贴边，维护费变绿色 `No Upkeep`；底部控制台与背包遮罩像素级无差异。`OPENWC3_FDF_UI=0` 跑同一探针，整图与改前 baseline 完全一致（diff 无差异）。实机 `(2)BootyBay` 加载完成后 HUD 正常、无异常日志。
+> - **仍缺**：FDF `UpperButtonBar` 四个按钮都已生成，但任务/盟友/聊天三个面板还没做（第 40 条），现在先把这三颗按钮 `Visible=false`、`Disabled=true`，视觉上与改前一致；等 40 落地后打开并接 `OnQuestClicked/OnAlliesClicked`。
+> - **复现**：`cd Launcher7 && Godot --path . -- --ui-hud --shot=/tmp/hud.png@1.0`；回退对照加 `OPENWC3_FDF_UI=0`。
+> - **提交**：`65b9821 任务39：补 FDF 强类型绑定，HUD 底板与资源条走 FDF 优先、手写兜底`。
+
 ### 40. 顶栏只剩一个菜单按钮，任务日志与盟友面板整族缺失
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:39-40` 四个按钮全部可见，`MeleeHudController.cs:544-545` 绑 `OnQuestClicked/OnAlliesClicked`，`UI/QuestDialogFrame.cs:108-112` 由 F9 开关。
