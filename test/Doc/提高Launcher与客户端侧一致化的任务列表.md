@@ -203,40 +203,6 @@
 > - **顺带发现（不在本条范围）**：`ResolveBackgroundModel:118` 只按 campaignBackground 查 `WorldEditData` 的 `LoadingScreens` 表；战役背景模型（`Backgrounds/Campaigns/*.glb`，14–15 片 geoset，除四张底图外还有立绘摆件）会落进几何路径，把摆件按 AABB 画成方块。Launcher 不跑战役，暂时看不到，接战役或自定义模型时再处理。
 > - **提交**：`任务37：加载屏背景按模型几何分带，补 FULL 兜底与真实布局日志`。
 
-### 38. 加载到 100% 后多出 0.55 秒不可操作窗口
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Hosting/GameApplication.cs:354-380` 用 `using` 管理加载屏，场景 `OnLoad` 同步跑完 13 个阶段，`Report(1f)` 后方法结束即 `Dispose`，下一帧就是可操作的游戏。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Lifecycle.cs:146-161` 先 `await ProcessFrame` 让加载屏画出来，`War3LoadingScreenRenderer.cs:569-585` 再等 3 帧 settle 并做 0.5 秒 `Modulate` 淡出，期间 `LoadingBlocked` 为 true（`:521,713-715,780-794`），音乐也要等 `StartPendingMusic`。
-- **玩家可见**：进度条满了还有半秒不能操作、没有音乐；这三帧 settle 本身说明世界刚建好的头几帧是黑的。
-- **要做**：按客户端改成同步组装、硬切进游戏；如果保留淡出，需要在文档里登记为平台差异。
-
-> **执行结论（Launcher7，已修，待合并）**：
-> - **定位**：收尾是三段串联。`War3LoadingScreenRenderer.Finish()` 原来只置 `_finishing`；`FrameSeconds` 先空转 3 帧 settle，再用 `FadeSeconds = 0.5` 把 `Modulate` 从 1 拉到 0；`Finished` 到淡出结束才为真。而 `Lifecycle.LoadingBlocked:536` 就是 `!_loadingScreen.Finished`，于是 `_Process:728` 与 `_PhysicsProcess` 在进度 100% 之后还要空转 3 帧 + 500ms，`StartPendingMusic:729` 排在后面。玩家看到的就是「条满了、半秒不动、也没音乐」。
-> - **改动**：`Finish:321` 改成硬切——进度置 1、`_finished` 立刻置真、`QueueFree` 掉 `CanvasLayer` 与自己；删掉 `FrameSeconds`、`FadeSeconds`、`_settleFrames`、`_fade`、`_remaining`（构造参数 `seconds` 只服务淡出，一并删除）；`Lifecycle._Process` 不再驱动加载屏。
-> - **为什么没做「13 个阶段全同步」**：试过，实测更差。`RenderingServer.ForceDraw()` 不派发 CanvasItem 的 `_Draw`——整段加载里 `[loading-draw]` 只出现 1 次，且是在全部阶段跑完之后；ForceDraw 只是把半成品世界画了 12 次，白费约 500ms，而 3.85 秒的加载期间窗口一帧不出、进度条不动。客户端能同步是因为 `Report` 里 `RenderCurrent()` 之后直接 `SwapBuffers()`（客户端 `War3LoadingScreenRenderer.cs:267-274`）内联出图；Godot 的 canvas 更新由主循环驱动，阻塞主线程就出不了图。因此保留「阶段之间让出一帧」（`Loading:529`，发生在加载过程中，不在 100% 之后），按平台差异处理，不计为淡出遗留。
-> - **验证**：改前从 `Finish` 到首个可操作帧是 3 帧 + 500ms；改后实测 `finish 5157ms → first frame 5170ms`，一帧 13ms。加载中截图与改动前逐字节相同（进度条、2/3 背景无回归）；加载完成后 6s 截图是正常游戏画面（HUD、小地图、单位齐全）；`(2)BootyBay` 无头跑 11 条 `[INIT]` 全出、无异常日志。
-> - **复现**：`cd Launcher7 && Godot --path . -- --play="../test/map_gmap/(2)BootyBay.gmap"`，看进度条到顶那一刻是否立刻能操作、音乐是否同时起来。
-> - **提交**：`4fce638 任务38：加载完成即硬切进游戏，去掉 3 帧 settle 与 0.5 秒淡出`。
-
-### 39. HUD 不走 FDF 帧树，坐标是手抄常量，4 个 FDF 绑定没有生成
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/War3FdfUi.cs:38-49` 从 `ConsoleUI.fdf / ResourceBar.fdf / UpperButtonBar.fdf / InventoryCover.fdf` 装载帧树，帧引用全部走 `Generated/*.g.cs` 强类型绑定；`MeleeHudController` 在帧树上挂内容。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/GameHudScreen.cs:37,140-142` 只用 `FdfUiFactory` 读 `GlobalStrings.fdf` 的文案，帧体全部手搭；`Generated/` 下只有 `LoadingScreenBinding.g.cs`，没有 `ResourceBarBinding / ConsoleUiBinding / UpperButtonBarBinding / InventoryCoverBinding`。`FdfScreen` 这套 FDF 装载只被 `Platform/Godot/App/LauncherApp.cs:465-474` 的调试开关 `--ui-screen` 用到。
-- **玩家可见**：资源条的图标尺寸、数字基线、四组间距由 `TopBarFrame.cs:147-167` 的常量决定，和 FDF 的右对齐贴边不同，越靠右越明显；FDF 皮肤下的按钮条与空背包遮罩不存在；维护费文案是中文「无/低/高维修费用」，客户端 FDF 路径是 `No/Low/Heavy Upkeep`。
-- **要做**：补 `ResourceBarBinding` 等生成，HUD 改成「FDF 优先、手写兜底」，两边同一套锚点。
-
-> **复核评价**：方向成立，证据有两处要修。一是落盘位置：绑定生成到 `GameCore/L4_Composition/Game/UI/Generated/`（`FdfBindGen.cs:56-58`），不是顶层 `Generated/`，那个目录里只有表数据。二是目标数量：`FdfBindGen.Targets` 现在是 6 个（`ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`LoadingScreenBinding`、`MainMenuBinding`、`EscMenuMainPanelBinding`），成品只有 `LoadingScreenBinding.g.cs` 一个。清单只点了 4 个，漏了 `EscMenuMainPanelBinding` 和 `MainMenuBinding`；而第 41 条要把 Esc 菜单换成 FDF 面板，正需要 `EscMenuMainPanelBinding`。这条把「补哪些绑定」写全，41 才有得依赖。
-
-> **执行结论（Launcher7，已修，待合并）**：
-> - **绑定生成**：`--fdf-bindgen` 本来就能出 6 个，只是产物一直没落盘。这次把 `ConsoleUiBinding`、`ResourceBarBinding`、`UpperButtonBarBinding`、`MainMenuBinding`、`EscMenuMainPanelBinding` 一起生成进 `GameCore/L4_Composition/Game/UI/Generated/`（`LoadingScreenBinding` 重跑后与原文件逐字节相同）。数量按 `FdfBindGen.Targets:15-50` 的 6 个走，`EscMenuMainPanelBinding` 第 41 条直接可用。
-> - **`InventoryCoverBinding` 生不出来**：客户端那份的来源是 `UI\FrameDef\SmashUI\InventoryCover.fdf`（client `Assets/` 内置覆盖），extract 导出的 `Generated/FdfTables.g.cs` 里没有这张文件，也没有 `FrameDef.toc`/`SmashFrameDef.toc`。所以空背包遮罩继续走手写 `ConsoleSkinFrame` 的 `HumanUITile-InventoryCover.blp`，位置与 UV 与 FDF 同源（0.3125..1 的底条），改前改后逐像素相同。要真的走 FDF，得先让 Extract 把 Smash 那套 FDF 导进表里。
-> - **HUD 改成 FDF 优先**：新增 `UI/HudFdfUi.cs`，照客户端 `War3FdfUi` 的顺序装配：`ConsoleUI` 作根、`ResourceBarFrame` 贴 `TopRight`、`UpperButtonBarFrame` 贴 `TopLeft`、资源文字宽度借 `ResourceBarUpkeepText` 并右对齐、竖直居中。`GameHudScreen.BuildFdfChrome:211` 把它插到 `_root` 第 0 位并 `SetAllPoints`（chrome 画在动态内容之下，也才收得到鼠标），`MenuButton` 接 `MenuClicked`。资源值走 `HudFdfUi.SetResources:79`，维护费改成 `No/Low/Heavy Upkeep`（颜色同客户端 `(1,.25,.25)/(1,.78,.25)/(.38,1,.38)`）。
-> - **兜底**：`OPENWC3_FDF_UI=0` 或不满足条件时仍用 `ConsoleSkinFrame`/`TopBarFrame`；FDF 生效时 `_console.SetTilesVisible(false)` 只关底板、保留背包遮罩（否则 FDF 底板的背包格会顶替遮罩，非英雄选中时会露出背包美术），`_topBar.SetChromeVisible(false)` 关掉手写的按钮与资源组，`FPS` 读数改挂到 `UpkeepText.RenderBounds` 下沿。
-> - **验证**：`--ui-hud` 探针对比，改前/改后整图差异只有 `(255,6)-(1872,55)` 这条顶栏：菜单按钮变成 FDF 的「菜单 (F10)」，三个资源组按 FDF 锚点右移贴边，维护费变绿色 `No Upkeep`；底部控制台与背包遮罩像素级无差异。`OPENWC3_FDF_UI=0` 跑同一探针，整图与改前 baseline 完全一致（diff 无差异）。实机 `(2)BootyBay` 加载完成后 HUD 正常、无异常日志。
-> - **仍缺**：FDF `UpperButtonBar` 四个按钮都已生成，但任务/盟友/聊天三个面板还没做（第 40 条），现在先把这三颗按钮 `Visible=false`、`Disabled=true`，视觉上与改前一致；等 40 落地后打开并接 `OnQuestClicked/OnAlliesClicked`。
-> - **复现**：`cd Launcher7 && Godot --path . -- --ui-hud --shot=/tmp/hud.png@1.0`；回退对照加 `OPENWC3_FDF_UI=0`。
-> - **提交**：`65b9821 任务39：补 FDF 强类型绑定，HUD 底板与资源条走 FDF 优先、手写兜底`。
-
 ### 40. 顶栏只剩一个菜单按钮，任务日志与盟友面板整族缺失
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/TopBarFrame.cs:39-40` 四个按钮全部可见，`MeleeHudController.cs:544-545` 绑 `OnQuestClicked/OnAlliesClicked`，`UI/QuestDialogFrame.cs:108-112` 由 F9 开关。
@@ -294,6 +260,13 @@
 - **Launcher**：`Launcher/Src/Units/CargoTransport.cs:79` 装载时 `_world.Units.Remove(passenger)`，`Src/World/World.UiMembers.cs:24` 的英雄候选按同一张表重建，头像当场消失，卸载才回来。
 - **玩家可见**：把英雄装上飞艇偷矿或塞进地洞，左上角英雄栏空一格、编队里也点不到这个英雄，看着像丢了单位。
 - **要做**：装载不从公共单位表摘人（照客户端只摘空间索引），或者让英雄候选把货舱里的英雄算回来。
+
+### 63. FDF 里的空背包遮罩导不出来，只能继续手写
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/War3FdfUi.cs` 的空背包遮罩来自 `UI\FrameDef\SmashUI\InventoryCover.fdf`，走 `Generated/InventoryCoverBinding.g.cs`；这份 FDF 在 client `Assets/` 里有内置覆盖副本。
+- **Launcher**：`FdfBindGen.Targets` 没有这个目标，`Generated/FdfTables.g.cs` 里也没有 `InventoryCover.fdf`（Extract 没导 Smash 那套 FrameDef，`FrameDef.toc`/`SmashFrameDef.toc` 都不在表里），所以 `ConsoleSkinFrame` 继续手写 `HumanUITile-InventoryCover.blp`，位置与 UV 与 FDF 同源（0.3125..1 的底条）。
+- **玩家可见**：现在像素级一致看不出来，但两套美术各自维护，换 FDF 皮肤时遮罩不跟着换。
+- **要做**：Extract 侧把 Smash 的 FrameDef（至少 `InventoryCover.fdf`）导进 `FdfTables`，`FdfBindGen.Targets` 加目标，`ConsoleSkinFrame` 的遮罩改走 FDF 帧树。
 
 ---
 
