@@ -80,40 +80,51 @@
 
 ## 三、`GameCore/L0_Foundation`：地基
 
-| 子目录 | 文件 | 行数 | 后端 | 判定 |
+**逐个核对结论**：77 个文件，已落地 5 个（`Input` 3 + Launcher 自己的 `RHI/ITexture`、`RHI/Enums`）；剩下 72 个全部判定不搬，且都有替代（见下表）。此层已结清，无待搬项。
+
+| 子目录 | 文件 | 已搬 | 判定 | Godot/Launcher 替代 |
 |---|---|---|---|---|
-| `Input/` | 3 | 48 | 0 | **已搬**：`Key`/`KeyModifiers`/`PointerEvent`/`IInputSource`，纯抽象 |
-| `RHI/` | 7 | 203 | 7 | 不搬：`ITexture`/`IBuffer`/`IShaderProgram` 等自绘渲染接口，Launcher 保留自己的 `ITexture`/`Enums` 两件 |
-| `ThirdParty/War3Net/` | 67 | 7065 | 67 | 不搬：vendored 的 MPQ/压缩库，需要 `System.IO.Hashing`、`ICSharpCode.SharpZipLib` |
+| `Input/` | 3 | 3 | **已搬** | `Key`/`KeyModifiers`/`PointerEvent`/`IInputSource` 是纯抽象，由 Godot `InputEvent` 侧喂 |
+| `RHI/` | 7 | 2 | 5 个不搬 | 渲染抽象由 Godot 直接提供：`ITexture`→`Texture2D`、`IShaderProgram`→`ShaderMaterial`、`IVertexArray`/`IBuffer`→`ArrayMesh`/`ImmediateMesh`、`IFramebuffer`→`SubViewport`、`IRenderDevice`→`RenderingServer`。Launcher 只保留自己那份 `ITexture`/`Enums`，给 `L2_Core/UI/Fdf` 的纹理解析用 |
+| `ThirdParty/War3Net/` | 67 | 0 | 不搬 | MPQ 读取移到**构建期**：Extract 把 MPQ 解成 `extract.pck` 与 `.gmap`，运行时零 MPQ 代码 |
+
+> 注意 `RHI` 这 5 个接口没有等价的抽象层：Launcher 直接写 Godot 类型。这意味着**任何依赖 RHI 抽象的上层代码搬到 Launcher 都要改写**（`L4/Game/Rendering` 的 43 个文件首当其冲），搬之前要先决定是「直接换 Godot 调用」还是「在 Godot 之上再造一层 RHI 壳」。
 
 ---
 
 ## 四、`GameCore/L1_Adapter`：格式解析
 
-| 子目录 | 文件 | 行数 | 后端 | JASS | 判定 |
-|---|---|---|---|---|---|
-| `Formats/` | 1 | 198 | 0 | 0 | 已搬（`War3Pathing`） |
-| `Formats/Text` | 1 | 316 | 0 | 0 | 已搬（文本解码） |
-| `Formats/Jass` | 39 | 10366 | 1 | 26 | **不搬**：JASS 词法/语法/AOT/虚拟机。只留 `JassNativeReal`（32 位浮点仿真，`War3GameplayConfig` 依赖） |
-| `Formats/SaveGame` | 29 | 3330 | 0 | 0 | **不搬**：`NetGameStore` 网络同步、zlib 仿真、能力状态序列化 |
-| `Formats/Trigger` | 6 | 703 | 1 | 0 | **不搬**：`war3map.wtg`/`wct` 触发树解析 |
-| `RHI.OpenGL` | 14 | 1611 | 14 | 0 | 不搬：自绘 OpenGL 后端 |
+**逐个核对结论**：90 个文件，已落地 3 个（`Formats/War3Pathing`、`Formats/Text`、`Formats/Jass/JassNativeReal`）；剩下 87 个分属 JASS 38 / SaveGame 29 / Trigger 6 / OpenGL 14，全部判定不搬，替代与缺口见下表。此层已结清，无待搬项。
+
+| 子目录 | 文件 | 已搬 | 判定 | Godot/Launcher 替代 |
+|---|---|---|---|---|
+| `Formats/`（根） | 1 | 1 | 已搬 | 可走性/路径纹理 |
+| `Formats/Text` | 1 | 1 | 已搬 | 文本解码 |
+| `Formats/Jass` | 39 | 1 | 38 不搬 | JASS 运行时的功能由 C# 规则顶替：八步 melee 初始化在 `MeleeRules`、掉落表在 `War3MapUnits.UnitItemDropSet`、VictoryDefeat 在 `Environment`。**地图自定义脚本不执行**（范围排除）。`JassNativeReal` 例外保留：它是 32 位浮点仿真，`War3GameplayConfig` 的伤害/经验公式依赖它 |
+| `Formats/SaveGame` | 29 | 0 | 不搬 | 无替代：Launcher 不做存档与网络同步。`NetGameStore`/zlib 仿真/能力状态序列化整体不复现 |
+| `Formats/Trigger` | 6 | 0 | 不搬 | 无替代：`war3map.wtg`/`wct` 是编辑器触发树。对战图实测只有 1 个触发器（`Trig_Melee_Initialization_Actions`），其语义已由 `MeleeRules` 覆盖 |
+| `RHI.OpenGL` | 14 | 0 | 不搬 | Godot 渲染器（`RenderingServer`/`ShaderMaterial`） |
 
 ---
 
 ## 五、`GameCore/L2_Core`：客户端 UI 与地图浏览
 
-Launcher 早就移植了这一层的 FDF 部分（`GameCore/L2_Core/UI/*` 在 Launcher 里基本齐全），所以这一层主要看 `MapBrowser`。
+**逐个核对结论**：36 个文件，已落地 32 个；剩下 4 个（`MapBrowser` 的 `BlpDecoder`/`TgaDecoder`/`MapArchive`/`MainForm`）全部有构建期或 Godot 侧替代，**无缺口**。此层已结清，无待搬项。
 
-| 子目录 | 文件 | 行数 | 后端 | 已搬 | 判定 |
-|---|---|---|---|---|---|
-| `UI/Fdf` | 7 | 1013 | 7 | 7 | 已搬：FDF 解析器/词法器/膨胀器 |
-| `UI/Frame` | 7 | 448 | 7 | 7 | 已搬：帧模型 |
-| `UI/Frames` | 9 | 1141 | 9 | 9 | 已搬：具体帧类型 |
-| `UI/Events` | 4 | 262 | 4 | 4 | 已搬：UI 事件 |
-| `UI/Render` | 1 | 57 | 1 | 1 | 已搬：纹理解析器接口 |
-| `UI`（根） | 2 | 46 | 2 | 2 | 已搬 |
-| `MapBrowser/` | 6 | 1073 | 5 | 2 | **部分搬**：`MapInfoParser`（纯 `System.IO`，Launcher 已有但落后 619 行，值得对齐）搬；`BlpDecoder`/`TgaDecoder`/`MapArchive`/`MainForm` 不搬（`System.Drawing` GDI+、WinForms、War3Net） |
+| 子目录 | 文件 | 已搬 | 判定 | 替代 |
+|---|---|---|---|---|
+| `UI/Fdf` | 7 | 7 | 已搬 | — |
+| `UI/Frame` | 7 | 7 | 已搬 | — |
+| `UI/Frames` | 9 | 9 | 已搬 | — |
+| `UI/Events` | 4 | 4 | 已搬 | — |
+| `UI/Render` | 1 | 1 | 已搬 | — |
+| `UI`（根） | 2 | 2 | 已搬 | — |
+| `MapBrowser/MapInfoParser` | 1 | 1 | 已搬（Launcher 自写版） | w3i 解析在构建期完成：Launcher 版里 0 个 `Read*` 调用，它读的是 gmap 里的模型 |
+| `MapBrowser/TerrainParser` | 1 | 1 | 已搬（Launcher 自写版） | w3e 解析同上，构建期完成 |
+| `MapBrowser/BlpDecoder` | 1 | 0 | 不搬 | 构建期把 `war3mapMap.blp` 转成 TGA；运行时 Godot `Image.LoadTgaFromBuffer`（`MapThumbnailCache` 已在用） |
+| `MapBrowser/TgaDecoder` | 1 | 0 | 不搬 | 同上，Godot `Image.LoadTgaFromBuffer` |
+| `MapBrowser/MapArchive` | 1 | 0 | 不搬 | `.gmap` 容器替代，`Assets` 直接扫 `.gmap` |
+| `MapBrowser/MainForm` | 1 | 0 | 不搬 | Launcher 主菜单的地图列表（`Assets.cs` 扫 `.gmap`）与现有地图选择界面 |
 
 ---
 
@@ -189,17 +200,37 @@ Launcher 早就移植了这一层的 FDF 部分（`GameCore/L2_Core/UI/*` 在 La
 
 ---
 
-## 十、执行顺序
+## 十、层间依赖
 
-自底向上，每批单独编译、单独报错误数，能收敛才进下一批。
+按特征类型做的跨层引用统计（行=被检查层，列=它引用了谁，单位是文件数）：
 
-| 批次 | 内容 | 规模 | 验收 |
-|---|---|---|---|
-| **B1** | `L4/Game/Audio` 15 个逻辑件，驱动换 Godot | 15 文件 / ~2500 行 | 音效/音乐/语音宏行为一致 |
-| **B2** | `L4/Game/Camera` 3 件（去 War3Net、把 Silk 输入换 Godot） | 3 / 1541 | 相机跟随、边界、震动与原版一致 |
-| **B3** | `L4/Game/Presentation` 6 件 | 6 / ~600 | 朝向、状态色、动画控制一致 |
-| **B4** | `L3/Simulation/Configuration` 230 件（技能层整体替换） | 230 / 29307 | 1222 条 `CS0115` 收敛，技能行为对齐 |
-| **B5** | `L4/Game/{Rendering,Environment,Input,Hosting}` 转换搬 | ~106 / 22783 | 渲染与输入表现一致 |
-| **B6** | `L4/Game/UI`（FDF）与现有 `HudFdfUi` 合并 | 86 / 17267 | HUD 帧与客户端逐项一致 |
+| | L0 | L1 | L2 | L3 | L4 |
+|---|---|---|---|---|---|
+| **L0** | — | 20 | 0 | 6 | **0** |
+| **L1** | 16 | — | 0 | 16 | **0** |
+| **L2** | 10 | 5 | — | 5 | **0** |
+| **L3** | 19 | 92 | 1 | — | **4** |
+| **L4** | 77 | 81 | 37 | 264 | — |
 
-B4 是分水岭：它决定 Launcher 的模拟层是「客户端那套」还是「两套并存」。在 B4 之前，L4 的改动都会反复被推翻。
+- **L4 依赖下面全部**：引用 L3 264 个文件、L1 81、L0 77、L2 37。L4 只能靠 L3 及以下支撑。
+- **L0/L1/L2 没有反向引用**：L1 只引用 L0，L2 只引用 L0/L1（另有 5 处引用 L3 的地图类型）。
+- **唯一的反向引用是 L3→L4 的 4 个文件**，全在 `Simulation/Jass/`（`JassGameNatives.cs`、`JassRuntimeHost.cs`、`JassGameNatives.Environment.cs`、`JassGameNatives.Sounds.cs`，直接用 `War3AudioSystem`）。JASS 整层不搬，删掉这 4 个，反向依赖归零。
+
+> 层次顺序只解决「能不能编过」，不解决「要不要替换」。L0–L2 在 Launcher 里没有同名实现，搬进来是新增；从 L3 起两边同名（`World`/`Unit`/`Ability`/技能层），必须二选一。目前 `World`、`Unit`、`Ability` 基类已换成客户端版，所以真正的前沿是 L3。
+
+---
+
+## 十一、执行顺序
+
+按依赖顺序推进，每批单独编译、单独报错误数，能收敛才进下一批。
+
+| 批次 | 内容 | 规模 | 依赖已就位 | 验收 |
+|---|---|---|---|---|
+| **B1** | `L3/Simulation/Maps` 3 件（`war3map.doo`/`war3mapUnits.doo`/脚本单位） | 3 / 644 | L1 解析层已搬 | 预摆单位、掉落表解析与客户端逐字段一致 |
+| **B2** | `L3/Simulation/Configuration` 230 件（技能层整体替换） | 230 / 29307 | `Unit`/`World`/`Ability` 基类已是客户端版 | 1222 条 `CS0115` 收敛，技能行为对齐 |
+| **B3** | `L4/Game/Audio` 15 个逻辑件，驱动换 Godot | 15 / ~2500 | L3 的 `World`/`Unit` 已就位 | 音效/音乐/语音宏行为一致 |
+| **B4** | `L4/Game/Presentation` 6 件 + `Camera` 3 件 | 9 / ~2100 | 同上 | 朝向、状态色、动画、相机跟随与震动一致 |
+| **B5** | `L4/Game/{Rendering,Environment,Input,Hosting}` 转换搬 | ~106 / 22783 | 需先定 RHI 策略（直接换 Godot 调用，或在 Godot 上再造一层壳） | 渲染与输入表现一致 |
+| **B6** | `L4/Game/UI`（FDF）与现有 `HudFdfUi` 合并 | 86 / 17267 | B5 的交互层 | HUD 帧与客户端逐项一致 |
+
+顺序依据的是第十节的依赖矩阵，不是目录编号：L0–L2 已结清，前沿在 L3；B2 是分水岭，它决定 Launcher 的模拟层是「客户端那套」还是「两套并存」，在它之前动 L4 会被反复推翻。
