@@ -39,31 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 22. 主基地升级播的是 Birth，不是 Birth Upgrade First/Second
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:306-320` 用 `production.Percent / 100f` 加 `ResolveUpgradeAnimationProperties(目标类型)` 读 `animProps`（`htow→hkee` 得 `upgrade,first`），命中 `Birth Upgrade First`。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:54-66` 只按进度取 `SetUpgradeProgress(progress)`；`Game/Presentation/UnitSceneComponent.cs:798-802` 的 `UpgradeBirth()` 传 `Array.Empty<string>()`，主标签只有 `Birth`。
-- **玩家可见**：主基地、主堡升级时播基础 Birth，观感是「重新建造一次」；部分模型的基础 Birth 与 Upgrade 变体长度不同，进度条和模型生长对不齐。
-- **要做**：把目标类型的 `animProps` 传到 `SetUpgradeProgress`，`Seek` 前合并副标签。
-
-> **执行结论（Launcher11，2026-11-15，待合并）**
->
-> 断在两处，数据本身是齐的。`hkee.Animprops = "upgrade,first"`、`hcas.Animprops = "upgrade,second"` 已经在 `Generated/Texts/UnitsHumanUnitFunc.g.cs` 里（兽族 `ostr/ofrt`、亡灵 `unp1/unp2`、暗夜 `etoa/etoe` 同样有值），只是 `TechTree.Row` 从来没读这一列，所以一条 `animProps` 都没进过升级链路。
->
-> 改动：
-> 1. `GameCore/L3_Simulation/Simulation/Configuration/TechTree.cs`：`UnitFuncRow` 加 `AnimationProperties`，`Row()` 里用 `UnitFactory.SplitAnimationProperties(Get(fields, "Animprops"))` 填充，与客户端 `UnitFactory.SplitAnimationProperties` 同一套拆分口径。读数落在 `TechTree.Row` 而不是 `UnitType`：客户端的 `_objectData.Get(targetRawcode).GetString("animProps")` 读的是物编原始行，Launcher 侧对应的就是 `UnitFunc` 行，`UnitType` 目前还没有这个字段（见下方遗留）。
-> 2. `Scenes/War3GameScene/Animation.cs`：`UpdateUpgradeAnimation` 把 `TechTree.Row(order.Id)?.AnimationProperties` 一起传给 `SetUpgradeProgress`，对应客户端 `ResolveUpgradeAnimationProperties(job.Rawcode)`。
-> 3. `Game/Presentation/UnitSceneComponent.cs`：`SetUpgradeProgress(float, IReadOnlyCollection<string>)`、`UpgradeBirth(properties)` 先过 `_animationTags.Get(Owner, properties, null, false)` 合并副标签再 `SelectSequence("Birth", tags)`，对应客户端 `SeekUpgrade` 里的 `Merge(properties)`。原来写死的 `Array.Empty<string>()` 已删，模型没有升级变体时 `SelectSequence` 的模糊匹配回落到 `Birth`，与改动前一致。
->
-> 验证（临时探针跑完已删，`(4)Turtle Rock.gmap`，`--fixed-fps` 默认，每 0.2s 打印序列名与帧位）：
-> - 基线（只把副标签改回空）：`htow→hkee` 全程 `序列=Birth 帧=3.00/60.00 → 6.75 → 9.75`。
-> - 修复后：`序列=Birth Upgrade First 帧=1.50/60.00 → 5.25 → … → 57.75/60.00`，4 秒订单跑满后打印「模型已重建」，节点换成 `hkee`。
-> - 第二段 `hkee→hcas`（`hcas.Animprops=upgrade,second`）：`序列=Birth Upgrade Second 帧=3.00 → 6.00 → … → 58.50/60.00`，说明选择是按目标类型的 `animProps` 走，不是按固定档位硬编码。
-> - 该模型 `Birth`、`Birth Upgrade First`、`Birth Upgrade Second` 三条都是 60.00s，所以本条在这张图上体现为「播的是哪一种生长」，条目里说的「长度不同导致进度条对不齐」在这张图上量不到。
-> - `--state-probe` 全量：只剩 `utod 研究项=4 期望 4 实际 2` 一项，`git stash` 后跑基线同样这一项，与本次改动无关。
->
-> 遗留（同根，需另立条目）：升级完成后 `ReplaceBuilding` 重建节点并 `Play("Stand")`，而 `Unit.AnimationProperties` 里没有物编 `animProps`，所以站姿落在基础 `Stand`，客户端会因为新类型自带 `animProps` 落到 `Stand Upgrade First/Second`。这与任务 21 结论里「物编 `animProps` 没进 `Unit.AnimationProperties`」是同一处缺口，建议合并成「把物编 `animProps` 接进 `Unit.AnimationProperties`」一条来做。
-
 ### 23. 地面物品凭空出现，没有 Birth/Open 入场
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:1545-1579` 物品首次出现按 `SpawnAge < birthSeconds` 播 `Birth/Open`，之后转 `Stand`；离场按 `DepartAge` 缩小。
@@ -85,12 +60,12 @@
 - **玩家可见**：山丘之王被霜冻减速追着打，开天神下凡后客户端的移速立刻恢复，Launcher 还是慢吞吞走不动。
 - **要做**：给减速来源打魔法/物理标记，进魔免只清魔法那一类。
 
-### 54. 变形后的形态不切 Alternate 序列，待机还是主标签那套
+### 54. 物编 animProps 没进 Unit.AnimationProperties，变形形态与升级后的站姿都取不到变体
 
-- **客户端**：物编 `animProps` 进 `Unit.AnimationProperties`，`UpdateIdleAnimation` 与 `SelectSequence` 按它带 `Alternate` 标记取序列，熊形态、恶魔形态的待机与行走都走模型里的 Alternate 变体。
-- **Launcher**：`UnitType` 里没有 `animProps` 字段，`Src/Units/Unit.Compat.cs:204` 的 `AnimationProperties` 一直是空的（只有 UI 的 `PortraitAnimator` 在读），所以变形后 `Play("Stand")` 仍按主标签选序列。
-- **玩家可见**：德鲁伊变熊之后，待机与行走演的是主标签那一套，不是模型给熊形态准备的 Alternate 变体。
-- **要做**：把物编 `animProps` 导出进 `UnitType`、写进 `Unit.AnimationProperties`，让序列选择按客户端同口径吃这个标记。
+- **客户端**：物编 `animProps` 是序列副标签的来源（`ResolveUpgradeAnimationProperties`、`UpdateIdleAnimation` 都读它）。新类型自带 `upgrade,first/second` 时站姿落在 `Stand Upgrade First/Second`，熊/恶魔这类形态落在 `Stand Alternate`。
+- **Launcher**：`GameCore/L3_Simulation/Simulation/Configuration/TechTree.cs:374` 已经把 `UnitFunc` 的 `Animprops` 读进 `UnitFuncRow.AnimationProperties`（升级动画够用），但 `UnitType` 没有这个字段，`Src/Units/Unit.Compat.cs:204` 的 `Unit.AnimationProperties` 始终为空（只有 UI 的 `PortraitAnimator` 在读），所以 `Play("Stand")` 只能选主标签那套。
+- **玩家可见**：主基地升级完，新建出来的城堡站姿是普通 `Stand`；德鲁伊变熊后待机与行走也不是模型给熊准备的 `Alternate` 变体。
+- **要做**：`Animprops` 一并读进 `UnitType`，单位创建与变形时写进 `Unit.AnimationProperties`；`AnimationTagCache` 已经在吃这个集合，接上即可。
 
 ### 55. 每次变形都补一颗 Polymorph 烟，客户端只有变形术有
 
