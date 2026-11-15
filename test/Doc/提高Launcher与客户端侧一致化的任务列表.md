@@ -190,54 +190,6 @@
 
 > 键鼠语义、技能瞄准、拾取判定、镜头跟手。
 
-### 30. 单位或点地双模技能，落点恒为施法者脚下
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3CommandInteractionComponent.cs:316-361` 对 `Unit / UnitOrPoint / Any` 先 `PickUnit` 取单位，取不到再用 `ScreenToTerrain` 取落点，技能据此算方向。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs:82-101` 只处理 `TargetMode.Unit` 与 `TargetMode.Point`，`point` 初值是 `caster.Position`，`UnitOrPoint`（`Src/Abilities/AbilityTargetMode.cs:10`）两不沾。受影响的有腐臭蜂群、震荡波、沉默，技能侧拿到零向量后回退成 `Owner.Facing`（`GameCore/L3_Simulation/Simulation/Configuration/RuntimeCarrionSwarmAbility.cs:59-63`）。
-- **玩家可见**：腐臭蜂群、震荡波点哪里都无效，波形永远朝英雄当前朝向直喷；沉默的落点恒在自己身上。
-- **要做**：补 `UnitOrPoint / Any / Destructable` 三条取目标分支。
-
-> **执行结论（Launcher9，已提交，待合并）**
->
-> 根因确认：`QuickCast.TryCastAt` 只有 `TargetMode.Unit` 会去 `PickUnit`、只有 `TargetMode.Point` 会去 `TryGroundPoint`，`UnitOrPoint` 两条都不进，`point` 停在初值 `caster.Position`。技能侧 `target == null && point == Owner.Pos`，`direction` 退化成零向量再回退 `Owner.Facing`（`RuntimeCarrionSwarmAbility.cs:59-63`、`RuntimeSilenceAbility.cs:49`）。
->
-> 改法按客户端 `War3CommandInteractionComponent.cs:316-361` 的两段式重写（`QuickCast.cs:83-104`）：`Unit / UnitOrPoint / Any` 先 `PickUnit`，拾到就把 `point` 设成 `target.Position`；拾不到且模式是 `Unit` 才提示重选；其余模式走 `TryGroundPoint` 取地面落点。`BeginCast` 的待选提示按三种模式分开（`QuickCast.cs:51-57`），`UnitOrPoint` 不再显示「选择落点」。
->
-> `Destructable` 这条没接 `PickDestructable`：Launcher 的可破坏物是 `TreeState`（山岭巨人吃树走 `Point` + `World.TakeNearestTree`），没有「对着可破坏物施法」的指令，全仓也没有技能声明这个模式（`Ability.TargetMode` 默认 `Unit`，只有沉默、腐臭蜂群覆写成 `UnitOrPoint`）。该分支现在退化为取地面落点，等第 31 条把可破坏物目标模型补齐后再接。
->
-> 实测（临时在 `Cheats.cs` 挂了一段 AUcs 演示，跑完已撤）：恐惧魔王点地前方 700，靶子步兵再往后 260。
-> - 改动前：`点击=True 靶子 420→420`，波朝英雄朝向飞走。
-> - 改动后：`[TRYCAST] AUcs mode=UnitOrPoint target=- point=(-4142,12762) caster=(-4142,12141)`，落点与施法者相差 621，`靶子 420→220`（3 级 200 伤害）。
-> - 尸体目标链路（`AUcb` 命令卡点尸体）输出与改动前逐字一致，`--skill-probe` 其余项无变化。
->
-> 留了一处差异：点到不合法单位时，客户端先 `CheckConfiguredTarget` 报「无法对这个目标施放」，Launcher 仍由 `World.TryCast` 里的 `CheckCanTarget` 兜底报「施放失败」。
-
-### 31. 右键缺三类目标：可破坏物、吃树、传送门
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:809-885` 右键按序尝试 `EnterWaygate`、可破坏物采集、`Aeat` 吃树、`IssuePlayerAttackDestructable`、地面物品拾取，逐支只吃掉能干这活儿的单位。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:301-347` 只到伐木（限能砍木的工人）和地面物品，没有可破坏物攻击、没有吃树，全仓也没有 `EnterWaygate`。
-- **玩家可见**：剑士、火枪右键点树或桥不会攻击它，而是绕过走到落点，清树开路和拆桥失效；山岭巨人右键树不会吃树；带传送门的地图右键无效。
-- **要做**：按客户端顺序补齐这几支，目标类型不完备是第 30 条的同根问题。
-
-> **执行结论（Launcher9，已提交，待合并）**
->
-> **可破坏物攻击：已补。** Launcher 的可破坏物只有树（`TreeState`：Hp + `CreationNumber` + pathTex 撤除），所以「攻击可破坏物」落成「右键点树，走过去按武器伤害砍」。新增 `Unit.AttackTree`、`World.SetAttackTree`、`StepAttackTree`（`Src/World/World.MechanismMembers.cs`，紧挨 `StepChop`）：`Advance` 到 `AttackReach+48` 内，按 `AttackCooldownOf` 的节奏挥一次，`tree.Chop(武器骰 + DamageBonus)`、播 `PlayAttack`，砍倒后 `ClearTreePathing` 撤掉那格阻挡再收单。订单复位挂进 `ApplyOrder` / `ClearOrders`，任何新指令都会撤销。右键分支排在伐木之后，只吃 `CanAttack` 的非建筑单位。
->
-> **吃树：已补。** `Aeat` 在 Launcher 原来是 `IsPassive=true` 的自动行为（血低于 70% 就吃最近的树，源码注释自己写着「原版是玩家主动点树；这里退化成…」）。改成客户端形态：`TargetMode = Destructable`、`IsPassive` 取消、`OnEffect` 吃掉点到的树并按 `DataC / Dur` 挂 `HealOverTimeBuff`，`CheckTarget` 用 `TakeNearestTree(point, 120)` 拒掉空点。右键顺序与客户端 `:837 → :856 → :869` 一致：伐木 → 吃树 → 攻击可破坏物 → 地面物品。命令卡的「吃树」按钮走 `QuickCast` 的 `Destructable` 分支（`PickTree` 取落点），补上了第 30 条留下的那个口子。
->
-> 顺带一个行为确认：生产型古树（`eaom` 这类）右键树仍然是**设集结点**，因为客户端的集结点分支在 `:746` 就在吃树之前，Launcher 的 `TryIssueRallyAt` 也是第一支，两侧同序。真正吃树的是 `etrp` 这种非生产古树。
->
-> **传送门：不做。** 客户端 `WaygateConfigured / WaygateActive` 只有 JASS 写（`Tool/Tests/Game/WaygateEffectTests.cs:151` 的断言原话是「campaign script did not activate/configure gates」，native 侧也只有 `WarpNativesTests` 覆盖 setter）。Launcher 不跑 JASS，melee 图没有传送门，属范围第 10 条排除的脚本表现。
->
-> **非树可破坏物（桥、箱子）：不做，另立第 60 条。** `DoodadPlacement` 只有 `Life` 百分比字节，没有运行时 HP、死亡动画和掉落，树之外连状态对象都没有。
->
-> 实测（临时在 `Cheats.cs` 挂演示，跑完已撤）：
-> - 步兵右键树：派单后 `AttackTree=True`，20 秒后树 `HP 50→0`、`存活=False`，步兵停在距树 136（射程 88+48）。
-> - 古树 `etrp` 右键树：`树木存活=False`，血 `300→472`（200 tick ≈ 10 秒 × 500/30）。
-> - 命令卡点「吃树」再点树：`点击=True`，点中的树被消耗。
-> - 伐木回归：工人 `接单=True`、`携带=10`、树 `HP 50→30`。
-> - `--state-probe` 只剩既有的 `utod` 一项；`Aeat` 的自检改成「先 TryCast 再验回血」，三项 OK。
-
 ### 32. 左键点敌方或友方单位会清空当前选择
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:654-723` 拾取判据只有 `Alive && !Removed`，敌方与我方都能单选查看，只有控制权不同。
@@ -274,6 +226,13 @@
 - **要做**：改 `player.StartX/StartY`；如果当初是为了让工人入画，需要先确认这个取舍。
 
 > **复核评价**：差异成立（`MeleeRules.cs:131,139` 把 `plan.Camera` 设成 `workerAnchor`），但「要做」自带一个未决问题，这种条目执行到一半就会停下来问。开工前先把结论写进这条：客户端出生点相机是 `GetPlayerStartLocationPosition`，没有「工人入画」这层，`MeleeRules` 的偏移就是 Launcher 自加的行为，按规则 6 直接改掉、不留取舍。改完顺手看 `plan.Camera` 这个字段还有没有别的用处，没有就删。
+
+### 61. 点到不合法单位时只报「施放失败」，客户端报「无法对这个目标施放」
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3CommandInteractionComponent.cs:316-361` 取到单位后先 `CheckConfiguredTarget` 判配表，不合规直接 `ShowCommandError("无法对这个目标施放。")`，不再往下走施法。
+- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/QuickCast.cs:248` 把目标原样交给 `World.TryCast`，被 `CheckCanTarget` 拒掉后统一提示 `"{技能名} 施放失败"`。
+- **玩家可见**：拿单体技能点友军、点建筑、点魔免单位，客户端黄字说明「这个目标不能放」，Launcher 只说「施放失败」，看不出是目标不对还是蓝不够、在冷却。
+- **要做**：取到单位后先跑一次配表判定，失败按客户端文案提示并中止，不进 `TryCast`。
 
 ---
 
