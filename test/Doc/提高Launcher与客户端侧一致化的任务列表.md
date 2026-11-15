@@ -190,21 +190,6 @@
 
 > 键鼠语义、技能瞄准、拾取判定、镜头跟手。
 
-### 29. W/A/S/D 被当镜头平移键，客户端只认方向键与小键盘
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:81-91` 平移只读 `Left/Right/Up/Down` 与 `Keypad2/4/6/8`，字母键全部留给命令卡热键。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:34-43` 把 `W/A/S/D` 并入平移，只在按下 M/P/H/A/S 进入待定指令时用一次性 `_panBlockedKey` 屏蔽（`Scenes/War3GameScene/Commands.cs:253-261,509-513`），按键抬起即解除。
-- **玩家可见**：按住 W 放水元素、疾风步时镜头同时往北漂；用 A/S/D 下指令时镜头往左、下、右滑，同一点永远对不准。
-- **要做**：删掉字母键分支。
-
-> **执行结论（Launcher9，已提交，待合并）**
->
-> `War3CameraComponent.Update` 的平移输入现在只剩方向键与小键盘：`Game/Camera/War3CameraComponent.cs:34-37` 是 `Up/Down/Left/Right` 加 `Kp8/Kp2/Kp4/Kp6`，与客户端 `War3CameraComponent.cs:81-91` 的取键集合一致。`W/A/S/D` 四个字母分支全部删除，字母键只走命令卡热键（`War3InputComponent.cs:99-102` 的 `HandleCameraFollowHotkey → TrySelectionHotkey → TryInventoryHotkey`）。
->
-> 只为字母键存在的屏蔽机制一并清掉：`_panBlockedKey` 字段、`ReleaseCommandKey`、`PanKeyAvailable`（原 `Commands.cs:20,253-261`），以及 `QuickCast.cs:509-513` 在按下 Move/Stop/Hold/AttackMove/Patrol 时给 `_panBlockedKey` 赋值的那段；`War3InputComponent.HandleKey` 的按键抬起分支简化成 `if (!keyEvent.Pressed) return;`。全仓已无这三处引用，编译 0 错误。
->
-> 验证口径：`Key.W / Key.A / Key.S / Key.D` 在 `Game/Camera/`、`Game/Input/` 下只剩 `War3InputComponent.cs:124` 的 Alt+A 小地图快捷键，镜头侧不再读字母键。屏幕边缘滚屏、中键拖动、Insert/Delete 旋转、四条跟随驱动的代码未动。
-
 ### 30. 单位或点地双模技能，落点恒为施法者脚下
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3CommandInteractionComponent.cs:316-361` 对 `Unit / UnitOrPoint / Any` 先 `PickUnit` 取单位，取不到再用 `ScreenToTerrain` 取落点，技能据此算方向。
