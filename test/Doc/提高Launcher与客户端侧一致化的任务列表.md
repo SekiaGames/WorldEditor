@@ -18,7 +18,7 @@
 
 > 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
-### 57. 预摆单位 owner 被钳到 0..15，24 人图里 17–24 号玩家摆的单位判给 16 号玩家
+### 58. 预摆单位 owner 被钳到 0..15，24 人图里 17–24 号玩家摆的单位判给 16 号玩家
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:22` 把 `war3mapUnits.doo` 的 `Player` 原样读进 `MapUnit.Player`（4 字节），不做区间收口，建单位时直接当阵营用；`ApplyInstancePresentation` 再按 `CustomTeamColor` 覆盖队伍色。
 - **Launcher**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 是 `(int)Mathf.Clamp(entry.Player, 0, 15)`，owner ≥ 16 全部折到 15；`War3MapUnits.cs:154` 的解析本身没问题（`uint` 原样读出）。
