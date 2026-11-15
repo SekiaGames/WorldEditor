@@ -69,7 +69,7 @@
 > - **改法**：`TeamColorTextures` 与新增的 `TeamGlowTextures` 都改成 28 槽（对客户端 `Clamp(0,27)`），槽数按实际存在且连续的贴图张数算（当前 16），索引超出可用张数时取模，不再折到最后一格。于是 17 号玩家=红、24 号玩家=粉，和客户端小地图那条 `index % _teamColors.Length`（`MinimapFrame.cs:322`、`War3UiSkin.TeamColor`）是同一套映射，模型色与小地图点终于一致。`War3UiSkin.UnitTeamColor` 改成从 `TeamColorTextures` 同一份槽位取色，两处不会再各算一套。
 > - **为什么没照抄客户端的 WhiteTexture 兜底**：客户端 `CharacterRenderer.cs:2245` 夹到 0..27 后直接请求 `TeamColor{16..27}.blp`，文件不存在时 `LoadTexture` 落到 `WhiteTexture()`（整片白）。游戏数据里没有第 17 支色，照抄会让 17–24 号玩家的单位全变白模，比现在的全灰更难认。取模是唯一能让人分辨、又和小地图对得上的映射，已在结论里登记为已知取舍。
 > - **改动文件**：`GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs`（重写）、`Rendering/TeamGlowTextures.cs`（新增）、`Presentation/UnitSceneComponent.cs`（TeamGlow 改走新类，粒子换色比对改用实际槽位）、`Configuration/War3UiSkin.cs`（`UnitTeamColor` 走同一槽位、色板长度取实际张数）、`Diagnostics/CombatProbe.TeamColors.cs`（新增 11 条断言）。
-> - **验证**：11 条断言全过（可用张数=16、索引 15→15、16→0、23→7、40→夹 27 后 11、发光层同映射、17 号玩家拿到实体贴图且与 1 号玩家同图、着色器色 17≠16 且 17=1）；`--state-probe` 仍只剩 1 条既存失败（`utod 研究项`，与本次无关），`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错。
+> - **验证**：11 条断言全过（可用张数=16、索引 15→15、16→0、23→7、40→夹 27 后 11、发光层同映射、17 号玩家拿到实体贴图且与 1 号玩家同图、着色器色 17≠16 且 17=1）；`--state-probe` 仍只剩 1 条既存失败（`utod 研究项`，与本次无关），`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错；`--play=(2)BootyBay.gmap --aggro` 跑 30 秒，地图预摆单位 59 个、开局基地单位 12 个正常生成，无异常。
 > - **顺带发现（不在本次范围，建议单独立条）**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 把 doo 里的 owner 钳成 `Clamp(entry.Player, 0, 15)`，24 人图里 17–24 号玩家摆放的单位会被直接判给 16 号玩家（连归属都错，不只是颜色）；客户端 `War3MapUnits.cs` 不做这个钳制。改它会牵动 AI 座位、生产队列与同盟判定，风险面比配色大，所以这次没动。
 
 ### 53. 进魔免不清减速，因为减速不在 Buff 体系里
