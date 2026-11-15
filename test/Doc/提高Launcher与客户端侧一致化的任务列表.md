@@ -33,6 +33,13 @@
 > - **验证**：新增 `Diagnostics/CombatProbe.PlayerSlots.cs` 7 条断言（owner 15/16/23 原样保留、200 收到 23、17 号玩家单位记在 16 号位、且上色不等于 16 号色）全过；临时插桩确认端到端（把第 8/9 个预摆单位的 owner 强制成 20，日志 `[OWNER] nftb raw=20 -> P20`，对局四族内务正常推进、无异常，插桩已还原）；`--state-probe` 仍只剩既存 `utod 研究项` 1 条，`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错；两张测试图跑动单位数与改前一致（Turtle Rock 111 / BootyBay 59），说明现有地图 owner 全在 0..15、本改动对它们是空操作。
 > - **顺带发现（未改，另立条件）**：`War3MapUnits.cs:68,226` 解析了 `CustomTeamColor`，但全仓没有任何读取处 —— 编辑器里给单个单位指定的队伍色被直接丢掉。客户端在 `ApplyInstancePresentation` 里 `unit.TeamColorIndex = CustomTeamColor`。Launcher 侧 `Unit.TeamColorIndex` 目前是 `Player` 的别名（`Src/Units/Unit.Compat.cs:50`），要落地得先给 Unit 一个独立的队伍色字段，改动面比这次大，建议单独立条。
 
+### 59. 地图里给单个单位指定的队伍色被丢掉，预摆单位一律用玩家色
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:171` 读 doo 的 `CustomTeamColor`（4 字节，`-1` 表示不覆盖），`:57-60` 的 `ApplyInstancePresentation` 里 `if (CustomTeamColor >= 0) { unit.TeamColorIndex = CustomTeamColor; unit.HasCustomTeamColor = true; }`；`Src/Units/Unit.TypeFields.cs:23` 再让物编自带的队伍色只在「没有地图实例色」时才生效。
+- **Launcher**：`GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:68,226` 已经把 `CustomTeamColor` 读进 `UnitPlacement`，但全仓再没有第二处读取（`grep CustomTeamColor` 只命中字段与解析），`SpawnUnits` 建完单位就结束。而且 `Src/Units/Unit.Compat.cs:50-54` 的 `TeamColorIndex` 是 `Player` 的别名，setter 会直接改归属，没有独立字段能承载这个覆盖值。
+- **玩家可见**：编辑器里给某个单位单独换色（把敌方首领染黑、给剧情单位一个独特颜色、让召唤物跟敌人同色）在 Launcher 里完全无效，这些单位一律显示所属玩家的颜色。
+- **要做**：`Unit` 补独立的队伍色字段（`TeamColorIndex` 不再当 `Player` 别名），出生时套用地图实例的 `CustomTeamColor`，表现层取色改读该字段。
+
 ---
 
 ## 模块二 寻路与移动
