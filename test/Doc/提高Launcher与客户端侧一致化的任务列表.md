@@ -39,23 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 19. 暴击不用递进阈值，闪避按来源各掷一次
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Skills/CriticalStrike.cs:56,71` 用 `NativeProcThreshold(percent, _procAttempts)`，不暴击递增、暴击后重置；`Src/Components/Health.cs:42-50` 闪避取所有来源的最大值只掷一次（`Src/Skills/Evasion.cs` 注释写明「取最大可用来源，只掷一次，无 PRD」）。
-- **Launcher**：`Launcher/Src/Skills/CriticalStrike.cs:31` 每次独立 `RollPercent(Chance)`，抄过来的 `NativeProcThreshold` 与系数表从未被调用；`Src/Skills/Evasion.cs:22` 每个实例各掷一次，另有独立的 `BonusEvasionPct` 一路（`Src/World/World.DamageMembers.cs:226`）。
-- **玩家可见**：客户端几乎不出现「连砍 12 刀不暴击」，Launcher 会出现；闪避护符 +15% 配 3 级闪避 30%，Launcher 实际闪避率约 40.5%，客户端恒为 30%，带两个闪避来源的单位明显更肉。
-- **要做**：暴击接 `NativeProcThreshold`；闪避合成「取最大、掷一次」。
-
-> **执行结论（Launcher9，已提交，待合并）**
->
-> 暴击两处都接上了客户端的递进阈值。`Src/Skills/CriticalStrike.cs:29-44` 加 `_procAttempts`，每次出手先算 `NativeProcThreshold(Chance, _procAttempts)`，不暴击 `++`、暴击后回 1，系数表不再空转；`RuntimeDrunkenBrawlerAbility.cs:15-32` 的暴击与客户端 `CAbilityDrunkenBrawler` 共用同一张表，同样按尝试次数递进。两处都补了 `IsDisabled` 门禁，客户端在被沉默/锁定时不掷点也不推进尝试次数。伤害倍率、`MarksCriticalStrike`、`LastAttackWasCritical` 一概不动。
->
-> 闪避改成「取最强来源、只掷一次」。新增 `Ability.PassiveEvasion`（`Src/Abilities/Ability.cs:66`）作为技能登记口，写法与已有的 `PassiveArmor` 一致；`Health.CombinedEvasionChance`（`Src/Units/Unit.Compat.cs:441-453`）把物品字段 `BonusEvasionPct` 与所有「已学且未禁用」技能的 `PassiveEvasion` 取最大值。掷点统一到 `World.DealDamage` 的 `Src/World/World.DamageMembers.cs:226`，一记普攻只掷一次。`Evasion.CanBeHitBy` 与 `BonusEvasionPct` 原来那第二路掷点一起删掉，`Evasion.Dodged` 计数器、`Health.AddEvasionSource/RemoveEvasionSource`（原本是累加，语义与「取最大」相反，且无调用方）一并清除。
->
-> 自检口径同步：`CombatProbe.Channels.cs` 的闪避项改用 `world.AttackMissed` 数闪避次数（原 `Evasion.Dodged` 已随实现删除），并新增一条「闪避护符与技能取最大不相乘」的断言。
->
-> 实测（`--state-probe`）：致命一击 4000 次触发 594 次 = 14.9%，命中「接近 15%」；闪避 2000 次闪掉 30.5%；再叠 15% 闪避护符后 28.95%，仍是 30% 而不是 40.5%。法术伤害 0 闪避。全量自检只剩 `utod 研究项` 一项不符，改动前就存在，与本次无关。
-
 ### 20. 攻击后不接 Stand Ready，每次挥砍都从第 0 帧重来
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:113-126` 起手 `animation.Set("Attack", NoAnimationTags, true, preservePrimary: true)` 并 `Queue("Stand", ReadyTag, false)`，攻击结束后队列回到 `Stand Ready`。
