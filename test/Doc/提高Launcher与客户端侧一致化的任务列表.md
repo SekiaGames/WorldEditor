@@ -165,6 +165,21 @@
 - **玩家可见**：腐臭蜂群、震荡波点哪里都无效，波形永远朝英雄当前朝向直喷；沉默的落点恒在自己身上。
 - **要做**：补 `UnitOrPoint / Any / Destructable` 三条取目标分支。
 
+> **执行结论（Launcher9，已提交，待合并）**
+>
+> 根因确认：`QuickCast.TryCastAt` 只有 `TargetMode.Unit` 会去 `PickUnit`、只有 `TargetMode.Point` 会去 `TryGroundPoint`，`UnitOrPoint` 两条都不进，`point` 停在初值 `caster.Position`。技能侧 `target == null && point == Owner.Pos`，`direction` 退化成零向量再回退 `Owner.Facing`（`RuntimeCarrionSwarmAbility.cs:59-63`、`RuntimeSilenceAbility.cs:49`）。
+>
+> 改法按客户端 `War3CommandInteractionComponent.cs:316-361` 的两段式重写（`QuickCast.cs:83-104`）：`Unit / UnitOrPoint / Any` 先 `PickUnit`，拾到就把 `point` 设成 `target.Position`；拾不到且模式是 `Unit` 才提示重选；其余模式走 `TryGroundPoint` 取地面落点。`BeginCast` 的待选提示按三种模式分开（`QuickCast.cs:51-57`），`UnitOrPoint` 不再显示「选择落点」。
+>
+> `Destructable` 这条没接 `PickDestructable`：Launcher 的可破坏物是 `TreeState`（山岭巨人吃树走 `Point` + `World.TakeNearestTree`），没有「对着可破坏物施法」的指令，全仓也没有技能声明这个模式（`Ability.TargetMode` 默认 `Unit`，只有沉默、腐臭蜂群覆写成 `UnitOrPoint`）。该分支现在退化为取地面落点，等第 31 条把可破坏物目标模型补齐后再接。
+>
+> 实测（临时在 `Cheats.cs` 挂了一段 AUcs 演示，跑完已撤）：恐惧魔王点地前方 700，靶子步兵再往后 260。
+> - 改动前：`点击=True 靶子 420→420`，波朝英雄朝向飞走。
+> - 改动后：`[TRYCAST] AUcs mode=UnitOrPoint target=- point=(-4142,12762) caster=(-4142,12141)`，落点与施法者相差 621，`靶子 420→220`（3 级 200 伤害）。
+> - 尸体目标链路（`AUcb` 命令卡点尸体）输出与改动前逐字一致，`--skill-probe` 其余项无变化。
+>
+> 留了一处差异：点到不合法单位时，客户端先 `CheckConfiguredTarget` 报「无法对这个目标施放」，Launcher 仍由 `World.TryCast` 里的 `CheckCanTarget` 兜底报「施放失败」。
+
 ### 31. 右键缺三类目标：可破坏物、吃树、传送门
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Input/War3WorldInteractionComponent.cs:809-885` 右键按序尝试 `EnterWaygate`、可破坏物采集、`Aeat` 吃树、`IssuePlayerAttackDestructable`、地面物品拾取，逐支只吃掉能干这活儿的单位。
