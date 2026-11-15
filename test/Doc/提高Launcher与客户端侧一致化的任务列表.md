@@ -39,22 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 15. 工地从 1 点血起造，任何一次攻击都能一击拆掉
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:37,45,62` 工地初始血量是 `MaxLife × startLifeFraction`（默认 0.1），随进度从 10% 涨到 100%。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Production.cs:102` `site.Hp = 1f`；`Src/World/World.MechanismMembers.cs:175` 每帧用 `MaxHp * progress` 覆盖，进度 0 时是 1 点。
-- **玩家可见**：刚放下的农场、兵营只有 1 点血，一个农民或一只野怪摸一下就塌；血量条是空的，客户端是一小截。
-- **要做**：起始血量改 `MaxHp * 0.1f`，进度换算同 `ConstructionProgress`。
-
-> **执行结论（Launcher5，已修复，待合并）**：
-> - **改了三处**：`Src/Units/Unit.cs:113-114` 补 `BuildLifeRatio` / `BuildLifeLoss` 两个字段承载工地生命进度；`Src/World/World.MechanismMembers.cs:176` 的 `site.Hp = MaxHp * progress` 换成 `AdvanceConstructionLife`，完工分支不再 `Hp = MaxHp` 硬回满；`GameCore/L4_Composition/Game/Scenes/War3GameScene/Production.cs:99-103` 的 `site.Hp = 1f` 改成 `MaxHp × 0.1`。
-> - **顺带删掉 `site.MaxHp = type.Hp`**：`Spawn` 里 `RefreshUpgradeStats` 已经按科技算好上限，这行把它覆盖回基础值；删掉后工地上限与客户端 `MaxLife` 同口径，非英雄建筑无科技时数值不变。
-> - **换算口径**：上限 `MaxHp × (0.1 + 0.9 × 进度)`，血量 = 上限 − 累计损失，进度推进时保住挨过的伤害；进度回落（`SetProgress` 反向）按上限下压，取 `Clamp(…, 1, MaxHp)`，与 `AdvanceConstructionLife` 的 `Min/Max` 处理一致。
-> - **为什么不用累加**：照抄客户端 `Life += MaxLife×(1-f)×Δratio` 跑出来完工是 `899.998/900`，浮点残留让 `Hp >= MaxHp` 永远不成立，修理与 AI 自动修理会一直把这栋建筑当可修目标。改成「上限 − 损失」后完工上限精确等于 `MaxHp`，实测 8 种建筑全是 `.000`。
-> - **验证**：`--headless --play=test/map_gmap/(4)Turtle Rock.gmap --build-test --time=0.15`，开工日志 农场 50/500、兽族地洞 60/600、国王祭坛 90/900、兵营 150/1500（全为 10%）；完工日志 500.000/500、900.000/900、1500.000/1500，无一残留。`Production.cs` 开工日志与 `TickConstruction` 完工日志各补一行血量，方便下一次对着日志核对。
-> - **玩家侧验证**：`RunLauncher` 进任意 melee 图，让农民放一个农场，血条应为十分之一截且空着九成；派一个步兵砍它，不再一击即塌，血量随工期一格格涨。
-> - **未覆盖**：修理工地只加血不加进度（客户端修理工地是推进建造进度），属于修理通道的问题，本条没动。
-
 ### 16. 合建按人数线性 1/2/3 倍，兽族与暗夜建造者不会进建筑
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:85-88` 多人速度 `1 + (人数-1) × 0.6`（1 / 1.6 / 2.2 倍），`:217` 每多一人追加 15% 造价；`:66,233-250` 兽族、暗夜把建造者 `StoreWorkerInside`（隐藏、暂停、无敌、不可选中），完工或取消再从出口放出。
