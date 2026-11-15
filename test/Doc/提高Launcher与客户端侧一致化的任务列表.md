@@ -62,6 +62,16 @@
 - **玩家可见**：16 人以上对局或自定义地图里，第 17–24 号玩家全部显示成 16 号色，小地图与选中圈跟着错。
 - **要做**：上限改 27，补 24 张 TeamColor/TeamGlow。
 
+> **执行结论（Launcher4，已修，待合并）**：
+>
+> - **定位**：Launcher 的队伍色有三处各自钳 0..15，都是 16 长度的数组：`Rendering/TeamColorTextures.cs`（TeamColor 贴图）、`Presentation/UnitSceneComponent.cs` 的 `TeamGlowTexture`（TeamGlow 贴图）、`Configuration/War3UiSkin.cs:26,31` 的 `UnitTeamColor`/`LoadUnitTeamColors`。最后一处才是主通道——模型队伍色由 `war3_model.gdshaderinc:48` 的 `use_team_color` 用 `team_color` uniform 直接改写 rgb，`UnitSceneComponent.ApplyTeamColor` 喂的就是 `War3UiSkin.UnitTeamColor(player)`，贴图替换只影响显式引用 TeamColor 纹理的发光层、粒子和丝带。所以玩家 17–24 全部落在 `UnitTeamColor(15)`。
+> - **数据边界（实测，不是推断）**：`war3skins` 的 `Default.TeamColors` = 16（`Generated/Texts/UIwar3skins.g.cs`）；`war3.mpq` 里 `TeamColor00..15`、`TeamGlow00..15` 各 16 张连续，`War3x.mpq`/`War3xPatch.mpq` 一张都没有（直接读 MPQ 哈希表验证）；这 16 张里 0..11 是经典 12 色，12..15 全是同一支 `(0.157,0.157,0.157)` 深灰占位。**结论：任务里「补 24 张」补不出来，游戏数据里没有第 17 支颜色**，只能靠索引映射解决。
+> - **改法**：`TeamColorTextures` 与新增的 `TeamGlowTextures` 都改成 28 槽（对客户端 `Clamp(0,27)`），槽数按实际存在且连续的贴图张数算（当前 16），索引超出可用张数时取模，不再折到最后一格。于是 17 号玩家=红、24 号玩家=粉，和客户端小地图那条 `index % _teamColors.Length`（`MinimapFrame.cs:322`、`War3UiSkin.TeamColor`）是同一套映射，模型色与小地图点终于一致。`War3UiSkin.UnitTeamColor` 改成从 `TeamColorTextures` 同一份槽位取色，两处不会再各算一套。
+> - **为什么没照抄客户端的 WhiteTexture 兜底**：客户端 `CharacterRenderer.cs:2245` 夹到 0..27 后直接请求 `TeamColor{16..27}.blp`，文件不存在时 `LoadTexture` 落到 `WhiteTexture()`（整片白）。游戏数据里没有第 17 支色，照抄会让 17–24 号玩家的单位全变白模，比现在的全灰更难认。取模是唯一能让人分辨、又和小地图对得上的映射，已在结论里登记为已知取舍。
+> - **改动文件**：`GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs`（重写）、`Rendering/TeamGlowTextures.cs`（新增）、`Presentation/UnitSceneComponent.cs`（TeamGlow 改走新类，粒子换色比对改用实际槽位）、`Configuration/War3UiSkin.cs`（`UnitTeamColor` 走同一槽位、色板长度取实际张数）、`Diagnostics/CombatProbe.TeamColors.cs`（新增 11 条断言）。
+> - **验证**：11 条断言全过（可用张数=16、索引 15→15、16→0、23→7、40→夹 27 后 11、发光层同映射、17 号玩家拿到实体贴图且与 1 号玩家同图、着色器色 17≠16 且 17=1）；`--state-probe` 仍只剩 1 条既存失败（`utod 研究项`，与本次无关），`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错。
+> - **顺带发现（不在本次范围，建议单独立条）**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 把 doo 里的 owner 钳成 `Clamp(entry.Player, 0, 15)`，24 人图里 17–24 号玩家摆放的单位会被直接判给 16 号玩家（连归属都错，不只是颜色）；客户端 `War3MapUnits.cs` 不做这个钳制。改它会牵动 AI 座位、生产队列与同盟判定，风险面比配色大，所以这次没动。
+
 ### 53. 进魔免不清减速，因为减速不在 Buff 体系里
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Skills/SlowBuff.cs:4-19` 减速是 `Buff` 子类（沿用基类 `Magic=true`），`GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:35-38` 进魔免按 `buff.Magic && !buff.Aura && !buff.TimedLife` 摘除，被减速的单位一开魔免当场恢复速度。
@@ -131,6 +141,14 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Camera/War3CameraComponent.cs:34-43` 把 `W/A/S/D` 并入平移，只在按下 M/P/H/A/S 进入待定指令时用一次性 `_panBlockedKey` 屏蔽（`Scenes/War3GameScene/Commands.cs:253-261,509-513`），按键抬起即解除。
 - **玩家可见**：按住 W 放水元素、疾风步时镜头同时往北漂；用 A/S/D 下指令时镜头往左、下、右滑，同一点永远对不准。
 - **要做**：删掉字母键分支。
+
+> **执行结论（Launcher9，已提交，待合并）**
+>
+> `War3CameraComponent.Update` 的平移输入现在只剩方向键与小键盘：`Game/Camera/War3CameraComponent.cs:34-37` 是 `Up/Down/Left/Right` 加 `Kp8/Kp2/Kp4/Kp6`，与客户端 `War3CameraComponent.cs:81-91` 的取键集合一致。`W/A/S/D` 四个字母分支全部删除，字母键只走命令卡热键（`War3InputComponent.cs:99-102` 的 `HandleCameraFollowHotkey → TrySelectionHotkey → TryInventoryHotkey`）。
+>
+> 只为字母键存在的屏蔽机制一并清掉：`_panBlockedKey` 字段、`ReleaseCommandKey`、`PanKeyAvailable`（原 `Commands.cs:20,253-261`），以及 `QuickCast.cs:509-513` 在按下 Move/Stop/Hold/AttackMove/Patrol 时给 `_panBlockedKey` 赋值的那段；`War3InputComponent.HandleKey` 的按键抬起分支简化成 `if (!keyEvent.Pressed) return;`。全仓已无这三处引用，编译 0 错误。
+>
+> 验证口径：`Key.W / Key.A / Key.S / Key.D` 在 `Game/Camera/`、`Game/Input/` 下只剩 `War3InputComponent.cs:124` 的 Alt+A 小地图快捷键，镜头侧不再读字母键。屏幕边缘滚屏、中键拖动、Insert/Delete 旋转、四条跟随驱动的代码未动。
 
 ### 30. 单位或点地双模技能，落点恒为施法者脚下
 
