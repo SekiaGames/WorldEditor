@@ -18,27 +18,19 @@
 
 > 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
-### 58. 预摆单位 owner 被钳到 0..15，24 人图里 17–24 号玩家摆的单位判给 16 号玩家
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:22` 把 `war3mapUnits.doo` 的 `Player` 原样读进 `MapUnit.Player`（4 字节），不做区间收口，建单位时直接当阵营用；`ApplyInstancePresentation` 再按 `CustomTeamColor` 覆盖队伍色。
-- **Launcher**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 是 `(int)Mathf.Clamp(entry.Player, 0, 15)`，owner ≥ 16 全部折到 15；`War3MapUnits.cs:154` 的解析本身没问题（`uint` 原样读出）。
-- **玩家可见**：24 人图、或者编辑器里给 17–24 号玩家摆过单位的地图，这些单位开局就变成 16 号玩家（中立被动）的东西：用的是 16 号那支灰、不归任何人指挥、和作者的排布意图对不上；靠 owner 认单位的地图脚本也会跟着错。
-- **要做**：owner 按 0..23 保留，只对超出 24 个座位的值收口。
-
-> **执行结论（Launcher4，已修，待合并）**：
->
-> - **改法**：`War3GameScene.Players.cs` 新增 `PlacementOwner(uint owner, int seatCount)`，`Math.Min(owner, seatCount - 1)`，`Units.cs` 调用时传 `_players.Length`（场景里玩家表的真实长度 24）——座位数只有这一处来源，不再写死字面量。
-> - **为什么不是「去钳制」**：`entry.Player` 是 `uint`，doo 里脏数据能到 4 亿，直接 `(int)` 会溢出成负数玩家号；客户端不钳是因为它的读取层另有边界，这里保留一个 24 座位的上限收口。
-> - **波及面核对**：场景里按玩家号索引的容器都是字典（`_allyMasks`、`_playerNames`、`_heroAcquisitionCounts`、`byPlayer`），`PlayerSlot[]` 本来就是 24 长度；16 号以上不会越界。16 号以上玩家不在 `_active` 时，其单位不受内务 AI 管、不可被本地玩家选中、对所有人敌对——与客户端对「没有该座位的玩家」的处理一致。
-> - **验证**：新增 `Diagnostics/CombatProbe.PlayerSlots.cs` 7 条断言（owner 15/16/23 原样保留、200 收到 23、17 号玩家单位记在 16 号位、且上色不等于 16 号色）全过；临时插桩确认端到端（把第 8/9 个预摆单位的 owner 强制成 20，日志 `[OWNER] nftb raw=20 -> P20`，对局四族内务正常推进、无异常，插桩已还原）；`--state-probe` 仍只剩既存 `utod 研究项` 1 条，`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错；两张测试图跑动单位数与改前一致（Turtle Rock 111 / BootyBay 59），说明现有地图 owner 全在 0..15、本改动对它们是空操作。
-> - **顺带发现（未改，另立条件）**：`War3MapUnits.cs:68,226` 解析了 `CustomTeamColor`，但全仓没有任何读取处 —— 编辑器里给单个单位指定的队伍色被直接丢掉。客户端在 `ApplyInstancePresentation` 里 `unit.TeamColorIndex = CustomTeamColor`。Launcher 侧 `Unit.TeamColorIndex` 目前是 `Player` 的别名（`Src/Units/Unit.Compat.cs:50`），要落地得先给 Unit 一个独立的队伍色字段，改动面比这次大，建议单独立条。
-
 ### 59. 地图里给单个单位指定的队伍色被丢掉，预摆单位一律用玩家色
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:171` 读 doo 的 `CustomTeamColor`（4 字节，`-1` 表示不覆盖），`:57-60` 的 `ApplyInstancePresentation` 里 `if (CustomTeamColor >= 0) { unit.TeamColorIndex = CustomTeamColor; unit.HasCustomTeamColor = true; }`；`Src/Units/Unit.TypeFields.cs:23` 再让物编自带的队伍色只在「没有地图实例色」时才生效。
 - **Launcher**：`GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:68,226` 已经把 `CustomTeamColor` 读进 `UnitPlacement`，但全仓再没有第二处读取（`grep CustomTeamColor` 只命中字段与解析），`SpawnUnits` 建完单位就结束。而且 `Src/Units/Unit.Compat.cs:50-54` 的 `TeamColorIndex` 是 `Player` 的别名，setter 会直接改归属，没有独立字段能承载这个覆盖值。
 - **玩家可见**：编辑器里给某个单位单独换色（把敌方首领染黑、给剧情单位一个独特颜色、让召唤物跟敌人同色）在 Launcher 里完全无效，这些单位一律显示所属玩家的颜色。
 - **要做**：`Unit` 补独立的队伍色字段（`TeamColorIndex` 不再当 `Player` 别名），出生时套用地图实例的 `CustomTeamColor`，表现层取色改读该字段。
+
+### 62. 24 人图里 17–24 号玩家仍与 1–8 撞色，因为调色板只有 16 张
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/CharacterRenderer.cs:2245` 把 `teamColorIndex` 钳到 `0..27`，`:2331` 按 `ReplaceableTextures\TeamColor\TeamColor{team}.blp` 取贴图，即它按 28 个槽位取色。
+- **Launcher**：`GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs:22-33` 的 `SlotOf` 是 `Clamp(index,0,27) % Count`，`Count` 数的是实际存在的贴图；`Extract/extract/ReplaceableTextures/TeamColor/` 与原始包 `test/war3-unpack/ReplaceableTextures/TeamColor/` 都只有 `TeamColor00..15` 十六张，于是 `Count = 16`，17 号玩家落到 0 号色、24 号玩家落到 7 号色。
+- **玩家可见**：24 人图里 17–24 号玩家不再全挤在 16 号灰，但分别与 1–8 号玩家同色，小地图与选中圈分不出谁是谁。
+- **要做**：先定 17–24 的颜色从哪来——客户端钳到 27 说明它预期 28 个槽位，而两边现有资源都只有 16 张（1.27a 的包就这么点），要么引入 Reforged 的调色板贴图，要么按基色派生 8 组变体补进 `TeamColorTextures`/`TeamGlowTextures`。
 
 ---
 
@@ -78,52 +70,6 @@
 ## 模块四 单位、技能与物品
 
 > 模拟层行为。这一层决定对局打得对不对。
-
-### 24. 队伍色索引钳到 0..15，17–24 号玩家全部同色
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/CharacterRenderer.cs:2245,2294,2306` 全部 `Clamp(teamColorIndex, 0, 27)`，`ReplaceableId 1/2`（TeamColor/TeamGlow）分开解析。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs:10-11` `Clamp(index, 0, 15)` 且只加载 `TeamColor00..15`；`Game/Presentation/UnitSceneComponent.cs:420-423` 的 TeamGlow 同样钳 0..15。
-- **玩家可见**：16 人以上对局或自定义地图里，第 17–24 号玩家全部显示成 16 号色，小地图与选中圈跟着错。
-- **要做**：上限改 27，补 24 张 TeamColor/TeamGlow。
-
-> **执行结论（Launcher4，已修，待合并）**：
->
-> - **定位**：Launcher 的队伍色有三处各自钳 0..15，都是 16 长度的数组：`Rendering/TeamColorTextures.cs`（TeamColor 贴图）、`Presentation/UnitSceneComponent.cs` 的 `TeamGlowTexture`（TeamGlow 贴图）、`Configuration/War3UiSkin.cs:26,31` 的 `UnitTeamColor`/`LoadUnitTeamColors`。最后一处才是主通道——模型队伍色由 `war3_model.gdshaderinc:48` 的 `use_team_color` 用 `team_color` uniform 直接改写 rgb，`UnitSceneComponent.ApplyTeamColor` 喂的就是 `War3UiSkin.UnitTeamColor(player)`，贴图替换只影响显式引用 TeamColor 纹理的发光层、粒子和丝带。所以玩家 17–24 全部落在 `UnitTeamColor(15)`。
-> - **数据边界（实测，不是推断）**：`war3skins` 的 `Default.TeamColors` = 16（`Generated/Texts/UIwar3skins.g.cs`）；`war3.mpq` 里 `TeamColor00..15`、`TeamGlow00..15` 各 16 张连续，`War3x.mpq`/`War3xPatch.mpq` 一张都没有（直接读 MPQ 哈希表验证）；这 16 张里 0..11 是经典 12 色，12..15 全是同一支 `(0.157,0.157,0.157)` 深灰占位。**结论：任务里「补 24 张」补不出来，游戏数据里没有第 17 支颜色**，只能靠索引映射解决。
-> - **改法**：`TeamColorTextures` 与新增的 `TeamGlowTextures` 都改成 28 槽（对客户端 `Clamp(0,27)`），槽数按实际存在且连续的贴图张数算（当前 16），索引超出可用张数时取模，不再折到最后一格。于是 17 号玩家=红、24 号玩家=粉，和客户端小地图那条 `index % _teamColors.Length`（`MinimapFrame.cs:322`、`War3UiSkin.TeamColor`）是同一套映射，模型色与小地图点终于一致。`War3UiSkin.UnitTeamColor` 改成从 `TeamColorTextures` 同一份槽位取色，两处不会再各算一套。
-> - **为什么没照抄客户端的 WhiteTexture 兜底**：客户端 `CharacterRenderer.cs:2245` 夹到 0..27 后直接请求 `TeamColor{16..27}.blp`，文件不存在时 `LoadTexture` 落到 `WhiteTexture()`（整片白）。游戏数据里没有第 17 支色，照抄会让 17–24 号玩家的单位全变白模，比现在的全灰更难认。取模是唯一能让人分辨、又和小地图对得上的映射，已在结论里登记为已知取舍。
-> - **改动文件**：`GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs`（重写）、`Rendering/TeamGlowTextures.cs`（新增）、`Presentation/UnitSceneComponent.cs`（TeamGlow 改走新类，粒子换色比对改用实际槽位）、`Configuration/War3UiSkin.cs`（`UnitTeamColor` 走同一槽位、色板长度取实际张数）、`Diagnostics/CombatProbe.TeamColors.cs`（新增 11 条断言）。
-> - **验证**：11 条断言全过（可用张数=16、索引 15→15、16→0、23→7、40→夹 27 后 11、发光层同映射、17 号玩家拿到实体贴图且与 1 号玩家同图、着色器色 17≠16 且 17=1）；`--state-probe` 仍只剩 1 条既存失败（`utod 研究项`，与本次无关），`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错；`--play=(2)BootyBay.gmap --aggro` 跑 30 秒，地图预摆单位 59 个、开局基地单位 12 个正常生成，无异常。
-> - **顺带发现（不在本次范围，建议单独立条）**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 把 doo 里的 owner 钳成 `Clamp(entry.Player, 0, 15)`，24 人图里 17–24 号玩家摆放的单位会被直接判给 16 号玩家（连归属都错，不只是颜色）；客户端 `War3MapUnits.cs` 不做这个钳制。改它会牵动 AI 座位、生产队列与同盟判定，风险面比配色大，所以这次没动。
-
-### 53. 进魔免不清减速，因为减速不在 Buff 体系里
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Skills/SlowBuff.cs:4-19` 减速是 `Buff` 子类（沿用基类 `Magic=true`），`GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:35-38` 进魔免按 `buff.Magic && !buff.Aura && !buff.TimedLife` 摘除，被减速的单位一开魔免当场恢复速度。
-- **Launcher**：`Launcher/Src/Units/Unit.Slows.cs:23` 减速存在独立的 `List<SlowSource>`，与 Buff 是两张表，也没有魔法/物理之分；`RemoveImmunityEntryBuffs` 只扫 Buff，进魔免速度照旧。
-- **玩家可见**：山丘之王被霜冻减速追着打，开天神下凡后客户端的移速立刻恢复，Launcher 还是慢吞吞走不动。
-- **要做**：给减速来源打魔法/物理标记，进魔免只清魔法那一类。
-
-### 54. 物编 animProps 没进 Unit.AnimationProperties，变形形态与升级后的站姿都取不到变体
-
-- **客户端**：物编 `animProps` 是序列副标签的来源（`ResolveUpgradeAnimationProperties`、`UpdateIdleAnimation` 都读它）。新类型自带 `upgrade,first/second` 时站姿落在 `Stand Upgrade First/Second`，熊/恶魔这类形态落在 `Stand Alternate`。
-- **Launcher**：`GameCore/L3_Simulation/Simulation/Configuration/TechTree.cs:374` 已经把 `UnitFunc` 的 `Animprops` 读进 `UnitFuncRow.AnimationProperties`（升级动画够用），但 `UnitType` 没有这个字段，`Src/Units/Unit.Compat.cs:204` 的 `Unit.AnimationProperties` 始终为空（只有 UI 的 `PortraitAnimator` 在读），所以 `Play("Stand")` 只能选主标签那套。
-- **玩家可见**：主基地升级完，新建出来的城堡站姿是普通 `Stand`；德鲁伊变熊后待机与行走也不是模型给熊准备的 `Alternate` 变体。
-- **要做**：`Animprops` 一并读进 `UnitType`，单位创建与变形时写进 `Unit.AnimationProperties`；`AnimationTagCache` 已经在吃这个集合，接上即可。
-
-### 55. 每次变形都补一颗 Polymorph 烟，客户端只有变形术有
-
-- **客户端**：变形术那团烟是技能数据里的目标特效，由技能系统在命中时播；`Open-Warcraft3_Wiki` 全仓没有 `PolyMorphDoneGround` 的硬编码。
-- **Launcher**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:552-554` 在 `RebuildMorphModel` 里无条件 `AddSpecialEffect(PolyMorphDoneGround)`，德鲁伊变熊、恶魔变身、凤凰变蛋都会冒，时机还跟着重建走。
-- **玩家可见**：变熊、变恶魔这类原版没有烟的变化也爆一团黄烟，而且是变形结束（1.5 秒后）才冒，不是起手那一下。
-- **要做**：烟交回技能层按技能数据的目标特效播，重建路径不再硬编码。
-
----
-
-## 模块五 特效与声音
-
-> MDX 事件音、音频空间、声部管理。
-
-> **复核评价**：模块名叫「特效与声音」，正文 25–28 四条全是音频，没有一条特效。上一版里那条「粒子参数是待机帧快照」并没有修好：`Extract/src/Core/Tools/ModelBundle.cs:1996-2001` 的速度、纬度、重力、宽、长、可见度仍走 `SnapshotValue(..., idle, ...)`，取的是待机帧单值，运行时也不随动画帧更新（Launcher 侧没有任何 `ParticleProcessMaterial` 驱动）。同一批里「512 上限」和「粒子吃雾」已经落地（`amount` 现在夹在 8..20000，`:2296`；`war3_particle.gdshader:4` 已引 `atmosphere.gdshaderinc`、`:91` 调 `war3_apply_fog`），只剩「参数随帧变化」这一半悬着。建议按收尾规则补一条 51 号，否则这一层等于被跳过了。
 
 ### 25. 缺 AnimSounds 表，单位死亡喊的是「Yes」
 
