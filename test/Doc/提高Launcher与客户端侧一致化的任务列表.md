@@ -71,35 +71,11 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 25. 缺 AnimSounds 表，单位死亡喊的是「Yes」
+---
 
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:29-31` 把 `UnitAckSounds / UnitCombatSounds / AnimSounds` 合进同一张 ack 表，死亡与攻击音由 MDX 事件经 `AnimLookups → AnimSounds` 解析。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:44-48` 只 Load 5 张表，没有 `UISoundInfoAnimSounds`（生成的表其实存在：`Generated/Tables/UISoundInfoAnimSounds.g.cs`）；`War3UnitSoundset.cs:21-27` 用 `soundName + kind` 拼 label，`Scenes/War3GameScene/Presentation.cs:354-362` 死亡路径带 `fallback = "Yes"`。
-- **玩家可见**：每个单位被击杀时喊一声「Yes / 遵命」，全场听不到死亡音，脚步与整理类动画音效一并丢失。
-- **要做**：补一行 `LoadTable("UISoundInfoAnimSounds")`，死亡路径去掉 `Yes` 兜底。
+## 模块五 特效与声音
 
-> **执行结论（Launcher5，已修复，待合并）**：
-> - **定位**：`Generated/Tables/UISoundInfoUnitAckSounds.g.cs` 里 `Footman` 只有 `What / Pissed / Ready / Warcry / Yes / YesAttack` 六行，没有 `FootmanDeath`；这条只存在于 `AnimSounds`（`FootmanDeath\tFootmanDeath.wav\tUnits\Human\Footman\`）。`PlayVoice(unit,"Death")` 拼出 `FootmanDeath` 查不到，再走 `fallback="Yes"` 取到 `FootmanYes`，就是玩家听到的那声「遵命」。
-> - **补表安全**：脚本比过三张表的键，ack 1155 / combat 60 / anim 593 条，**无同名**，加载 AnimSounds 只新增条目，不会改动现有 What/Yes/Combat 的解析结果；顺序按客户端 `UnitAckSounds → UnitCombatSounds → AnimSounds`，同名覆盖规则也就一致。
-> - **改动**：`War3SoundTables.Load` 补 `LoadTable("UISoundInfoAnimSounds")`；`Presentation.PlayVoice` 删掉 `fallback` 参数与回落分支，`Melee.OnUnitDied` 与 `Production` 两处 Ready 调用同步去掉 `null` 实参（Ready 原本就传 null，行为不变）。净改动 3 文件 5 行。
-> - **验证**：`--creep-probe` 无头跑 (4)Turtle Rock，步兵阵亡日志为 `[VOICE] hfoo FootmanDeath FootmanDeath.wav`（修复前同一行会落空并回落 `FootmanYes`）。另把五族死亡标签逐条打印过，`FootmanDeath / PeasantDeath / GruntDeath / AcolyteDeath / ArcherDeath` 都解析到具体 wav 且 `ResourceLoader` 能读到。音效条目 2088（其中 AnimSounds 593 行）。
-> - **玩家侧验证**：进任意 melee 图，拉步兵跟野怪对砍，打死一个听死亡音；建筑完工与训练完成仍是原来的 Ready 语音，没有被改动影响。
-> - **脚步这半已由 57 收掉**：`SND` 事件链补上后，模型自带的死亡/攻击/工作音都会响；脚步不是 SND 而是 `FPT` 前缀事件，客户端也不解析，保持忽略。详见第 57 条。
-
-### 26. DistanceCutoff 解析了但没用，半个地图外都能听见伐木声
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:225-229,290-294` 用 `DistanceCutoff` 做「超出不播」的硬门，`maxDistance` 只作衰减终点。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3SoundTables.cs:26,85` 解析了 `DistanceCutoff`，全仓再无读取；`War3UnitSound.cs:84-87` 只把 `MaxDistance` 传给 `AudioStreamPlayer3D.MaxDistance`。
-- **玩家可见**：以伐木音为例（表值 Min 600 / Max 10000 / Cutoff 2100），客户端 2100 外听不到，Launcher 要到 10000 才静音，在自己基地能听到半个地图外的伐木、交战、施法。
-- **要做**：`Start` 前按 `DistanceCutoff` 做一次距离门。
-
-> **执行结论（Launcher5，已修复，待合并）**：
-> - **定位**：`War3AudioSystem.Start` 整条路径没有任何距离判断，只有 Godot 的 `UnitSize/MaxDistance` 衰减；`War3SoundTables.Entry.DistanceCutoff` 解析出来后确实无人读取，`War3UnitSound` 的 `Play3D / PlayLooping / PlayOneShot` 只传 `MinDistance / MaxDistance`。另有一个前置缺口：Launcher 连「监听点」这个概念都没有，所以无从比较。
-> - **改动**：`War3AudioSystem` 补 `UpdateListener(position)` 与 `WithinListenerDistance`（平方距离比较），`Start` / `Play3D` 末尾加 `cutoffDistance` 参数，`Start` 里按客户端口径 `gate = cutoff > 0 ? cutoff : maxDistance`，只对定位播放生效；`War3UnitSound` 三条定位播放把 `Entry.DistanceCutoff` 传下去；`Lifecycle._Process` 每帧喂 `_camera.Position` 给听者。共 3 文件，`War3AudioSystem` +21、`War3UnitSound` +6/-3、`Lifecycle` +1。
-> - **验证**（临时探针按 key 去重打印被挡的音，跑完已撤）：`[AGATE] 挡 AxeMediumChopWood 距离 2109 门 2100`——正是本条举的例子（表值 Min 600 / Max 10000 / Cutoff 2100），改前要到 10000 才静音。另两档：`PlaceBuildingDefault 距离 10938 门 10000`（这条行里没有 cutoff，按客户端口径退回 maxDistance）、`Aren / Arst 距离 5202 / 12511 门 900`（法术 fallback 走程序化定义，同样按 maxDistance 兜底）。近处不受影响：`Repair`、`BuildingConstructionLoop`、`PlaceBuildingDefault` 照常播。
-> - **监听点位置**：现在用相机位置，与 Godot 自己的 3D 听者一致，门和玩家实际听到的衰减对得上。第 27 条会把听者挪到镜头目标点并挂 `AudioListener3D`，届时这里跟着改成同一个点，两条要一起看。
-> - **未做**：门只在 `Start` 时判一次，已经在播的循环音不会因为镜头拉远而中断，客户端同样只在建声部时判，保持现状。
-> - **玩家侧验证**：开一局，镜头放在自家基地能听到自己的砍树、建造、交战音；把镜头拖到地图另一角，远处的砍树与交战音不再响（改前 10000 距离内都听得见）。
+> MDX 事件音、音频空间、声部管理。
 
 ### 27. 3D 听者绑在相机上，客户端放在镜头目标点
 
@@ -114,21 +90,6 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:178-187` 按 `SoundName` 标签去重。
 - **玩家可见**：同一条 ack 的 4 个变体在同帧最多响 3 条，不同标签指向同一文件时又不去重；成群单位同帧砍树时声音厚度和客户端不同。
 - **要做**：去重键改成解析后的文件名，声部上限与抢占优先级维持现状。
-
-### 57. MDX 的 SND 事件不解析，模型自带的死亡/攻击/工作音全静音
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Configuration/War3EventObjectData.cs:59-82` 拿事件名末 4 位查 `AnimLookups.SoundLabel`，再用标签查 `AnimSounds` 行；`Game/Scenes/War3GameScene/Presentation.cs:1793-1795` 收到 `War3ModelEventKind.Sound` 就 `_audio.Play(data, position)`（Combat 通道、优先级 60）。
-- **Launcher**：`GameCore/L4_Composition/Game/Configuration/War3EventObjectData.cs:68-74` 只有 `SPL / UBR / SPN` 三个分支，`SND` 落到 `default`；`Game/Rendering/ModelEventEmitter.cs:131-136` 拿到 `Unknown` 直接 `continue`。所以 `Footman.mdx` 的 `SNDXDFOO`（死亡）、`Rifleman.mdx` 的 `SNDXKRIF`（攻击）、`peasant.mdx` 的 `SNDXAREP`（工作）从来不发。死亡音只能靠 `PlayVoice(unit,"Death")` 拼 `SoundSet + "Death"` 顶替。
-- **玩家可见**：模型自带的声音事件全静音；死亡音是合成出来的，与模型事件指向不同文件时对不上；这条一接上，合成死亡音还会与模型事件各播一次同一条。
-- **要做**：补 `SND` 分支（`AnimLookups → AnimSounds`），`HandleModelEvent` 播 `War3ModelEventKind.Sound`；删掉合成的死亡语音，避免与模型事件重复。
-
-> **执行结论（Launcher5，已修复，待合并）**：
-> - **事件名形状先量过**：跑 `--headless` 把模型的 `war3_model_events` 元数据打出来，`SND` 事件都是 8 字符（3 位前缀 + 1 位分隔 + 4 位键），如 `SNDXFDFR`、`SNDXDPES`、`SNDXKRIF`。注意脚步不是 SND：`Footman.mdx` / `peasant.mdx` / `Grunt.mdx` 里是 `FPTxFBL1 / FPTxFBR1`（FPT 前缀），客户端同样不解析 FPT，所以 FPT 保持忽略。第 25 条里「脚步一并丢失」这半句是误判，脚步音来自模型的 SND 变体（`SNDXFDFR → DeepFootstep`），不是 FPT。
-> - **改动**：`War3EventObjectData` 加 `SoundLabel` 字段与 `ResolveSound`（`AnimLookups.AnimSoundEvent → SoundLabel → AnimSounds.SoundName`，同时拼出 `Resource` 供日志核对），`ResolveDefinition` 加 `"SND"` 分支；`Presentation.HandleModelEvent` 加 `War3ModelEventKind.Sound` 分支走新增的 `PlayModelEventSound`（`War3SoundTables` 取行 → `War3UnitSound.Play3D`，Combat、60，与客户端同通道同优先级）。
-> - **重复问题**：模型 Death 序列的 `SNDXDFOO` 与合成路径 `SoundSet+"Death"` 指向同一个 `FootmanDeath.wav`，两条都留着会各播一次。客户端只有模型这一路（`Lifecycle.cs:585` 那一路是英雄阵亡播报 `HeroDiesSound`，不是单位语音），所以删掉 `Melee.OnUnitDied` 里的 `PlayVoice(unit,"Death")`，`PlayVoice` 只剩训练完工的 Ready。
-> - **验证**（`--creep-probe --time=0.15`，无头）：`[AUDIO] 播放 DeepFootstep`、`RiflemanAttack1`、`Repair`、`FootmanDeath` 各就位；`FootmanDeath` 全程只播 1 次（改前模型事件接上会播 2 次）。逐条核对：`FDFR→DeepFootstep`、`KRIF→RiflemanAttack1`、`AREP→Repair`、`DFOO→FootmanDeath`、`DPES→PeasantDeath`、`DGLD→GoldMineDeath`，标签都能在 `AnimSounds` 命中实际 wav。
-> - **顺带确认**：`SNDXAREP` 在 `Stand Work`、`Stand Work Gold`、`Stand Work Lumber` 三个序列里都有，是通用工作音，采矿/伐木播它不算选错动画。
-> - **玩家侧验证**：进 melee 图，让步兵走动听脚步、砍野怪听攻击音、农民敲建筑听工作音、打死一个单位听死亡音；每种只响一次。
 
 ---
 
