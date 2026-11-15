@@ -39,25 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 21. 变形不播 Morph 序列，直接销毁重建模型
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:210-251` 对变形技能置 `FinishMorphAnimation`，用 `Advance(dt, holdAtEnd: true)` 把 `Morph` 播到末帧再切形态。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:478-515` `OnUnitMorphed` 直接 `unit.View.Root.QueueFree()` 后按新类型重建节点，再补一个 `PolyMorphDoneGround` 特效。
-- **玩家可见**：德鲁伊变熊、石像鬼变毁灭者、剑圣分身都是模型瞬间替换加一团烟，没有原版的 Morph 过渡帧，过渡期间高度、光环、队伍色会跳。
-- **要做**：`UnitSceneComponent.SelectSequence` 已支持 `MORPH` 主标签，变形路径改为先播完再重建。
-
-> **执行结论（Launcher1，已提交，待合并）**
->
-> 变形不再瞬间换模型：`OnUnitMorphed`（`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:473-503`）先让旧模型的视图把 `Morph` 播一遍，播满片段时长后才走 `RebuildMorphModel`，实例化、位置/朝向/选中状态、`PolyMorphDoneGround` 烟雾与节点命名都沿用原来的重建代码。模型没有 `Morph` 序列（羊、野猪、民兵这类换的是别的模型）时和以前一样立刻重建，代码路径不变。
->
-> 主/副标签和客户端一致：正向变形取 `Morph`，反向取 `Morph Alternate`。客户端这一层读的是源形态的 `animProps`（`Open-Warcraft3_Wiki` 的 `UpdateCastAnimation` 置 `FinishMorphAnimation` 后由 `UpdateFinishingMorphAnimation` 播到末帧），而 Launcher 没有物编 `animProps` 管线（`UnitType` 里没有这个字段，`Unit.AnimationProperties` 只被 `RuntimeDefendAbility` 写过），所以改用变形方向表达同一件事：`World.UnitMorphed` 事件加了一个 `reverseForm` 参数（`Src/World/World.Morph.cs:19`），`BeginMorph`/`ReplaceType`/凤凰蛋传 false，`EndMorph` 传 true，订阅点同步成 `OnUnitMorphed(Unit, bool)`（`Lifecycle.cs:367`）。模型的 Morph 变体名与形态一致，所以这条在兽族/暗夜/恶魔变身这些同模型换形态的技能上等价于客户端读 `Alternate`。
->
-> 过渡期新增门禁 `UnitSceneComponent.MorphTransitionActive`（`Game/Presentation/UnitSceneComponent.cs:482,498`）：`Play` 只放行 `Death`/`Decay`/`Dissipate`，World 各处的 `Play("Stand"/"Walk"/"Stand Work")` 不会把 Morph 打断，死亡则直接结算重建、按 Death 播放。每帧推进在 `Scenes/War3GameScene/Animation.cs:25-43`（`UpdateMorphTransition`，随 `UpdateUnitAnimation(float frame)` 从 `Lifecycle.cs:753` 按渲染帧传入 delta）；`OnUnitRemoved` 会清掉该单位挂起的过渡。连续变形（同一个单位在过渡里再变一次）先把上一次结算掉再起播。
->
-> 实测（`--morph-probe`，`(4)Turtle Rock.gmap`）：恶魔变身 `Edmm 播 Morph 1.50s 后重建模型`，同一帧打印的模型名仍是源模型 `Edem_115`、动画 `Morph`，1.5 秒后才出现 `Edem 重建模型`；变身到期走反向，`Edem 播 Morph Alternate 1.47s`。德鲁伊变熊 `edcm 播 Morph 1.50s`，变回 `edoc 播 Morph Alternate 1.50s`，中间模型名一直是 `morph_edcm_2`，说明重建确实发生在播完之后。妖术变羊（`npig` 无 `Morph`）仍是即时重建。`--state-probe` 全量自检只剩 `utod 研究项` 一项不符，改动前就存在；变形/形态相关 8 项全过。
->
-> 顺带记两处没动的：物编 `animProps` 没进 `Unit.AnimationProperties`，所以熊形态的待机仍是 `Stand` 而不是 `Stand Alternate`（外观层问题，另立任务）；`PolyMorphDoneGround` 现在跟着重建时机走，客户端那层并不生成它，属于既有差异。
-
 ### 22. 主基地升级播的是 Birth，不是 Birth Upgrade First/Second
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:306-320` 用 `production.Percent / 100f` 加 `ResolveUpgradeAnimationProperties(目标类型)` 读 `animProps`（`htow→hkee` 得 `upgrade,first`），命中 `Birth Upgrade First`。
@@ -103,6 +84,20 @@
 - **Launcher**：`Launcher/Src/Units/Unit.Slows.cs:23` 减速存在独立的 `List<SlowSource>`，与 Buff 是两张表，也没有魔法/物理之分；`RemoveImmunityEntryBuffs` 只扫 Buff，进魔免速度照旧。
 - **玩家可见**：山丘之王被霜冻减速追着打，开天神下凡后客户端的移速立刻恢复，Launcher 还是慢吞吞走不动。
 - **要做**：给减速来源打魔法/物理标记，进魔免只清魔法那一类。
+
+### 54. 变形后的形态不切 Alternate 序列，待机还是主标签那套
+
+- **客户端**：物编 `animProps` 进 `Unit.AnimationProperties`，`UpdateIdleAnimation` 与 `SelectSequence` 按它带 `Alternate` 标记取序列，熊形态、恶魔形态的待机与行走都走模型里的 Alternate 变体。
+- **Launcher**：`UnitType` 里没有 `animProps` 字段，`Src/Units/Unit.Compat.cs:204` 的 `AnimationProperties` 一直是空的（只有 UI 的 `PortraitAnimator` 在读），所以变形后 `Play("Stand")` 仍按主标签选序列。
+- **玩家可见**：德鲁伊变熊之后，待机与行走演的是主标签那一套，不是模型给熊形态准备的 Alternate 变体。
+- **要做**：把物编 `animProps` 导出进 `UnitType`、写进 `Unit.AnimationProperties`，让序列选择按客户端同口径吃这个标记。
+
+### 55. 每次变形都补一颗 Polymorph 烟，客户端只有变形术有
+
+- **客户端**：变形术那团烟是技能数据里的目标特效，由技能系统在命中时播；`Open-Warcraft3_Wiki` 全仓没有 `PolyMorphDoneGround` 的硬编码。
+- **Launcher**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:552-554` 在 `RebuildMorphModel` 里无条件 `AddSpecialEffect(PolyMorphDoneGround)`，德鲁伊变熊、恶魔变身、凤凰变蛋都会冒，时机还跟着重建走。
+- **玩家可见**：变熊、变恶魔这类原版没有烟的变化也爆一团黄烟，而且是变形结束（1.5 秒后）才冒，不是起手那一下。
+- **要做**：烟交回技能层按技能数据的目标特效播，重建路径不再硬编码。
 
 ---
 
