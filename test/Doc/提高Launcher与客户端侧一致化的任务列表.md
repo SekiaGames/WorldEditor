@@ -39,32 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 14. 电脑不逃跑，工人被打反而原地还手
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Components/Ai.cs:172,183-198,252-258` 受击先 `TryComputerFleeFrom`（英雄低于 200 血或 1/3、普通单位低于 150 血反向跑 200 码）再 `TryFleeFrom`，工人被排除在自动反击之外只逃跑（`Src/Orders/InjuryFleeOrder.cs`）。
-- **Launcher**：无对应实现（全仓 `flee` 只出现在生成的数据列里），最接近的是 `Src/World/World.Targeting.cs:140-147 EngageTarget`，纯锁定开打。
-- **玩家可见**：残血的大法师站着被补掉；采木的苦工被摸一下就放下工作回头对砍，更容易送掉工人。
-- **要做**：补 `InjuryFleeOrder` 与受伤逃跑判定，工人排除自动反击。
-
-> **执行结论（Launcher4）**：已完成，任务保留待合并。
->
-> - **定位**：Launcher 侧的受击反应原本只挂在 `World.WeaponSystem.cs` 的 `FireWeapon` 里，一行 `if (target.AutoAcquire && target.Target == null) EngageTarget(target, unit)`，只在近战、非弹道命中时生效，弹道与法术伤害完全不触发；也没有任何「残血后退」的分支，`flee` 只出现在生成的数据表列里。工人的表现来自这条钩子：空闲工人在索敌范围里被摸一下就把 `Target` 指向攻击者，随后 `Step` 走正常攻击分支放下活儿回头打。
-> - **改动**（`Launcher4`）：
->   - 新增 `Src/Orders/InjuryFleeOrder.cs`（与客户端同名同路径），持 `Destination` / `Threat`。
->   - 新增 `Src/World/World.InjuryFleeMembers.cs`：`ReturnFire` 是受击反应入口，顺序照客户端 `Ai.ReturnFireCore` —— 先 `TryComputerFleeFrom`，再工人 `TryWorkerFleeFrom` 后直接返回（不进反击），其余才 `EngageTarget`；还有 `StepInjuryFlee` / `EndInjuryFlee` 负责撤离推进与复位。
->   - `Src/World/World.DamageMembers.cs`：`DealDamage` 在扣血前调 `ReturnFire`（与客户端 `Health` 在 `DebitDamageLife` 之前派发 `ReturnFire` 同序），反伤包、`Source` 为空、同阵营都跳过。
->   - `Src/World/World.WeaponSystem.cs`：删掉旧的近战专用反击钩子，避免弹道伤害两套反应。
->   - `Src/World/World.cs`：`Step` 在引导判定之后、工作订单之前接 `StepInjuryFlee`，撤离期间不索敌、不施法、不接管工作订单。
->   - `Src/Units/Unit.cs` 加 `InjuryFlee` 字段；`Src/Units/Unit.Lifecycle.cs` 的 `EnterDeath` 清空它，避免复活后走去旧撤离点。
->   - `GameCore/L4_Composition/Game/Scenes/War3GameScene/Ai.cs`：集火、残血撤退、英雄护送、守家阵型、买兵派单五个节流循环都跳过正在撤离的单位，不让 AI 每 2~3 秒把撤离目标改掉。
->   - `Lifecycle.cs` 注入 `ComputerPlayerQuery`，实现放在 `War3GameScene.Players.cs` 的 `IsComputerPlayer`：非本地观察者、且该座位开着内务 AI。野怪与中立玩家的排除放在 `TryComputerFleeFrom` 里（`Player >= MeleeRules.PlayerNeutralHostile` 直接返回），对应客户端野怪没有 melee-AI context、逃跑位恒为 0。
->   - `GameCore/L4_Composition/Game/Diagnostics/CombatProbe.InjuryFlee.cs`：12 条断言锁住行为。
->   - **与第 13 条的合并点**：第 13 条在 Launcher3 侧也加了 `World.ComputerPlayerQuery`（`Src/World/World.cs:33`，注入写作 `id != ViewPlayer && Slot(id)?.Ai == true`）。两份合并时保留一处即可 —— 保留 Launcher3 在 `World.cs` 的定义、删掉 `World.InjuryFleeMembers.cs:14` 那份，注入侧保留任意一行即可；野怪排除已由 `TryComputerFleeFrom` 自己做，不依赖这个 hook。另外第 13 条结论里「受击方自己回头反击仍只走原 `AutoAcquire` 路径（`World.WeaponSystem.cs:122`）」在合并后不再成立：那条钩子已经被 `ReturnFire` 取代并挪进 `DealDamage`，两条的受击入口现在是同一个位置，`CallForHelp` 与 `ReturnFire` 并排调用即可。
-> - **判定口径**：英雄 `Hp < 200` 或 `Hp/MaxHp < 1/3`、普通单位 `Hp < 150`，与客户端 `NativeHeroCriticalLife` / `NativeHeroCriticalLifeRatio` / `NativeUnitCriticalLife` 一致；撤离距离 `max(200, 攻击者射程 - 当前距离 + 12)`，即至少离开攻击者射程一点；目的地按 0/±0.6/±1.2/±1.8 七个角度挑第一个可站立且寻路可达的点，与 `TickAiKite` 同一套挑点办法；走完或被打断（不能移动、定身、寻路失败）即清状态，随后恢复索敌。
-> - **工人**：受击不再进 `EngageTarget`；只在「完全空闲」（无目标、无移动、无采金/伐木/建造/修理/送资源/跟随/拾取/据守/巡逻）时朝背离方向走一步约一个移动速度的距离，与客户端 `Ai.TryFleeFrom` 的无当前订单条件一致。采集中、建造中的工人跟客户端一样继续干活，不会被打断。
-> - **验证**：`dotnet build` 0 错（沿用原 4 条既存警告）；`--combat-probe` 全部通过；`--state-probe` 12 条撤离断言全过，整体只剩 1 条与本次无关的既存失败（`utod 研究项=4 期望 4 实际 2`，改前改后一致，属导出数据问题）；`--play=<(4)Turtle Rock.gmap> --aggro` 跑动无异常。
-> - **已知取舍**：Launcher 没有 `COrder` 继承体系，`InjuryFleeOrder` 只承载目的地与威胁，不携带「被打断的订单」去恢复 —— 撤离结束后靠自动索敌回到战斗，客户端的 `_resume` 恢复攻击订单在这里表现为重新咬住最近的敌人。电脑逃跑开关不按 `canFlee` 物编列（Launcher 未解析该列，与 `Ai.CanFlee` 默认 true 等价），只按「是否电脑托管」判定。
-
 ### 15. 工地从 1 点血起造，任何一次攻击都能一击拆掉
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:37,45,62` 工地初始血量是 `MaxLife × startLifeFraction`（默认 0.1），随进度从 10% 涨到 100%。
