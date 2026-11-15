@@ -108,6 +108,14 @@
 - **玩家可见**：每个单位被击杀时喊一声「Yes / 遵命」，全场听不到死亡音，脚步与整理类动画音效一并丢失。
 - **要做**：补一行 `LoadTable("UISoundInfoAnimSounds")`，死亡路径去掉 `Yes` 兜底。
 
+> **执行结论（Launcher5，已修复，待合并）**：
+> - **定位**：`Generated/Tables/UISoundInfoUnitAckSounds.g.cs` 里 `Footman` 只有 `What / Pissed / Ready / Warcry / Yes / YesAttack` 六行，没有 `FootmanDeath`；这条只存在于 `AnimSounds`（`FootmanDeath\tFootmanDeath.wav\tUnits\Human\Footman\`）。`PlayVoice(unit,"Death")` 拼出 `FootmanDeath` 查不到，再走 `fallback="Yes"` 取到 `FootmanYes`，就是玩家听到的那声「遵命」。
+> - **补表安全**：脚本比过三张表的键，ack 1155 / combat 60 / anim 593 条，**无同名**，加载 AnimSounds 只新增条目，不会改动现有 What/Yes/Combat 的解析结果；顺序按客户端 `UnitAckSounds → UnitCombatSounds → AnimSounds`，同名覆盖规则也就一致。
+> - **改动**：`War3SoundTables.Load` 补 `LoadTable("UISoundInfoAnimSounds")`；`Presentation.PlayVoice` 删掉 `fallback` 参数与回落分支，`Melee.OnUnitDied` 与 `Production` 两处 Ready 调用同步去掉 `null` 实参（Ready 原本就传 null，行为不变）。净改动 3 文件 5 行。
+> - **验证**：`--creep-probe` 无头跑 (4)Turtle Rock，步兵阵亡日志为 `[VOICE] hfoo FootmanDeath FootmanDeath.wav`（修复前同一行会落空并回落 `FootmanYes`）。另把五族死亡标签逐条打印过，`FootmanDeath / PeasantDeath / GruntDeath / AcolyteDeath / ArcherDeath` 都解析到具体 wav 且 `ResourceLoader` 能读到。音效条目 2088（其中 AnimSounds 593 行）。
+> - **玩家侧验证**：进任意 melee 图，拉步兵跟野怪对砍，打死一个听死亡音；建筑完工与训练完成仍是原来的 Ready 语音，没有被改动影响。
+> - **未覆盖，建议另开一条**：MDX 的 `SND` 事件仍未解析——`War3EventObjectData.ResolveDefinition` 只有 `SPL/UBR/SPN` 三个分支，`ModelEventEmitter` 拿到 `Unknown` 直接跳过。所以脚步、`Stand Work` 这类由动画事件触发的音效依旧不响，玩家可见里「脚步与整理类动画音效一并丢失」这半条仍在。它走的是 `AnimLookups → AnimSounds` 的事件链，跟本条只补查表的改动不是一处。
+
 ### 26. DistanceCutoff 解析了但没用，半个地图外都能听见伐木声
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:225-229,290-294` 用 `DistanceCutoff` 做「超出不播」的硬门，`maxDistance` 只作衰减终点。
@@ -213,6 +221,16 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/War3LoadingScreenRenderer.cs:292-312` 四象限按 `DesignHeight * 0.5f` 等分，没有背景模型路径，`:161-168,309` 候选不足 4 张时只画深色底，没有 `FULL` 兜底；`:510-518` 的 `DumpLayout` 却按 `2f/3f` 打印。
 - **玩家可见**：1024×768 设计画布下，客户端上带 512 下带 256（天地 2:1），Launcher 上下各 384，地平线被压到正中，四张图上下各被拉压约三成；单张 loading 图的地图在 Launcher 上是近黑底加文字。更麻烦的是调试日志会显示「已对齐」，掩盖真实差异。
 - **要做**：绘制改 2/3 分带，补背景模型与 `FULL` 兜底，`DumpLayout` 改为打印实际绘制值。
+
+> **执行结论（Launcher7，已修，待合并）**：
+> - **定位**：三件事是同一处代码。`War3LoadingScreenRenderer.cs:292-312` 的 `DrawBackgroundQuads` 取 `mid = DesignHeight * 0.5f` 上下各铺 384；而四张 loading 贴图的原生尺寸是 `Loading-TopLeft/TopRight` 512×512、`Loading-BotLeft/BotRight` 512×256（`Extract/extract/UI/Glues/Loading/Multiplayer/` 实测），1024×768 设计画布下本应上 512、下 256。上带被压 0.75 倍、下带被拉 1.5 倍，接缝从 2/3 掉到正中。`CollectBackground` 只认 TL/TR/BL/BR 四个后缀，模型只给一张整图时 `_background.Count < 4` 直接落深色底，客户端 `:628-631` 的 `FULL` 那一支没有对应实现。`DumpLayout:512` 又按 `2f/3f` 打印，日志写的和实际画的对不上。
+> - **改法一（背景模型）**：`CollectModelTiles:195` 实例化 extract 导出的加载屏场景（`Load-Multiplayer-{Race}.tscn`），逐 `MeshInstance3D` 取 AABB 与材质 `base_texture`，用全表面并集把 x 轴、z 轴各自归一化到设计画布。这就是客户端 `DrawBackgroundModel:532-580` 的做法——取几何包围盒归一化整屏、每个 geoset 贴自己的图——只是 Launcher 的 UI 是立即模式绘制，把三角形换成每片 geoset 的矩形，省掉一层 3D 渲染与雾/光照依赖。对战图实测四片落在 `0,0,512,512 / 512,0,512,512 / 0,512,512,256 / 512,512,512,256`，模型自带的 2/3 分带自然还原，比例不再写死。
+> - **改法二（贴图回退）**：几何拿不到时走 `CollectTextureTiles:244`：四张齐 → `top = DesignHeight * 2f/3f`、`bottom = DesignHeight - top`（与客户端 `:621-626` 同一套算式）；否则有 `FULL` 就整幅铺（`:628-631`）；都没有才画深色底。`CollectBackground:149` 里非 TL/TR/BL/BR 的贴图归到 `FULL`（对应客户端 `:137`），四张缺位时才用硬编码文件名补位。
+> - **改法三（日志）**：`_backgroundMode` 记 `model/quads/full/solid`，`DumpLayout:563` 打印 `bg mode=` 和每片真实矩形的 `bg tile=x,y,w,h tex=WxH path=...`，删掉原来按 2/3 硬算的 `bg rects` 假日志。底部 92px 压暗条与客户端 `:725` 一致，未动。
+> - **验证**：(2)BootyBay 全流程 `OPENWC3_LOADING_DEBUG=1` 打印的四片矩形就是上面那组值；同一张图改动前后各截一次（`--shot=/tmp/loading.png@0.8`），接缝从画面正中移到 2/3，插图不再上下拉压。临时关掉几何路径跑出 `mode=quads`，打印的仍是同一组 2/3 矩形；再临时只留一张整图，`mode=full` 打印 `0,0,1024,768`。三个分支都实测过，`dotnet build` 0 错误。
+> - **复现**：`cd Launcher7 && OPENWC3_LOADING_DEBUG=1 Godot --headless --path . -- --play="../test/map_gmap/(2)BootyBay.gmap" | grep "bg "`；看画面用 `Godot --path . -- --play=../test/map_gmap/\(2\)BootyBay.gmap --shot=/tmp/loading.png@0.8`。
+> - **顺带发现（不在本条范围）**：`ResolveBackgroundModel:118` 只按 campaignBackground 查 `WorldEditData` 的 `LoadingScreens` 表；战役背景模型（`Backgrounds/Campaigns/*.glb`，14–15 片 geoset，除四张底图外还有立绘摆件）会落进几何路径，把摆件按 AABB 画成方块。Launcher 不跑战役，暂时看不到，接战役或自定义模型时再处理。
+> - **提交**：`任务37：加载屏背景按模型几何分带，补 FULL 兜底与真实布局日志`。
 
 ### 38. 加载到 100% 后多出 0.55 秒不可操作窗口
 
