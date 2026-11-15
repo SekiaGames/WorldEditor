@@ -39,21 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 17. 运输船拒载英雄，还要求乘客与船同 Player
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:44-57` `CanAccept` 只排除建筑、已在别的货舱、满 10 格、成本超容量、非同盟，不排除英雄。
-- **Launcher**：`Launcher/Src/Units/CargoTransport.cs:27` `passenger.IsBuilding || passenger.IsHero` 直接拒载，`:29` 还额外要求 `passenger.Player == holder.Player`。
-- **玩家可见**：右键点自己的飞艇装英雄，什么都不会发生，飞艇空着飞走；英雄坐飞艇偷矿、逃命这套标准打法不存在。
-- **要做**：去掉 `IsHero` 判定，同队判定改成 `AreAllied`。
-
-> **执行结论（Launcher7，已完成待合并）**
->
-> - **定位**：闸门只有一道，就是 `Launcher7/Src/Units/CargoTransport.cs` 的 `CanEnterCargo`。原 `:27` 把 `IsHero` 与 `IsBuilding` 并列拒掉，原 `:29` 用 `passenger.Player != holder.Player`。客户端 `Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:44-57` 的 `CanAccept` 只排除建筑、已在他舱、满 10 格、成本超容量、非同盟（`AreAllied` 双向），没有英雄这一条。右键链路 `War3WorldInteractionComponent.OrderAt:271` → `PlayerCommandProcessor.TransportSmart:202-207` → `LoadCargo` → `CanEnterCargo` 全在这道闸后面。被拦后 `TransportSmart` 返回 0、不设交接提示，右键落到同一个 `if (target != null)` 块后面的攻击与跟随分支：己方飞艇既打不了，最后走 `Follow`，英雄贴着飞艇跑——所以现场看到的是「点了飞艇，人跟着走但没上去」，不是完全无反应。
-> - **改动**：`CanEnterCargo` 去掉 `passenger.IsHero`；同队判定换成 `_world.AreAllied(holder, passenger)`（`World.IsAllied` 内部先判同玩家再查 `Allied` 委托，等价客户端的双向同盟判定）。地洞那条 `GarrisonOnly` 分支保留：客户端 Abun 的准入是 `Abtl` 指定乘客类型 + 同盟，用 `AreAllied` 后两个载具共用同一口径，没有额外放宽。
-> - **验证**：`GameCore/L4_Composition/Game/Diagnostics/CombatProbe.Forms.cs` 的 `CheckTransportCargo` 从 6 项扩到 17 项，覆盖「敌对拒载 / 英雄可上船 / 同盟可上船 / 英雄入舱后退出模拟 / 全卸载后英雄与步兵都回场 / 货舱清空」。`dotnet build Launcher.csproj` 0 错误；`Godot --headless --path . -- --state-probe` 这 17 项全 OK。改动前同一命令另有一项既有 FAIL（`utod 研究项=4 期望 4 实际 2`），与运输船无关。
-> - **遗留（不在本条范围，需要另立条目）**：英雄入舱后按 Launcher 的装载口径从 `World.Units` 摘除（`UnitList.Remove:32` 同时把 `Removed` 置真），`World.UiMembers.EnsureUiMembers:29-34` 据此重建英雄候选，左上角英雄栏当场少掉这个英雄头像，卸载后回来。客户端装载乘客时保留在 `Units` 里、只摘空间索引，头像不消失。要对齐得决定「载具内单位算不算英雄栏候选」，属 UI 归属问题，和本条的准入判定是两件事。
-> - **复现命令**：`cd Launcher7 && dotnet build Launcher.csproj && Godot --headless --path . -- --state-probe | grep 船`。
-
 ### 18. 进入魔免不清洗身上的魔法 Buff，驱散也只看正负极性
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:21,28-39` 进入魔免时 `RemoveImmunityEntryBuffs` 移除正负两性的魔法 Buff（光环与限时生命除外）；`Src/Skills/AvatarBuff.cs:12-14` 天神下凡声明 `Magic=false, AutoDispel=false`；驱散侧按 `buff.Magic && buff.AutoDispel` 过滤。
@@ -334,6 +319,13 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/UI/QueueIconRowFrame.cs:30-31` 换成 `SolidColorFrame(0,0,0,.55)`；`GameHudScreen.cs:890-892` 框选是绿色 `(0.35,0.85,0.35,0.16)` 且无描边；`UI/SelectionGroupFrame.cs:73,80` `BackgroundColor = Vector4.Zero`；`UI/PortraitFrame.cs:59-68` 没有无敌判断。
 - **玩家可见**：建筑生产时出现一块纯黑矩形；框选是绿色半透明，和客户端的蓝色带亮边一眼可分；多选头像下的血条没有黑底，亮地形上看不清；无敌单位仍显示「100/100」。
 - **要做**：四处按客户端取值，队列底板走皮肤。
+
+### 52. 英雄上飞艇或钻进地洞后，左上角英雄栏少一个头像
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:115` 装载只把乘客加进 `_passengers`，仍留在世界单位表里；`Src/Core/World.UiMembers.cs:24-41` 的英雄候选按这张表重建，上船或进洞时头像、选中面板都还在。
+- **Launcher**：`Launcher/Src/Units/CargoTransport.cs:79` 装载时 `_world.Units.Remove(passenger)`，`Src/World/World.UiMembers.cs:24` 的英雄候选按同一张表重建，头像当场消失，卸载才回来。
+- **玩家可见**：把英雄装上飞艇偷矿或塞进地洞，左上角英雄栏空一格、编队里也点不到这个英雄，看着像丢了单位。
+- **要做**：装载不从公共单位表摘人（照客户端只摘空间索引），或者让英雄候选把货舱里的英雄算回来。
 
 ---
 
