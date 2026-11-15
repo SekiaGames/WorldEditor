@@ -234,3 +234,53 @@
 | **B6** | `L4/Game/UI`（FDF）与现有 `HudFdfUi` 合并 | 86 / 17267 | B5 的交互层 | HUD 帧与客户端逐项一致 |
 
 顺序依据的是第十节的依赖矩阵，不是目录编号：L0–L2 已结清，前沿在 L3；B2 是分水岭，它决定 Launcher 的模拟层是「客户端那套」还是「两套并存」，在它之前动 L4 会被反复推翻。
+
+---
+
+## 十二、Launcher 自有文件合理性
+
+搬客户端代码时，Launcher 侧有一批同名或同职责的自有文件。判定它们留不留，用三条：
+
+1. **纯逻辑、客户端有 C# 等价实现** → 用客户端的，删 Launcher 的；
+2. **数据/资源加载**（Launcher 走 C# 生成的表、pck、gmap，客户端读 SLK/MPQ）→ 保留 Launcher 的加载方式，但**语义与字段必须跟客户端对齐**，不能各算各的；
+3. **表现/渲染**（颜色、光效、材质、相机）→ 保留 Launcher 版，Godot 平台自行判断；
+4. **客户端靠 JASS 实现、无 C# 等价** → 必须自研，保留。
+
+### 12.1 `L3/Simulation/Configuration` 里 10 个自有文件
+
+| 文件 | 行数 | 做什么 | 客户端对应 | 判定 |
+|---|---|---|---|---|
+| `MeleeRules.cs` | 256 | 八步 melee 开局模板（`Melee*` 函数的 C# 版） | **无**，客户端靠 `Blizzard.j` | 保留自研（属第 4 条） |
+| `ItemCatalog.cs` | 190 | `ItemType` 模型 + 读 ItemData 表 | `ItemTypeData`（`War3CustomObjectData.cs`） | **模型重复** → 应改用客户端的 `ItemTypeData`，Launcher 只保留 C# 读表这一段 |
+| `AbilityCatalog.cs` | 321 | `AbilityType` 模型 | `AbilityTypeData` | 同上 |
+| `TechTree.cs` | 537 | `UnitFuncRow`：建造/训练前置要求 | `UnitTypeData` 读 `Requires`/`Requiresamount`/`areq`/`arqa`（`War3ObjectData.cs:701`） | **模型重复** → 同上 |
+| `MiscRules.cs` | 73 | 生成表取值器（`Misc.DamageBonusNormal` 之类） | 无直接等价（这是 Launcher 的表加载入口） | 保留（第 2 条），但语义交给 `War3GameplayConfig` |
+| `HeroRules.cs` | 87 | `MaxLevel`/`NeedHeroXpBase`/`ExpRange`/`GrantNormalXp` 等 | `War3GameplayConfig.MaxHeroLevel`/`HeroExpRange`/`NeedHeroXPFormula*` | **纯重复** → 删，统一读 config |
+| `FogRules.cs` | 59 | 迷雾底色/暗角颜色 | 无（表现参数） | 保留（第 3 条），供 Godot 材质 |
+| `GeneratedTexts.cs` | 75 | 文本表访问 | 客户端读 `War3Formats.Text` | 保留（第 2 条） |
+| `LightningTable.cs` | 108 | 闪电束参数（`LightningData`） | `LightningData` 用法散在 `Runtime*Lightning` 与 `Src/Skills/ChainLightning` | 保留，需核对字段顺序与客户端一致 |
+| `War3Text.cs` | 128 | `|cffRRGGBB` 色码、`|n` 换行、`<AEmb,DataA1>` 占位替换 | 客户端 `War3TextMacroResolver`（`L4/Game/Audio`，已搬） | 保留，需确认两者是否重复实现同一套宏替换 |
+
+### 12.2 `Src/Units` 与 `Src/Abilities` 的 Launcher 独有文件
+
+| 文件 | 判定 | 依据 |
+|---|---|---|
+| `Unit.Inventory.cs` | **保留** | 客户端物品/背包在 JASS 层（`World.OccupiedInventorySlotsQuery` 是委托），Launcher 不跑 JASS 必须自研 |
+| `Unit.Compat.cs` / `Unit.Facade.cs` | **删** | 旧 `Unit` API 的兼容壳；客户端 `Unit` 已自带 `HasUsableInventory`、`IsHero` 等成员 |
+| `Unit.Abilities/Channel/Illusion/Morph/Ownership/Slows.cs` | **需逐个看** | 客户端把这些拆进了 `Src/Components/*` 与 `L3/Configuration/Runtime*Ability`，不是同一种切法，删之前要确认功能有落点 |
+| `Src/Abilities/UnitBuffs.cs` | **看功能落点** | 客户端 buff 模型在 `Src/Abilities/Buff.cs` + `ObjectDataBuff.cs` + `Src/Components/`，`UnitBuffs` 是 Launcher 自己的挂载容器 |
+| `Src/Abilities/{AbilityContainer,AbilityTypeObjectData,AuraBonus,RuntimeAbilityFactory}.cs` | **重复** | 客户端同职责在 `Src/Components/AbilityContainer.*`（25 个）与 `L3/Configuration/RuntimeAbilityFactory.*`，路径不同但类型同名，是 CS0101/CS0102 的主要来源 |
+
+### 12.3 `Src/Skills` 里 99 个 Launcher 独有文件
+
+客户端 `Src/Skills` 只有 42 个，且是**机制层**（暴击、闪避、光环这些通用规则），具体技能实现放在 `L3/Configuration` 的 194 个 `Runtime*Ability` 与 `SkillRegistry`/`CampaignAndAuraSkills`。Launcher 的 99 个是**按技能逐个写**的旧路径。
+
+判定不能一刀切，按三条分组：
+
+| 组 | 特征 | 处置 |
+|---|---|---|
+| A 客户端有等价实现 | 例如 `FarSight`、`DarkConversion` 在客户端 `Src/Skills/SkillRegistry.cs`、`CampaignAndAuraSkills.cs` 里 | 删 Launcher 版 |
+| B 客户端没有、Launcher 独有 | 例如 `SiphonMana`、`FingerOfDeath`，客户端全仓搜不到同名实现（可能走通用能力路径） | 先确认客户端是否用通用能力覆盖；没有就把 Launcher 版**改到新 `Ability` 契约**，不能删 |
+| C 数据/表现相关 | 例如涉及贴图、音效路径、光效的技能文件 | 保留 Launcher 版，按 Godot 处理 |
+
+> 这一组的判定要逐个做，方法和 12.1 一样：先查客户端有没有等价实现，再判它是纯逻辑还是表现。
