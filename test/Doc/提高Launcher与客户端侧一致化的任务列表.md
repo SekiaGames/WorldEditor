@@ -239,6 +239,14 @@
 - **玩家可见**：进度条满了还有半秒不能操作、没有音乐；这三帧 settle 本身说明世界刚建好的头几帧是黑的。
 - **要做**：按客户端改成同步组装、硬切进游戏；如果保留淡出，需要在文档里登记为平台差异。
 
+> **执行结论（Launcher7，已修，待合并）**：
+> - **定位**：收尾是三段串联。`War3LoadingScreenRenderer.Finish()` 原来只置 `_finishing`；`FrameSeconds` 先空转 3 帧 settle，再用 `FadeSeconds = 0.5` 把 `Modulate` 从 1 拉到 0；`Finished` 到淡出结束才为真。而 `Lifecycle.LoadingBlocked:536` 就是 `!_loadingScreen.Finished`，于是 `_Process:728` 与 `_PhysicsProcess` 在进度 100% 之后还要空转 3 帧 + 500ms，`StartPendingMusic:729` 排在后面。玩家看到的就是「条满了、半秒不动、也没音乐」。
+> - **改动**：`Finish:321` 改成硬切——进度置 1、`_finished` 立刻置真、`QueueFree` 掉 `CanvasLayer` 与自己；删掉 `FrameSeconds`、`FadeSeconds`、`_settleFrames`、`_fade`、`_remaining`（构造参数 `seconds` 只服务淡出，一并删除）；`Lifecycle._Process` 不再驱动加载屏。
+> - **为什么没做「13 个阶段全同步」**：试过，实测更差。`RenderingServer.ForceDraw()` 不派发 CanvasItem 的 `_Draw`——整段加载里 `[loading-draw]` 只出现 1 次，且是在全部阶段跑完之后；ForceDraw 只是把半成品世界画了 12 次，白费约 500ms，而 3.85 秒的加载期间窗口一帧不出、进度条不动。客户端能同步是因为 `Report` 里 `RenderCurrent()` 之后直接 `SwapBuffers()`（客户端 `War3LoadingScreenRenderer.cs:267-274`）内联出图；Godot 的 canvas 更新由主循环驱动，阻塞主线程就出不了图。因此保留「阶段之间让出一帧」（`Loading:529`，发生在加载过程中，不在 100% 之后），按平台差异处理，不计为淡出遗留。
+> - **验证**：改前从 `Finish` 到首个可操作帧是 3 帧 + 500ms；改后实测 `finish 5157ms → first frame 5170ms`，一帧 13ms。加载中截图与改动前逐字节相同（进度条、2/3 背景无回归）；加载完成后 6s 截图是正常游戏画面（HUD、小地图、单位齐全）；`(2)BootyBay` 无头跑 11 条 `[INIT]` 全出、无异常日志。
+> - **复现**：`cd Launcher7 && Godot --path . -- --play="../test/map_gmap/(2)BootyBay.gmap"`，看进度条到顶那一刻是否立刻能操作、音乐是否同时起来。
+> - **提交**：`4fce638 任务38：加载完成即硬切进游戏，去掉 3 帧 settle 与 0.5 秒淡出`。
+
 ### 39. HUD 不走 FDF 帧树，坐标是手抄常量，4 个 FDF 绑定没有生成
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/War3FdfUi.cs:38-49` 从 `ConsoleUI.fdf / ResourceBar.fdf / UpperButtonBar.fdf / InventoryCover.fdf` 装载帧树，帧引用全部走 `Generated/*.g.cs` 强类型绑定；`MeleeHudController` 在帧树上挂内容。
