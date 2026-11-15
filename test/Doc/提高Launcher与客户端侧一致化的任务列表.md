@@ -46,6 +46,17 @@
 - **玩家可见**：三个人族农民一起敲，工期是单人 1/3（客户端 1/2.2）且少付两次 15% 资源；兽族地洞、暗夜古树开工后苦工精灵应当消失进建筑，Launcher 里它们站在外面挨打，能被直接点掉。
 - **要做**：速度改 `1 + (n-1)*0.6`，补追加造价与 `StoreWorkerInside`。
 
+> **执行结论（Launcher6，提交 `046bfcb`）**：三件事都落地，另按客户端同一段代码补了暗夜古树完工吞掉小精灵。
+>
+> - **合建倍速**：新建 `Src/Abilities/ConstructionProgress.cs`，与客户端同名同位放 `ConstructionStyle` 与 `ConstructionProgress`。`ConstructionStyle.StyleOf` 按 `UnitType.Race`（human/orc/undead/nightelf）取风格，速度 `1 + (n-1)*0.6`，非人族恒 1.0，与 `ConstructionProgress.cs:85-88` 同口径。`World.MechanismMembers.TickConstruction` 的 `Mathf.Min(builders,3)` 已删。
+> - **追加造价**：`TryJoin` 按 `Math.Max(1, round(基础金木 * 0.15))` 逐人累加，`AdvanceExtraCost` 按建造进度比例扣（与客户端 `:91-116` 同一套 `_accGoldFrac` 递推，连「扣减同时缩pending」的写法也照搬，所以实扣略低于名义 15%）。资源不够时 `DropExtraBuilders` 踢掉额外农民、保留第一个。落账走 `World.TrySpendResources`，在 `Lifecycle.cs` 注入 `PlayerSlot`。
+> - **建造者入楼**：兽族/暗夜工人在 `StepBuild` 走到工地那一刻 `StoreBuilderInside`：`Hidden`、`StateMod.Pause`、`StateMod.Invulnerable`、坐标搬到建筑中心、模型 `Visible=false`；完工或取消由 `PlaceReleasedBuilder` 从 footprint 外一圈找空格放出。`Step` 开头对已入楼的建造者直接 return，`Prune` 每帧把它的 `BuildSite` 钉回工地，AI 不会把它当空闲工人捡走。暗夜建 `Classification.Ancient` 时完工走 `UnitRemoved` 移除小精灵。
+> - **顺带修的连带口**：`PlaceBuildingAt` 的非人族只派 1 个工人（客户端 `TryAttachWorker` 也只收人族追加）；`SetBuild` 改返回 bool，加入被拒的工人不再挂着建造指令；建筑死亡与取消都释放楼内建造者；`Environment.TickFog` 的模型可见性补 `unit.Hidden` 一支，否则隐藏的工人会在 0.2s 后被迷雾刷新重新显示。
+>
+> **验证**：临时探针（跑完已删）在真实 `World` 上跑 25 条断言全过：兽族苦工入楼/位置/隐藏/无敌/暂停、第二苦工被拒、单人 1.0 倍、完工放出到 footprint 外、人族三人 2.2 倍、追加金 116 木 62 登记与实扣、零资源时踢到只剩 1 人、暗夜古树吞小精灵、取消放出。`--state-probe` 848 条通过，唯一失败 `utod 研究项=4 期望 4 实际 2` 在改动前的基线上同样失败，属 Extract 数据未重导，与本条无关。
+>
+> **遗留**：`ConstructionProgress` 在 Launcher 侧是纯状态对象，不进 `Ability` 列表（Launcher 的施工由 `World` 驱动，没有对应的施工 Ability），这是与客户端唯一的结构差异，后续若要合并技能树需一起处理。
+
 ### 17. 运输船拒载英雄，还要求乘客与船同 Player
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:44-57` `CanAccept` 只排除建筑、已在别的货舱、满 10 格、成本超容量、非同盟，不排除英雄。
