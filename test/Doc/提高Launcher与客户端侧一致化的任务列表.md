@@ -39,24 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 16. 合建按人数线性 1/2/3 倍，兽族与暗夜建造者不会进建筑
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/ConstructionProgress.cs:85-88` 多人速度 `1 + (人数-1) × 0.6`（1 / 1.6 / 2.2 倍），`:217` 每多一人追加 15% 造价；`:66,233-250` 兽族、暗夜把建造者 `StoreWorkerInside`（隐藏、暂停、无敌、不可选中），完工或取消再从出口放出。
-- **Launcher**：`Launcher/Src/World/World.MechanismMembers.cs:166-170` `rate = Min(builders, 3)` 直接乘到剩余工期上，不追加费用；建造者全程站在工地边上播 `Stand Work`，不进入建筑。
-- **玩家可见**：三个人族农民一起敲，工期是单人 1/3（客户端 1/2.2）且少付两次 15% 资源；兽族地洞、暗夜古树开工后苦工精灵应当消失进建筑，Launcher 里它们站在外面挨打，能被直接点掉。
-- **要做**：速度改 `1 + (n-1)*0.6`，补追加造价与 `StoreWorkerInside`。
-
-> **执行结论（Launcher6，提交 `046bfcb`）**：三件事都落地，另按客户端同一段代码补了暗夜古树完工吞掉小精灵。
->
-> - **合建倍速**：新建 `Src/Abilities/ConstructionProgress.cs`，与客户端同名同位放 `ConstructionStyle` 与 `ConstructionProgress`。`ConstructionStyle.StyleOf` 按 `UnitType.Race`（human/orc/undead/nightelf）取风格，速度 `1 + (n-1)*0.6`，非人族恒 1.0，与 `ConstructionProgress.cs:85-88` 同口径。`World.MechanismMembers.TickConstruction` 的 `Mathf.Min(builders,3)` 已删。
-> - **追加造价**：`TryJoin` 按 `Math.Max(1, round(基础金木 * 0.15))` 逐人累加，`AdvanceExtraCost` 按建造进度比例扣（与客户端 `:91-116` 同一套 `_accGoldFrac` 递推，连「扣减同时缩pending」的写法也照搬，所以实扣略低于名义 15%）。资源不够时 `DropExtraBuilders` 踢掉额外农民、保留第一个。落账走 `World.TrySpendResources`，在 `Lifecycle.cs` 注入 `PlayerSlot`。
-> - **建造者入楼**：兽族/暗夜工人在 `StepBuild` 走到工地那一刻 `StoreBuilderInside`：`Hidden`、`StateMod.Pause`、`StateMod.Invulnerable`、坐标搬到建筑中心、模型 `Visible=false`；完工或取消由 `PlaceReleasedBuilder` 从 footprint 外一圈找空格放出。`Step` 开头对已入楼的建造者直接 return，`Prune` 每帧把它的 `BuildSite` 钉回工地，AI 不会把它当空闲工人捡走。暗夜建 `Classification.Ancient` 时完工走 `UnitRemoved` 移除小精灵。
-> - **顺带修的连带口**：`PlaceBuildingAt` 的非人族只派 1 个工人（客户端 `TryAttachWorker` 也只收人族追加）；`SetBuild` 改返回 bool，加入被拒的工人不再挂着建造指令；建筑死亡与取消都释放楼内建造者；`Environment.TickFog` 的模型可见性补 `unit.Hidden` 一支，否则隐藏的工人会在 0.2s 后被迷雾刷新重新显示。
->
-> **验证**：临时探针（跑完已删）在真实 `World` 上跑 25 条断言全过：兽族苦工入楼/位置/隐藏/无敌/暂停、第二苦工被拒、单人 1.0 倍、完工放出到 footprint 外、人族三人 2.2 倍、追加金 116 木 62 登记与实扣、零资源时踢到只剩 1 人、暗夜古树吞小精灵、取消放出。`--state-probe` 848 条通过，唯一失败 `utod 研究项=4 期望 4 实际 2` 在改动前的基线上同样失败，属 Extract 数据未重导，与本条无关。
->
-> **遗留**：`ConstructionProgress` 在 Launcher 侧是纯状态对象，不进 `Ability` 列表（Launcher 的施工由 `World` 驱动，没有对应的施工 Ability），这是与客户端唯一的结构差异，后续若要合并技能树需一起处理。
-
 ### 17. 运输船拒载英雄，还要求乘客与船同 Player
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Units/CargoTransport.cs:44-57` `CanAccept` 只排除建筑、已在别的货舱、满 10 格、成本超容量、非同盟，不排除英雄。
@@ -78,6 +60,23 @@
 - **Launcher**：`Launcher/Src/Abilities/Buff.cs:220-233` 天神下凡只加属性并 `State.Add(MagicImmune)`，没有 Buff 清洗，全仓也没有这个函数；`Src/World/World.BuffMembers.cs:33` 驱散只按 `IsHarmful` 一刀切；`AvatarBuff` 用的是基类默认 `Magic=true/AutoDispel=true`。
 - **玩家可见**：中了妖术、减速、诅咒再开天神下凡，山丘之王带着一身 debuff 变魔免（客户端当场洗掉）；牧师的驱散魔法、毁灭者的吞噬魔法能把敌方天神下凡整个扒掉（客户端驱不动）。
 - **要做**：补 `RemoveImmunityEntryBuffs`，Buff 加 `Magic/AutoDispel` 标记，驱散改按标记判定。
+
+> **执行结论（Launcher8，2026-11-15，待合并）**
+>
+> 根因比条目写的多一层：`GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs` 里 `RemoveImmunityEntryBuffs` 已经照抄回来了，但末尾守卫写的是 `owner.Abilities.Items.Contains(buff)`。Launcher 的 `AbilityContainer.Items` 只含 `_items`，而 buff 实际挂在 `Unit.Buffs`，这个条件恒为 false，所以常驻魔免（Amim）与天神下凡共用这一点时一次都没清过。另外 `AvatarBuff` 用的全是基类默认的 `IsHarmful=true / Magic=true / AutoDispel=true`，`World.DispelBuffs` 只看 `IsHarmful`。
+>
+> 改动：
+> 1. `Src/Abilities/AbilityContainer.cs`：`Remove(Ability)` 在 `_items` 里找不到时回退删 `Owner.Buffs`，两种存放都能真删掉。
+> 2. `RuntimeMagicImmunityAbility.RemoveImmunityEntryBuffs`：守卫换成 `owner.RemoveAbility(buff)`。
+> 3. `Src/Abilities/Buff.cs` 的 `AvatarBuff`：补 `IsHarmful=false / Magic=false / AutoDispel=false / SpellStealable=false`，`OnApply` 里加完 `MagicImmune` 之后调 `RemoveImmunityEntryBuffs`。
+> 4. `Src/Skills/SoulPreservationBuff.cs`：同一处原生 46e150，也接上清洗（客户端 `CampaignAndAuraSkills.cs:299` 就是这条路）。
+> 5. `Buff.Dispellable`（`Magic && AutoDispel && !Aura && !TimedLife`）作为唯一判据；`World.DispelBuffs` 与 `Unit.HasBuff` 都改用它，`HasBuff` 顺带补上放在 `_items` 里的 buff。`HasBuff` 是驱散类 AI（驱散魔法/吞噬魔法/放逐/偷取）的挑选条件，不改会继续对只挂天神下凡的单位放驱散。
+>
+> 验证：`--state-probe` 里天神下凡那段补了 11 条断言全过——先挂诅咒 → 开天神下凡 → 诅咒当场消失、`DispelBuffs` 返回 0 且 `AvatarBuff` 仍在；到期后再挂诅咒又能被驱散。`dotnet build` 0 错。全量 `--state-probe` 仍有一项 `utod 研究项=4 期望4 实际2`，暂存改动跑基线同样失败，与本条无关。
+>
+> 遗留（同样会表现成「带着 debuff 变魔免」，留待另立）：
+> - 妖术在 Launcher 走 `World.BeginMorph` 的变形状态，不是 Buff，进魔免不会解除；客户端对应的是 Buff 型的多态效果。
+> - 减速在 `Unit.Slows` 独立一张表，没有 Magic 标记，分不出霜冻护甲/毒镖这类魔法减速与诱捕这类物理减速，所以这次没有按「进魔免清减速」处理。
 
 ### 19. 暴击不用递进阈值，闪避按来源各掷一次
 
@@ -122,6 +121,18 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:478-515` `OnUnitMorphed` 直接 `unit.View.Root.QueueFree()` 后按新类型重建节点，再补一个 `PolyMorphDoneGround` 特效。
 - **玩家可见**：德鲁伊变熊、石像鬼变毁灭者、剑圣分身都是模型瞬间替换加一团烟，没有原版的 Morph 过渡帧，过渡期间高度、光环、队伍色会跳。
 - **要做**：`UnitSceneComponent.SelectSequence` 已支持 `MORPH` 主标签，变形路径改为先播完再重建。
+
+> **执行结论（Launcher1，已提交，待合并）**
+>
+> 变形不再瞬间换模型：`OnUnitMorphed`（`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:473-503`）先让旧模型的视图把 `Morph` 播一遍，播满片段时长后才走 `RebuildMorphModel`，实例化、位置/朝向/选中状态、`PolyMorphDoneGround` 烟雾与节点命名都沿用原来的重建代码。模型没有 `Morph` 序列（羊、野猪、民兵这类换的是别的模型）时和以前一样立刻重建，代码路径不变。
+>
+> 主/副标签和客户端一致：正向变形取 `Morph`，反向取 `Morph Alternate`。客户端这一层读的是源形态的 `animProps`（`Open-Warcraft3_Wiki` 的 `UpdateCastAnimation` 置 `FinishMorphAnimation` 后由 `UpdateFinishingMorphAnimation` 播到末帧），而 Launcher 没有物编 `animProps` 管线（`UnitType` 里没有这个字段，`Unit.AnimationProperties` 只被 `RuntimeDefendAbility` 写过），所以改用变形方向表达同一件事：`World.UnitMorphed` 事件加了一个 `reverseForm` 参数（`Src/World/World.Morph.cs:19`），`BeginMorph`/`ReplaceType`/凤凰蛋传 false，`EndMorph` 传 true，订阅点同步成 `OnUnitMorphed(Unit, bool)`（`Lifecycle.cs:367`）。模型的 Morph 变体名与形态一致，所以这条在兽族/暗夜/恶魔变身这些同模型换形态的技能上等价于客户端读 `Alternate`。
+>
+> 过渡期新增门禁 `UnitSceneComponent.MorphTransitionActive`（`Game/Presentation/UnitSceneComponent.cs:482,498`）：`Play` 只放行 `Death`/`Decay`/`Dissipate`，World 各处的 `Play("Stand"/"Walk"/"Stand Work")` 不会把 Morph 打断，死亡则直接结算重建、按 Death 播放。每帧推进在 `Scenes/War3GameScene/Animation.cs:25-43`（`UpdateMorphTransition`，随 `UpdateUnitAnimation(float frame)` 从 `Lifecycle.cs:753` 按渲染帧传入 delta）；`OnUnitRemoved` 会清掉该单位挂起的过渡。连续变形（同一个单位在过渡里再变一次）先把上一次结算掉再起播。
+>
+> 实测（`--morph-probe`，`(4)Turtle Rock.gmap`）：恶魔变身 `Edmm 播 Morph 1.50s 后重建模型`，同一帧打印的模型名仍是源模型 `Edem_115`、动画 `Morph`，1.5 秒后才出现 `Edem 重建模型`；变身到期走反向，`Edem 播 Morph Alternate 1.47s`。德鲁伊变熊 `edcm 播 Morph 1.50s`，变回 `edoc 播 Morph Alternate 1.50s`，中间模型名一直是 `morph_edcm_2`，说明重建确实发生在播完之后。妖术变羊（`npig` 无 `Morph`）仍是即时重建。`--state-probe` 全量自检只剩 `utod 研究项` 一项不符，改动前就存在；变形/形态相关 8 项全过。
+>
+> 顺带记两处没动的：物编 `animProps` 没进 `Unit.AnimationProperties`，所以熊形态的待机仍是 `Stand` 而不是 `Stand Alternate`（外观层问题，另立任务）；`PolyMorphDoneGround` 现在跟着重建时机走，客户端那层并不生成它，属于既有差异。
 
 ### 22. 主基地升级播的是 Birth，不是 Birth Upgrade First/Second
 
