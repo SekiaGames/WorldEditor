@@ -79,22 +79,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 23. 地面物品凭空出现，没有 Birth/Open 入场
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Presentation.cs:1545-1579` 物品首次出现按 `SpawnAge < birthSeconds` 播 `Birth/Open`，之后转 `Stand`；离场按 `DepartAge` 缩小。
-- **Launcher**：`Launcher/GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:281-297` `CreateItemNode` 只实例化、设位置缩放，没有任何 `Play`；离场在 `Presentation.cs:564-608`。
-- **玩家可见**：宝箱、符文、掉落装备直接出现（依赖模型 autoplay，多数是 Stand 首帧）；击杀野怪掉宝的瞬间观感差别明显。
-- **要做**：物品节点创建后按 `SpawnAge` 播一次 `Birth/Open`。
-
-- **执行结论（Launcher3，已修，待合并）**：
-    - 入场序列按客户端顺序取第一个存在的：`Birth` → `Open` → `Birth Sequence`（`Presentation.cs:505`）。实查条目模型动画库：`PotofGold`/`Tome`/`TreasureChest`/`Rune` 都只有 `Birth`，宝箱类没有 `Open`；长度 1.00–1.07 秒。
-    - 播放方式与单位侧统一：先关 `AnimationTree`，用 `AnimationPlayer` 播 `Birth`，按 `GetAnimation().Length` 计时；到点切 `Stand Alternate` → `Stand` → `Stand - 1` 并把 `LoopMode` 设成 `Linear`（`Presentation.cs:537`）。这条和 `UnitSceneComponent.Create` 里 `tree.Active = false` + 手动 `Player.Play` 的口径一致，不再让状态机决定物品播什么。
-    - 接线：`Units.cs:294` 的 `CreateItemNode` 建完节点即调 `BeginGroundItemBirth`；`Lifecycle.cs:755` 每帧 `TickGroundItemBirths`。
-    - 打断：`BeginGroundItemDeparture` 先 `CancelGroundItemBirth`（`Presentation.cs:633`），避免物品刚落地就被捡走时，入场计时把已经交给 `Death` 的节点再切回 Stand。
-    - 模型里没有入场序列时直接进 Stand（`Presentation.cs:512`），与客户端 `FirstSequence` 取不到就退 `standSequence` 一致。
-    - 验证：临时在地图加载完放 3 件物品（Crown of Kings / Spell Book / Tome of Power）跑 headless，日志为 `出生 序列=Birth 时长=1.00 / 1.00 / 1.07`，约 1 秒后 `序列=Stand - 1 循环=Linear`，无脚本报错；探针代码已移除。注意 `(4)Turtle Rock.gmap` 本身没有预摆物品，玩家能看到的是野怪掉宝与宝箱开出那一下。
-    - 提交：`43e2990 任务23：地面物品按 Birth/Open 入场，播完转 Stand`。
-
 ### 24. 队伍色索引钳到 0..15，17–24 号玩家全部同色
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Rendering/CharacterRenderer.cs:2245,2294,2306` 全部 `Clamp(teamColorIndex, 0, 27)`，`ReplaceableId 1/2`（TeamColor/TeamGlow）分开解析。
