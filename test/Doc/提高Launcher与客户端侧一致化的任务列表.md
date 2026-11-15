@@ -39,30 +39,6 @@
 
 > 模拟层行为。这一层决定对局打得对不对。
 
-### 18. 进入魔免不清洗身上的魔法 Buff，驱散也只看正负极性
-
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:21,28-39` 进入魔免时 `RemoveImmunityEntryBuffs` 移除正负两性的魔法 Buff（光环与限时生命除外）；`Src/Skills/AvatarBuff.cs:12-14` 天神下凡声明 `Magic=false, AutoDispel=false`；驱散侧按 `buff.Magic && buff.AutoDispel` 过滤。
-- **Launcher**：`Launcher/Src/Abilities/Buff.cs:220-233` 天神下凡只加属性并 `State.Add(MagicImmune)`，没有 Buff 清洗，全仓也没有这个函数；`Src/World/World.BuffMembers.cs:33` 驱散只按 `IsHarmful` 一刀切；`AvatarBuff` 用的是基类默认 `Magic=true/AutoDispel=true`。
-- **玩家可见**：中了妖术、减速、诅咒再开天神下凡，山丘之王带着一身 debuff 变魔免（客户端当场洗掉）；牧师的驱散魔法、毁灭者的吞噬魔法能把敌方天神下凡整个扒掉（客户端驱不动）。
-- **要做**：补 `RemoveImmunityEntryBuffs`，Buff 加 `Magic/AutoDispel` 标记，驱散改按标记判定。
-
-> **执行结论（Launcher8，2026-11-15，待合并）**
->
-> 根因比条目写的多一层：`GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs` 里 `RemoveImmunityEntryBuffs` 已经照抄回来了，但末尾守卫写的是 `owner.Abilities.Items.Contains(buff)`。Launcher 的 `AbilityContainer.Items` 只含 `_items`，而 buff 实际挂在 `Unit.Buffs`，这个条件恒为 false，所以常驻魔免（Amim）与天神下凡共用这一点时一次都没清过。另外 `AvatarBuff` 用的全是基类默认的 `IsHarmful=true / Magic=true / AutoDispel=true`，`World.DispelBuffs` 只看 `IsHarmful`。
->
-> 改动：
-> 1. `Src/Abilities/AbilityContainer.cs`：`Remove(Ability)` 在 `_items` 里找不到时回退删 `Owner.Buffs`，两种存放都能真删掉。
-> 2. `RuntimeMagicImmunityAbility.RemoveImmunityEntryBuffs`：守卫换成 `owner.RemoveAbility(buff)`。
-> 3. `Src/Abilities/Buff.cs` 的 `AvatarBuff`：补 `IsHarmful=false / Magic=false / AutoDispel=false / SpellStealable=false`，`OnApply` 里加完 `MagicImmune` 之后调 `RemoveImmunityEntryBuffs`。
-> 4. `Src/Skills/SoulPreservationBuff.cs`：同一处原生 46e150，也接上清洗（客户端 `CampaignAndAuraSkills.cs:299` 就是这条路）。
-> 5. `Buff.Dispellable`（`Magic && AutoDispel && !Aura && !TimedLife`）作为唯一判据；`World.DispelBuffs` 与 `Unit.HasBuff` 都改用它，`HasBuff` 顺带补上放在 `_items` 里的 buff。`HasBuff` 是驱散类 AI（驱散魔法/吞噬魔法/放逐/偷取）的挑选条件，不改会继续对只挂天神下凡的单位放驱散。
->
-> 验证：`--state-probe` 里天神下凡那段补了 11 条断言全过——先挂诅咒 → 开天神下凡 → 诅咒当场消失、`DispelBuffs` 返回 0 且 `AvatarBuff` 仍在；到期后再挂诅咒又能被驱散。`dotnet build` 0 错。全量 `--state-probe` 仍有一项 `utod 研究项=4 期望4 实际2`，暂存改动跑基线同样失败，与本条无关。
->
-> 遗留（同样会表现成「带着 debuff 变魔免」，留待另立）：
-> - 妖术在 Launcher 走 `World.BeginMorph` 的变形状态，不是 Buff，进魔免不会解除；客户端对应的是 Buff 型的多态效果。
-> - 减速在 `Unit.Slows` 独立一张表，没有 Magic 标记，分不出霜冻护甲/毒镖这类魔法减速与诱捕这类物理减速，所以这次没有按「进魔免清减速」处理。
-
 ### 19. 暴击不用递进阈值，闪避按来源各掷一次
 
 - **客户端**：`Open-Warcraft3_Wiki/Src/Skills/CriticalStrike.cs:56,71` 用 `NativeProcThreshold(percent, _procAttempts)`，不暴击递增、暴击后重置；`Src/Components/Health.cs:42-50` 闪避取所有来源的最大值只掷一次（`Src/Skills/Evasion.cs` 注释写明「取最大可用来源，只掷一次，无 PRD」）。
@@ -139,6 +115,13 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Rendering/TeamColorTextures.cs:10-11` `Clamp(index, 0, 15)` 且只加载 `TeamColor00..15`；`Game/Presentation/UnitSceneComponent.cs:420-423` 的 TeamGlow 同样钳 0..15。
 - **玩家可见**：16 人以上对局或自定义地图里，第 17–24 号玩家全部显示成 16 号色，小地图与选中圈跟着错。
 - **要做**：上限改 27，补 24 张 TeamColor/TeamGlow。
+
+### 53. 进魔免不清减速，因为减速不在 Buff 体系里
+
+- **客户端**：`Open-Warcraft3_Wiki/Src/Skills/SlowBuff.cs:4-19` 减速是 `Buff` 子类（沿用基类 `Magic=true`），`GameCore/L3_Simulation/Simulation/Configuration/RuntimeMagicImmunityAbility.cs:35-38` 进魔免按 `buff.Magic && !buff.Aura && !buff.TimedLife` 摘除，被减速的单位一开魔免当场恢复速度。
+- **Launcher**：`Launcher/Src/Units/Unit.Slows.cs:23` 减速存在独立的 `List<SlowSource>`，与 Buff 是两张表，也没有魔法/物理之分；`RemoveImmunityEntryBuffs` 只扫 Buff，进魔免速度照旧。
+- **玩家可见**：山丘之王被霜冻减速追着打，开天神下凡后客户端的移速立刻恢复，Launcher 还是慢吞吞走不动。
+- **要做**：给减速来源打魔法/物理标记，进魔免只清魔法那一类。
 
 ---
 
