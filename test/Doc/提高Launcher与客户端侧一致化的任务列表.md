@@ -18,6 +18,21 @@
 
 > 地图数据、物编、文本表的读取口径。这一层读错，上层怎么调都是错的。
 
+### 57. 预摆单位 owner 被钳到 0..15，24 人图里 17–24 号玩家摆的单位判给 16 号玩家
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Maps/War3MapUnits.cs:22` 把 `war3mapUnits.doo` 的 `Player` 原样读进 `MapUnit.Player`（4 字节），不做区间收口，建单位时直接当阵营用；`ApplyInstancePresentation` 再按 `CustomTeamColor` 覆盖队伍色。
+- **Launcher**：`GameCore/L4_Composition/Game/Scenes/War3GameScene/Units.cs:44` 是 `(int)Mathf.Clamp(entry.Player, 0, 15)`，owner ≥ 16 全部折到 15；`War3MapUnits.cs:154` 的解析本身没问题（`uint` 原样读出）。
+- **玩家可见**：24 人图、或者编辑器里给 17–24 号玩家摆过单位的地图，这些单位开局就变成 16 号玩家（中立被动）的东西：用的是 16 号那支灰、不归任何人指挥、和作者的排布意图对不上；靠 owner 认单位的地图脚本也会跟着错。
+- **要做**：owner 按 0..23 保留，只对超出 24 个座位的值收口。
+
+> **执行结论（Launcher4，已修，待合并）**：
+>
+> - **改法**：`War3GameScene.Players.cs` 新增 `PlacementOwner(uint owner, int seatCount)`，`Math.Min(owner, seatCount - 1)`，`Units.cs` 调用时传 `_players.Length`（场景里玩家表的真实长度 24）——座位数只有这一处来源，不再写死字面量。
+> - **为什么不是「去钳制」**：`entry.Player` 是 `uint`，doo 里脏数据能到 4 亿，直接 `(int)` 会溢出成负数玩家号；客户端不钳是因为它的读取层另有边界，这里保留一个 24 座位的上限收口。
+> - **波及面核对**：场景里按玩家号索引的容器都是字典（`_allyMasks`、`_playerNames`、`_heroAcquisitionCounts`、`byPlayer`），`PlayerSlot[]` 本来就是 24 长度；16 号以上不会越界。16 号以上玩家不在 `_active` 时，其单位不受内务 AI 管、不可被本地玩家选中、对所有人敌对——与客户端对「没有该座位的玩家」的处理一致。
+> - **验证**：新增 `Diagnostics/CombatProbe.PlayerSlots.cs` 7 条断言（owner 15/16/23 原样保留、200 收到 23、17 号玩家单位记在 16 号位、且上色不等于 16 号色）全过；临时插桩确认端到端（把第 8/9 个预摆单位的 owner 强制成 20，日志 `[OWNER] nftb raw=20 -> P20`，对局四族内务正常推进、无异常，插桩已还原）；`--state-probe` 仍只剩既存 `utod 研究项` 1 条，`--combat-probe` 全过，`dotnet build -t:Rebuild` 4 条既存警告 0 错；两张测试图跑动单位数与改前一致（Turtle Rock 111 / BootyBay 59），说明现有地图 owner 全在 0..15、本改动对它们是空操作。
+> - **顺带发现（未改，另立条件）**：`War3MapUnits.cs:68,226` 解析了 `CustomTeamColor`，但全仓没有任何读取处 —— 编辑器里给单个单位指定的队伍色被直接丢掉。客户端在 `ApplyInstancePresentation` 里 `unit.TeamColorIndex = CustomTeamColor`。Launcher 侧 `Unit.TeamColorIndex` 目前是 `Player` 的别名（`Src/Units/Unit.Compat.cs:50`），要落地得先给 Unit 一个独立的队伍色字段，改动面比这次大，建议单独立条。
+
 ---
 
 ## 模块二 寻路与移动
@@ -114,7 +129,7 @@
 > - **改动**：`War3SoundTables.Load` 补 `LoadTable("UISoundInfoAnimSounds")`；`Presentation.PlayVoice` 删掉 `fallback` 参数与回落分支，`Melee.OnUnitDied` 与 `Production` 两处 Ready 调用同步去掉 `null` 实参（Ready 原本就传 null，行为不变）。净改动 3 文件 5 行。
 > - **验证**：`--creep-probe` 无头跑 (4)Turtle Rock，步兵阵亡日志为 `[VOICE] hfoo FootmanDeath FootmanDeath.wav`（修复前同一行会落空并回落 `FootmanYes`）。另把五族死亡标签逐条打印过，`FootmanDeath / PeasantDeath / GruntDeath / AcolyteDeath / ArcherDeath` 都解析到具体 wav 且 `ResourceLoader` 能读到。音效条目 2088（其中 AnimSounds 593 行）。
 > - **玩家侧验证**：进任意 melee 图，拉步兵跟野怪对砍，打死一个听死亡音；建筑完工与训练完成仍是原来的 Ready 语音，没有被改动影响。
-> - **未覆盖，建议另开一条**：MDX 的 `SND` 事件仍未解析——`War3EventObjectData.ResolveDefinition` 只有 `SPL/UBR/SPN` 三个分支，`ModelEventEmitter` 拿到 `Unknown` 直接跳过。所以脚步、`Stand Work` 这类由动画事件触发的音效依旧不响，玩家可见里「脚步与整理类动画音效一并丢失」这半条仍在。它走的是 `AnimLookups → AnimSounds` 的事件链，跟本条只补查表的改动不是一处。
+> - **脚步这半已由 57 收掉**：`SND` 事件链补上后，模型自带的死亡/攻击/工作音都会响；脚步不是 SND 而是 `FPT` 前缀事件，客户端也不解析，保持忽略。详见第 57 条。
 
 ### 26. DistanceCutoff 解析了但没用，半个地图外都能听见伐木声
 
@@ -136,6 +151,21 @@
 - **Launcher**：`Launcher/GameCore/L4_Composition/Game/Audio/War3AudioSystem.cs:178-187` 按 `SoundName` 标签去重。
 - **玩家可见**：同一条 ack 的 4 个变体在同帧最多响 3 条，不同标签指向同一文件时又不去重；成群单位同帧砍树时声音厚度和客户端不同。
 - **要做**：去重键改成解析后的文件名，声部上限与抢占优先级维持现状。
+
+### 57. MDX 的 SND 事件不解析，模型自带的死亡/攻击/工作音全静音
+
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Configuration/War3EventObjectData.cs:59-82` 拿事件名末 4 位查 `AnimLookups.SoundLabel`，再用标签查 `AnimSounds` 行；`Game/Scenes/War3GameScene/Presentation.cs:1793-1795` 收到 `War3ModelEventKind.Sound` 就 `_audio.Play(data, position)`（Combat 通道、优先级 60）。
+- **Launcher**：`GameCore/L4_Composition/Game/Configuration/War3EventObjectData.cs:68-74` 只有 `SPL / UBR / SPN` 三个分支，`SND` 落到 `default`；`Game/Rendering/ModelEventEmitter.cs:131-136` 拿到 `Unknown` 直接 `continue`。所以 `Footman.mdx` 的 `SNDXDFOO`（死亡）、`Rifleman.mdx` 的 `SNDXKRIF`（攻击）、`peasant.mdx` 的 `SNDXAREP`（工作）从来不发。死亡音只能靠 `PlayVoice(unit,"Death")` 拼 `SoundSet + "Death"` 顶替。
+- **玩家可见**：模型自带的声音事件全静音；死亡音是合成出来的，与模型事件指向不同文件时对不上；这条一接上，合成死亡音还会与模型事件各播一次同一条。
+- **要做**：补 `SND` 分支（`AnimLookups → AnimSounds`），`HandleModelEvent` 播 `War3ModelEventKind.Sound`；删掉合成的死亡语音，避免与模型事件重复。
+
+> **执行结论（Launcher5，已修复，待合并）**：
+> - **事件名形状先量过**：跑 `--headless` 把模型的 `war3_model_events` 元数据打出来，`SND` 事件都是 8 字符（3 位前缀 + 1 位分隔 + 4 位键），如 `SNDXFDFR`、`SNDXDPES`、`SNDXKRIF`。注意脚步不是 SND：`Footman.mdx` / `peasant.mdx` / `Grunt.mdx` 里是 `FPTxFBL1 / FPTxFBR1`（FPT 前缀），客户端同样不解析 FPT，所以 FPT 保持忽略。第 25 条里「脚步一并丢失」这半句是误判，脚步音来自模型的 SND 变体（`SNDXFDFR → DeepFootstep`），不是 FPT。
+> - **改动**：`War3EventObjectData` 加 `SoundLabel` 字段与 `ResolveSound`（`AnimLookups.AnimSoundEvent → SoundLabel → AnimSounds.SoundName`，同时拼出 `Resource` 供日志核对），`ResolveDefinition` 加 `"SND"` 分支；`Presentation.HandleModelEvent` 加 `War3ModelEventKind.Sound` 分支走新增的 `PlayModelEventSound`（`War3SoundTables` 取行 → `War3UnitSound.Play3D`，Combat、60，与客户端同通道同优先级）。
+> - **重复问题**：模型 Death 序列的 `SNDXDFOO` 与合成路径 `SoundSet+"Death"` 指向同一个 `FootmanDeath.wav`，两条都留着会各播一次。客户端只有模型这一路（`Lifecycle.cs:585` 那一路是英雄阵亡播报 `HeroDiesSound`，不是单位语音），所以删掉 `Melee.OnUnitDied` 里的 `PlayVoice(unit,"Death")`，`PlayVoice` 只剩训练完工的 Ready。
+> - **验证**（`--creep-probe --time=0.15`，无头）：`[AUDIO] 播放 DeepFootstep`、`RiflemanAttack1`、`Repair`、`FootmanDeath` 各就位；`FootmanDeath` 全程只播 1 次（改前模型事件接上会播 2 次）。逐条核对：`FDFR→DeepFootstep`、`KRIF→RiflemanAttack1`、`AREP→Repair`、`DFOO→FootmanDeath`、`DPES→PeasantDeath`、`DGLD→GoldMineDeath`，标签都能在 `AnimSounds` 命中实际 wav。
+> - **顺带确认**：`SNDXAREP` 在 `Stand Work`、`Stand Work Gold`、`Stand Work Lumber` 三个序列里都有，是通用工作音，采矿/伐木播它不算选错动画。
+> - **玩家侧验证**：进 melee 图，让步兵走动听脚步、砍野怪听攻击音、农民敲建筑听工作音、打死一个单位听死亡音；每种只响一次。
 
 ---
 
