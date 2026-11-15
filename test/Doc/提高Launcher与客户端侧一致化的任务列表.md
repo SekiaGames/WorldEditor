@@ -103,6 +103,19 @@
 - **玩家可见**：攻击间隔大于片段长度时单位停在末帧举着武器定格，片段长于冷却时被硬切成第 0 帧；近战成排站桩时这一帧差很明显。
 - **要做**：攻击指令改为「不重启 + 排队 Stand Ready」，结束后按是否仍有目标在 `Stand` 与 `Stand Ready` 之间切换。
 
+> **执行结论（Launcher10，已完成，待合并）**
+>
+> 1. 排队能力落在表现层：`GameCore/L4_Composition/Game/Presentation/UnitSceneComponent.cs` 加 `_queuedFollowup`，`Play` 多一个 `followup` 形参（每次调用先清旧队列，对应客户端 `UnitAnimationController.Set` 的 `_queued = null` + 紧跟的 `Queue`），`AnimationFinished` 里比对「刚收尾的片段就是当前片段」再消费队列，对应客户端 `Advance` 里越过片段末帧时 `Play(_queued)`。
+> 2. `Src/Units/Unit.Combat.cs:29` 的起手改成 `View.PlayAttack(rate)`：排队 `Stand Ready`，并按 `ClipEnded` 决定要不要从 0 开始。`ClipEnded` 判当前片段是否已停播或位置落在末帧 1 帧容差内——上一段收尾与本次起手撞在同一帧时，若沿用「不重启」会把刚起手的片段立刻顶成 `Stand Ready`，反过来让整个攻击周期都没有挥砍动作。
+> 3. 队列播放仍走 `Play` 的标签解析，所以有 `Stand Ready` 副标签的模型（如火枪手）回到 `Stand Ready`，没有该标签的模型（如步兵四段 `Stand - N`）回落到同形态的 `Stand` 变体，与客户端 `SelectSequence` 的形态回退同口径。
+> 4. 攻击结束切 `Stand` 还是 `Stand Ready` 沿用 `Src/World/World.cs:398` 的 `engaged` 判断；目标在攻击途中死亡时 `Step` 会走到底部，`Play("Stand")` 顺带清掉未消费的队列。
+>
+> 验证数据（`--fixed-fps 60`，`(4)Turtle Rock.gmap`，`--attack-probe` 逐 0.1s 打印片段/帧位/倍速/前摇/后摇/冷却）：
+>
+> - 改动前步兵：`t=1.1~1.3` 停在 `Attack - 1 帧位=1.00/1.00`（末帧定格），`t=1.4` 跳到 `0.13`（硬切回第 0 帧）。
+> - 改动后步兵：`t=1.0` 到 `Attack - 1 0.85/1.00`，`t=1.1` 已换成 `Stand - 2 0.00/2.50`，下一次起手从 `0.10` 开始，没有定格也没有从末帧跳回。
+> - 改动后火枪手：`Attack 0.85/0.87 → Stand Ready 0.08/1.10 → Attack 0.05/0.87`，三个周期重复一致。
+
 ### 21. 变形不播 Morph 序列，直接销毁重建模型
 
 - **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/Scenes/War3GameScene/Animation.cs:210-251` 对变形技能置 `FinishMorphAnimation`，用 `Advance(dt, holdAtEnd: true)` 把 `Morph` 播到末帧再切形态。
