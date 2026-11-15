@@ -294,41 +294,30 @@
 
 > 命名、归属与共用。放最后，避免和功能改动互相踩。
 
-### 47. 同一个类在 Launcher 有两份，命名空间按层分裂
-
-- **客户端**：`Open-Warcraft3_Wiki/Src/Abilities/Buff.cs`、`Src/Units/Unit.cs`、`Src/Core/World.cs` 等 L2 层文件统一 `namespace OpenWC3`，技能实现统一在 `GameCore/L3_Simulation/Simulation/Configuration/` 下 `namespace OpenWC3.Game`，每个类只有一个定义。
-- **Launcher**：`Launcher/Src/` 用 `namespace OpenWC3`，`Launcher/GameCore/L3_Simulation/` 用 `namespace OpenWC3.Game`，于是同名类并存：`RuntimeMeatDropAbility`（`Src/Skills/RuntimeMeatDropAbility.cs:7` 与 `GameCore/L3_Simulation/Simulation/Configuration/RuntimeMeatCargoAbilities.cs:127`）、`RuntimeMeatLoadAbility`、`RuntimeTrueshotAuraAbility`（`Src/Skills/` 与 `RuntimeCommandAuraAbility.cs:127`）、`RuntimeAntiMagicShellBuff`（`Src/Skills/` 与 `RuntimeAntiMagicShellAbility.cs:78`）。工厂只注册 `OpenWC3` 那一份（`Src/Abilities/RuntimeAbilityFactory.cs:60`）。
-- **玩家可见**：暂时看不出来，但同一技能两套实现在跑不同的数值与流程，改一处不会同步另一处；接 AI 或事件时容易挂到没被注册的那一份上。
-- **要做**：按客户端分层收敛成一层，删掉未注册的重复实现。
-
-> **复核评价**：同名类并存成立（`RuntimeMeatDropAbility`、`RuntimeTrueshotAuraAbility`、`RuntimeAntiMagicShellBuff` 都是一份在 `Src/Skills/`、一份在 `GameCore/L3_Simulation/.../Configuration/`）。和第 48 条是同一件事的两半：本条管「重复的类」，48 管「文件怎么分」。建议合并成一条做，先去重再拆文件，否则拆完发现有一半要删。另外「删掉未注册的重复实现」要先确认工厂真的没注册——`RuntimeMeatCargoAbilities.cs:127` 那两份里有名字带 `s` 的聚合类，删之前按 `RuntimeAbilityFactory.Map` 逐条对一遍。
-
 ### 48. 技能工厂与技能实现文件的结构和客户端对不上
 
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/` 下 `RuntimeAbilityFactory` 拆成 `Constructors / Initialization / Initializers / Specialization` 四个 partial，实现按族分文件（约 194 个 `Runtime*Ability` 文件）。
-- **Launcher**：`Launcher/Src/Abilities/RuntimeAbilityFactory.cs` 一个文件里 523 条 `["xxxx"] = () => new ...` 字典登记，实现只有 47 个 `Runtime*Ability` 文件，其余技能落在少数聚合类里；静态数据一侧叫 `AbilityCatalog/AbilityType`（`GameCore/L3_Simulation/Simulation/Configuration/AbilityCatalog.cs`），客户端叫 `ObjectDataAbility`（`Src/Abilities/ObjectDataAbility.cs`）。
-- **玩家可见**：目前体现为部分技能退化成无行为的被动；更实际的影响是新增或修一个技能时，两边的登记口不在同一处，容易只改一边。
-- **要做**：工厂按客户端的四个 partial 拆分，技能实现文件按族对齐命名，静态数据的类名改成客户端的名字。
+- **客户端**：`Open-Warcraft3_Wiki/GameCore/L3_Simulation/Simulation/Configuration/` 下工厂拆成五个文件：`RuntimeAbilityFactory.cs`（1044 行，主分派）、`.Constructors.cs`（384 行，按 rawcode 造实例）、`.Initializers.cs`（194 行）、`.Specialization.cs`（62 行）、`.Initialization.cs`（60 行），不是把一张字典切成几段；技能实现按族分文件，该目录下 194 个 `Runtime*Ability*.cs`。
+- **Launcher**：`Launcher/Src/Abilities/RuntimeAbilityFactory.cs` 一个文件、一张 523 条的 `["xxxx"] = () => new …` 字典；实现文件 `Src/Skills/` 47 个 + `GameCore/L3_Simulation/Simulation/Configuration/` 131 个 = 178 个，和客户端 194 差 16，不是「都塞在少数聚合类里」。
+- **玩家可见**：目前无直接表现。真正的代价是新增或修技能时两边的登记口不在同一处，容易只改一边；`AbilityCatalog` 里物编字段读不到时技能会静默退化成无行为被动。
+- **要做**：先照客户端把 `Map` 按「构造 / 初始化 / 特化 / 依赖准备」拆成五个 partial 文件（纯搬运，不改行为），再逐个技能把实现挪到与客户端同名的文件里。**不要**把 `AbilityType`/`AbilityCatalog` 改名叫 `ObjectDataAbility`：客户端那个是 `Ability` 子类（`Src/Abilities/ObjectDataAbility.cs`），Launcher 这个是纯数据行（`AbilityCatalog.cs:12`），同名会误导；对齐方向应该是让 GameCore 的技能走 `ObjectData` 那条路。
 
-> **复核评价**：523 条登记和客户端 194 个实现文件都对得上（`grep -oE '^\s*\["'` 数出 523；`Configuration/Runtime*Ability*.cs` 数出 194）。但「实现只有 47 个 `Runtime*Ability` 文件」只数了 `Src/Skills/`：`GameCore/L3_Simulation/Simulation/Configuration/` 下另有 131 个，两处合计 178，和客户端的 194 只差 16。所以「其余技能落在少数聚合类里」这个说法站不住，聚合类只占一小部分，真实情况是两棵并行的技能树（也正是第 47 条在说的事）。这条和第 47 条合并后再动手，数字也要按 131 + 47 重写。
+> **复核评价（2026-11-15）**：数字已按两棵树重数（523 登记、178 实现文件、客户端 194）。本条与已清掉的第 47 条（重复实现）是同一件事的两半：去重已完成，剩下的是「结构」。拆 partial 是零行为改动的搬运，可以先做；「实现文件按族对齐」要 178 次改名，必须分批并每批跑 `--state-probe`。
 
 ### 49. 核心类的目录归属和客户端不一致
 
-- **客户端**：`World` 在 `Src/Core/World.cs`（partial 也在 `Src/Core/`），`AbilityContainer` 在 `Src/Components/`。
-- **Launcher**：`World` 及其 29 个文件（`World.cs` 加 28 个 partial）在 `Src/World/`，`AbilityContainer` 在 `Src/Abilities/`。
-- **玩家可见**：无直接表现，但 AGENTS.md 第 5 条要求「相对路径、文件名、类名一致」，现在 grep 两侧同名类会落到不同目录，跨仓库对照检索的成本一直存在。
-- **要做**：整目录搬迁到客户端的层级，一次做完，不要分批。
+- **客户端**：`World` 在 `Src/Core/`（`World.cs` + 12 个 partial，另有 `WorldUnitCollection.cs` 承载单位表），`AbilityContainer` 在 `Src/Components/`。
+- **Launcher**：`World` 及其 29 个 partial 全在 `Src/World/`，`AbilityContainer` 在 `Src/Abilities/`，单位表是 `Src/World/UnitList.cs`、树状态是 `Src/World/TreeState.cs`（客户端叫 `WorldUnitCollection.cs`，没有 TreeState）。
+- **玩家可见**：无直接表现，代价是跨仓库对照检索时同名类落在不同目录。
+- **要做**：分两步。**第一步只搬 10 个两侧同名的 partial**：`DamageMembers / HeroSelectionOrder / MechanismMembers / MovementEvents / Rally / RelationMembers / RepulseMembers / Targeting / UiMembers / UnitLookup` → `Src/Core/`，并把 `UnitList.cs` 改名 `WorldUnitCollection.cs`、`AbilityContainer` 挪到 `Src/Components/`。**第二步要先有归属决定**，涉及 19 个客户端没有同文件的 partial：`Abilities / Blight / BuffMembers / Channels / CorpseRevive / CreepSleep / DeathTriggers / FogRevealMembers / GroundSpells / GroupMovement / HeroRevive / Illusions / InjuryFleeMembers / Items / Morph / Orders / PhoenixEgg / Repair / WeaponSystem`——客户端的职责散在 `Src/Units/Unit.Items.cs`、`Src/Components/WeaponSystem.cs`、`OrderQueue.cs`、`AbilityContainer*.cs` 里，逐个决定「并回 Unit / 并回 Component / 留在 World」，落成映射表后再搬。`TreeState.cs` 客户端没有，属 Launcher 自有结构，不搬。
 
-> **复核评价**：文件数对（`Src/World/` 共 31 个 .cs：`World.cs` + 28 个 partial + `TreeState.cs`、`UnitList.cs`），但「整目录搬迁」按现在的写法执行不下去。客户端 `Src/Core/` 里只有 13 个 World 文件（`World.cs` + 12 个 partial），Launcher 有 28 个 partial，其中只有 10 个同名（`DamageMembers`、`HeroSelectionOrder`、`MechanismMembers`、`MovementEvents`、`Rally`、`RelationMembers`、`RepulseMembers`、`Targeting`、`UiMembers`、`UnitLookup`）。剩下 18 个（`Abilities`、`Blight`、`BuffMembers`、`Channels`、`CorpseRevive`、`CreepSleep`、`DeathTriggers`、`FogRevealMembers`、`GroundSpells`、`GroupMovement`、`HeroRevive`、`Illusions`、`Items`、`Morph`、`Orders`、`PhoenixEgg`、`Repair`、`WeaponSystem`）在客户端根本没有同名文件，职责散在 `Src/Units/Unit.Items.cs`、`Src/Components/WeaponSystem.cs`、`OrderQueue.cs`、`AbilityContainer*.cs` 里。搬目录只能搬那 10 个，其余 18 个要先决定「并回 Unit/Component 还是留在 World」，这是设计决定，不是搬家。
->
-> 建议把本条改成两步：先出一张 28 → 客户端归属的映射表（含「不搬」的理由），确认后再动文件。另外客户端有 `World.Spatial.cs`、`World.Recording.cs` 两个 Launcher 没有的 partial，前者可能是真缺（空间索引），`Recording` 属不做范围，顺带确认一下。
+> **复核评价（2026-11-15）**：整目录搬迁执行不下去的原因已写进「要做」。第一步是纯文件搬运（namespace 不变），可以一次做完；第二步是本条的主体工作量，需要先出映射表。客户端还有 `World.Spatial.cs`（空间索引）与 `World.Recording.cs`（录像）两个 Launcher 没有的 partial：前者 Launcher 用 `UnitLookup` 里的自建索引顶替，是否要按客户端拆出来随第二步一起定；后者属不做范围。
 
-### 50. 缺 WorldFrameTextMetrics，聊天与文本通道各写死一套字号
+### 56. 寻路纹理掩码有两套模型，一套在 L1 解析、一套在 Core
 
-- **客户端**：`Open-Warcraft3_Wiki/GameCore/L4_Composition/Game/UI/WorldFrameTextMetrics.cs` 统一给出字号、行距、寿命、淡出等口径，聊天、信息通道、计时文本都引用它。
-- **Launcher**：全仓没有这个类。`Game/UI/ChatFrame.cs:13-24` 自己写死 `ChatLeft=8 / ChatWidth=990.4 / ChatFont=16.64 / BaseLifetime=3 / PerCharacter=0.1 / Fade=3 / Capacity=30`，其他文本面板再各写一份。
-- **玩家可见**：改了 UI 字号设置后，聊天与提示的字号不跟着变，和 HUD 其它文本不同步。
-- **要做**：把度量抽成客户端同名类，各帧改引用。
+- **客户端**：`PathingTextureMask`/`PathingOverlay` 在 `Src/Core/` 只有一份，WPM/TGA 解析与 footprint 解算共用同一个类型。
+- **Launcher**：`GameCore/L1_Adapter/Formats/War3Pathing.cs:54-73` 定义 `PathingTextureBits`（`byte` 枚举）、`PathingTextureMask`（`record`，`PathingTextureBits[] Cells`）、`PathingOverlay`（`record`，9 个参数，带 `UseBuildingRotation`/`SourceIsDead`）；`Src/Core/Pathing/Search/PathingTextureMasks.cs:8-34` 又定义了一遍 `PathingTextureBits`（成员完全相同）、`PathingTextureMask`（`class`，`byte[] Cells`）、`PathingOverlay`（`record`，6 个参数）。可破坏物 footprint（任务3）走后者，WPM 解析走前者，同名不同物，`dots`/`doo` 的快照字段只在 L1 那份上有。
+- **玩家可见**：暂时看不出来，但两边字段不一致（`UseBuildingRotation`、`SourceIsDead`、`OcclusionHeight` 的有无），一处加了字段另一处不知道，摆放旋转与死亡后 footprint 的行为会分叉。
+- **要做**：留一份、以 L1 那份为准（字段全），`Src/Core` 的消费方改成引用它；搬的时候注意 `Cells` 从 `byte[]` 变 `PathingTextureBits[]`，读到的地方要做转换。
 
 ---
 
