@@ -32,7 +32,7 @@
 | 客户端 | `Ai.Queries.cs`（754）、`AiCollections.cs`（217） |
 | Sim 现状 | `World.Units`、`Player` 资源字段、`Unit` 类型信息齐全；缺"按玩家聚合"的查询层 |
 | 缺口 | `IMeleeAiWorld`：`UnitCountDone(player,id)`、`CountBuilding`、`Gold/Lumber/FoodUsed/FoodMade`、`OwnedMines(player)`、`TownIndexAt(x,y)` |
-| 验收 | 与 `--dump-units` 的 71 单位、6 金矿对齐；`GetUnitCountDone` 对四族起始 5 农民返回 5 |
+| 验收 | 已通过：`--ai-world` 输出 存活=71 建筑=10 金矿=6，与 `[INIT] 单位汇总` 一致；P0/P1 起始工人 `count=5 done=5` |
 
 ### L1 账本与队列
 
@@ -140,7 +140,7 @@
 
 | 编号 | 任务 | 前置 | 判据 |
 |---|---|---|---|
-| J-E0 | `IMeleeAiWorld` 查询层（按玩家聚合） | — | 与 `--dump-units` 对齐 |
+| J-E0 | `IMeleeAiWorld` 查询层（按玩家聚合）**已完成** | — | 与 `--dump-units` 对齐 |
 | J-E1 | `MeleeAiBuildBook` 账本（`InitBuildArray`/`SetBuildUnit`/`SetBuildNext`/`SetBuildUpgr`） | J-E0 | 账本重放用例 |
 | J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义） | J-E0、J-E1 | `--gather-test`、`--lumber-test` |
 | J-E3 | 生产执行端（按目标数补单 + 选址） | J-E1 | 兽族 10 苦工/祭坛/2 地洞；人族 8 农民/民房/祭坛 |
