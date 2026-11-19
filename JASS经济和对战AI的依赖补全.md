@@ -142,7 +142,7 @@
 |---|---|---|---|
 | J-E0 | `IMeleeAiWorld` 查询层（按玩家聚合）**已完成** | — | 与 `--dump-units` 对齐 |
 | J-E1 | `MeleeAiBuildBook` 账本（`InitBuildArray`/`SetBuildUnit`/`SetBuildNext`/`SetBuildUpgr`）**已完成** | J-E0 | `[book]` 五项用例通过 |
-| J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义）**进行中** | J-E0、J-E1 | 已定位：建筑足迹与采集接触点冲突（`--building-blocking` 下交付 16 → 0） |
+| J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义）**进行中** | J-E0、J-E1 | 接触点冲突已修（回程取外侧 160、金矿不登记足迹），足迹默认开启，交付 17 次/40 秒 |
 | J-E3 | 生产执行端（按目标数补单 + 选址）**部分完成** | J-E1 | 账本已统一；`entry.Town` 未被执行端消费，扩张后分矿不排产 |
 | J-E4 | 扩张与城镇索引（`TownHasMine`/`SecondaryTown`） | J-E3 | 二矿落地且第二大厅开始采矿 |
 | J-E5 | 编队与波次（`Captain`/`Assault`） | J-E3 | 60 秒出第一波并接战 |
