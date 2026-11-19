@@ -141,7 +141,7 @@
 | 编号 | 任务 | 前置 | 判据 |
 |---|---|---|---|
 | J-E0 | `IMeleeAiWorld` 查询层（按玩家聚合）**已完成** | — | 与 `--dump-units` 对齐 |
-| J-E1 | `MeleeAiBuildBook` 账本（`InitBuildArray`/`SetBuildUnit`/`SetBuildNext`/`SetBuildUpgr`） | J-E0 | 账本重放用例 |
+| J-E1 | `MeleeAiBuildBook` 账本（`InitBuildArray`/`SetBuildUnit`/`SetBuildNext`/`SetBuildUpgr`）**已完成** | J-E0 | `[book]` 五项用例通过 |
 | J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义） | J-E0、J-E1 | `--gather-test`、`--lumber-test` |
 | J-E3 | 生产执行端（按目标数补单 + 选址） | J-E1 | 兽族 10 苦工/祭坛/2 地洞；人族 8 农民/民房/祭坛 |
 | J-E4 | 扩张与城镇索引（`TownHasMine`/`SecondaryTown`） | J-E3 | 二矿落地且第二大厅开始采矿 |
