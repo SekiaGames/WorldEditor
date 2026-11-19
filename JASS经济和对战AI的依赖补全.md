@@ -142,7 +142,7 @@
 |---|---|---|---|
 | J-E0 | `IMeleeAiWorld` 查询层（按玩家聚合）**已完成** | — | 与 `--dump-units` 对齐 |
 | J-E1 | `MeleeAiBuildBook` 账本（`InitBuildArray`/`SetBuildUnit`/`SetBuildNext`/`SetBuildUpgr`）**已完成** | J-E0 | `[book]` 五项用例通过 |
-| J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义）**进行中** | J-E0、J-E1 | 接触点冲突已修（回程取外侧 160、金矿不登记足迹），足迹默认开启，交付 17 次/40 秒 |
+| J-E2 | 采集状态机下沉 Sim（`Harvest.cs` 语义）**已完成** | J-E0、J-E1 | `--gather-test`/`--lumber-test` 下单取货交付全通；状态机/订单/矿位队列/换矿/动画均在 Sim 侧 |
 | J-E3 | 生产执行端（按目标数补单 + 选址）**部分完成** | J-E1 | 账本已统一；`entry.Town` 未被执行端消费，扩张后分矿不排产 |
 | J-E4 | 扩张与城镇索引（`TownHasMine`/`SecondaryTown`） | J-E3 | 二矿落地且第二大厅开始采矿 |
 | J-E5 | 编队与波次（`Captain`/`Assault`） | J-E3 | 60 秒出第一波并接战 |
@@ -163,6 +163,6 @@
 |---|---|---|
 | 两套账本并存 | 现有 `MeleeAiState.Plan` 与 J-E1 的 `BuildBook` 语义不同，混用会出现"计划被打断" | J-E3 切换时只留一套，另一套删除 |
 | 客户端实现是"AMAI 运行时" | 它的语义面向 AMAI 脚本，与官方 melee 脚本有细微差别（如 `SetBuildNext` 的追加规则） | 以 `common.ai` 原文为准，客户端实现只作交叉验证 |
-| 采集状态机在 Godot | `SimEconomy.cs` 持有表现层 `Unit`，下沉需要拆 job 结构 | 先搬状态机与计时，表现层只留读状态 |
+| 采集调度仍在场景 | 状态机与订单已下沉，但 `TickSimHarvest` 仍由场景驱动，未走 Sim 的 852018 订单通道 | 下一步：`PlayerHarvestOrder` 接 `COrderTarget`，由能力接单 |
 | 足迹与采集互斥 | 建筑足迹生效后，工人站进阻挡格，A* 无法起步，交付事件归零 | 采集的接近/交付点取足迹边缘，再默认开启足迹 |
 | 四族工作量 | 每族 10–12 个函数，但 `attack_sequence` 与 `set_vars` 分支多 | 按 J-E7 逐族推进，一族一验收 |
