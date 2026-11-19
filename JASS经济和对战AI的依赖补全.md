@@ -216,7 +216,17 @@
 
 仍未与客户端一致的：
 
-- 采集不由 852018 订单驱动，是自建 `HarvestOrderDriver`
-- 伐木站位固定 72，未按树的可站立半径算
-- 多玩家同矿时按先到先占，未走服务槽排队（5 槽在 >5 工人时才生效）
-- 采集被打断后恢复的语义未验证
+- 852018 已进入 `Issue` 路径（`decisions.tsv` 登记 ADAPT，原因是客户端由 `PlayerHarvestOrder` 驱动）
+- 伐木站位按装饰物足迹半宽 +32
+- 矿位 5 槽队列在驱动内，到位才占
+- 打断时暂停、空闲后恢复
+
+### 副本改写的登记办法
+
+`Sim/ClientSrc` 是客户端逐字副本，`Sim.csproj` 构建时跑 `tools/copy_audit.py --check`，内容漂移即失败。需要偏离时在 `Sim/decisions.tsv` 追加一行：
+
+```
+<client_path>	ADAPT	<原因>
+```
+
+登记后该行跳过 DIFF 校验；当前 ADAPT 共 8 条，其中 `Src/Units/Unit.Orders.cs` 是采集订单路由。
