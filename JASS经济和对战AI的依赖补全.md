@@ -180,7 +180,7 @@
 | Ai.HarvestAndExpansion.cs | 1205 | — | 未开始 |
 | Production.cs | 1107 | 26 | 补单/选址在场景手写（约 15%） |
 | Ai.Production.cs | 668 | — | 未开始 |
-| Ai.Queries.cs | 754 | — | 接口已有，实现委托场景（约 40%） |
+| Ai.Queries.cs | 754 | — | 已转纯函数（TownUnitCount/CountDone/BuildingCount/Nearest） |
 | Ai.BuildProjection.cs | 31 | — | 未开始 |
 | OrdersAndItems.cs | 1668 | 22 | 未开始（资源由场景直接入账） |
 | Ai.cs | 1651 | 39 | 仅两族 build_sequence（约 10%） |
