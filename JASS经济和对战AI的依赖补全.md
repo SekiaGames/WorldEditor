@@ -166,3 +166,38 @@
 | 采集调度仍在场景 | 状态机与订单已下沉，但 `TickSimHarvest` 仍由场景驱动，未走 Sim 的 852018 订单通道 | 下一步：`PlayerHarvestOrder` 接 `COrderTarget`，由能力接单 |
 | 足迹与采集互斥 | 建筑足迹生效后，工人站进阻挡格，A* 无法起步，交付事件归零 | 采集的接近/交付点取足迹边缘，再默认开启足迹 |
 | 四族工作量 | 每族 10–12 个函数，但 `attack_sequence` 与 `set_vars` 分支多 | 按 J-E7 逐族推进，一族一验收 |
+
+## 6 转换进度（截至 2026-11-19）
+
+源：`test/Open-Warcraft3/GameCore/L3_Simulation/Simulation/Jass/`，共 39272 行。
+
+经济与对战 AI 子集 12141 行：
+
+| 源文件 | 行数 | 成员数 | 状态 |
+|---|---:|---:|---|
+| Harvest.cs | 1692 | 42 | 状态机已转（约 55%），订单通道未转 |
+| HarvestTiming.cs | 270 | — | 服务槽已转 |
+| Ai.HarvestAndExpansion.cs | 1205 | — | 未开始 |
+| Production.cs | 1107 | 26 | 补单/选址在场景手写（约 15%） |
+| Ai.Production.cs | 668 | — | 未开始 |
+| Ai.Queries.cs | 754 | — | 接口已有，实现委托场景（约 40%） |
+| Ai.BuildProjection.cs | 31 | — | 未开始 |
+| OrdersAndItems.cs | 1668 | 22 | 未开始（资源由场景直接入账） |
+| Ai.cs | 1651 | 39 | 仅两族 build_sequence（约 10%） |
+| Ai.Captain.cs | 1877 | — | 未开始 |
+| Ai.HeroesAndSpells.cs | 1218 | — | 未开始 |
+
+产出：`Launcher/Sim/JassToSharp/` 19 个文件、647 行代码（去注释），其中 5 个为待转换占位。
+
+按行覆盖约 **5%**。按功能分块：
+
+| 能力 | 覆盖 |
+|---|---|
+| 建造账本（`SetBuild*`） | 约 80% |
+| 采集状态机与矿位 | 约 55% |
+| 资源入账 | 0 |
+| 生产下单 | 约 15% |
+| 战斗与防守 | 0 |
+| 英雄与物品 | 0 |
+
+行数不是好指标：客户端那层包含大量 JASS 值封送，转换后不需要。建议以“成员覆盖数”衡量。
