@@ -59,4 +59,9 @@
         Sim/ClientSrc目录和客户端的根目录对应，无RPG/电脑玩家AI，界面仅保留地图选择/地图加载/游戏。
         Sim/JassEconomy目录和客户端侧的GameCore/L3_Simulation/Simulation/Jass一一对应。
         GameCore和Src目录只做Godot渲染相关，逻辑下沉到Sim层。
-            代码结构上和Sim层保持一一对应，Sim层的渲染逻辑做成虚方法，Godot层继承类名后面加View。
+            Sim：只持有状态与规则，暴露快照、查询方法或语义事件。
+            Godot：用组合方式读取。1:1 实体用 SimulationId → UnitSceneComponent 注册表；
+                                    全局系统用单个 FogOfWarRenderer/WeatherRenderer 消费 Sim 状态；
+                                    瞬态效果用事件触发。
+            坐标换算放在边界：渲染器把世界坐标转成地图坐标再查 Sim 雾；不要用继承覆盖查询方法。
+            所以迷雾的正确形态是：Sim.FogOfWar（唯一判定）+ FogOfWarRenderer（只画它给出的掩码）。
